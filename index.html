@@ -1,1 +1,3333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+>
+<meta name="theme-color" content="#111820">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
+<title>CLOrad — метеорологический радар</title>
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+
+<style>
+
+/* =========================================================
+   CLOrad
+   Main stylesheet
+   ========================================================= */
+
+:root {
+  --bg: #101820;
+  --panel: rgba(20, 29, 39, 0.96);
+  --panel2: rgba(27, 37, 49, 0.96);
+  --panel3: rgba(35, 47, 61, 0.96);
+  --border: rgba(255,255,255,0.10);
+  --border2: rgba(255,255,255,0.16);
+  --text: #f2f5f7;
+  --muted: #9ba7b3;
+  --muted2: #74808c;
+  --blue: #4d9fff;
+  --blue2: #2176d9;
+  --green: #36c978;
+  --yellow: #ffd447;
+  --orange: #ff8c32;
+  --red: #ff3e49;
+  --shadow: 0 12px 35px rgba(0,0,0,.38);
+  --radius: 10px;
+  --topbar: 70px;
+  --bottom: 88px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  touch-action: manipulation;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  color: inherit;
+}
+
+/* =========================================================
+   MAP
+   ========================================================= */
+
+#map {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: #111a23;
+}
+
+.leaflet-container {
+  background: #111a23;
+  font-family: inherit;
+}
+
+.leaflet-control-attribution {
+  background: rgba(10,15,20,.75) !important;
+  color: #82909d !important;
+  font-size: 9px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #9eabb8 !important;
+}
+
+.leaflet-control-zoom {
+  display: none !important;
+}
+
+/* =========================================================
+   TOP BAR
+   ========================================================= */
+
+.topbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--topbar);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(10,15,21,.98),
+      rgba(15,23,31,.94)
+    );
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 4px 18px rgba(0,0,0,.25);
+}
+
+/* =========================================================
+   LOGO
+   ========================================================= */
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 205px;
+  user-select: none;
+}
+
+.logo-mark {
+  position: relative;
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,.8);
+  background:
+    radial-gradient(
+      circle at center,
+      #ffffff 0 2px,
+      transparent 3px
+    ),
+    conic-gradient(
+      from 0deg,
+      transparent 0deg 20deg,
+      #4d9fff 20deg 24deg,
+      transparent 24deg 55deg,
+      #4d9fff 55deg 59deg,
+      transparent 59deg 360deg
+    );
+}
+
+.logo-mark::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 50%;
+}
+
+.logo-mark::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 50%;
+}
+
+.logo-name {
+  font-size: 25px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -1px;
+}
+
+.logo-sub {
+  color: var(--muted);
+  font-size: 9px;
+  margin-top: 3px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+
+.nav {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 3px;
+  flex: 1;
+}
+
+.nav-item {
+  height: 42px;
+  padding: 0 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aeb8c2;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background .18s ease,
+    color .18s ease;
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  color: #fff;
+  background: rgba(255,255,255,.07);
+}
+
+.nav-item.active {
+  color: #fff;
+  background: rgba(255,255,255,.12);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+}
+
+/* =========================================================
+   TOP ACTIONS
+   ========================================================= */
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.search {
+  width: 245px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 8px;
+}
+
+.search-icon {
+  color: #8c98a5;
+  font-size: 17px;
+}
+
+.search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+}
+
+.search input::placeholder {
+  color: #7f8b97;
+}
+
+.icon-button {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: transparent;
+  color: #aeb8c2;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: rgba(255,255,255,.07);
+  color: #fff;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff515b;
+  box-shadow: 0 0 8px rgba(255,81,91,.7);
+}
+
+.clock {
+  min-width: 65px;
+  text-align: right;
+  line-height: 1.05;
+}
+
+.clock-time {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.clock-date {
+  margin-top: 3px;
+  color: #8f9ba7;
+  font-size: 9px;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  margin-left: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(
+      135deg,
+      #65788a,
+      #354452
+    );
+  color: #eaf0f4;
+  font-size: 16px;
+}
+
+/* =========================================================
+   SIDE PANELS
+   ========================================================= */
+
+.panel {
+  position: fixed;
+  z-index: 900;
+  background: var(--panel);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.left-panel {
+  top: 82px;
+  left: 12px;
+  width: 218px;
+  max-height: calc(100vh - 190px);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.right-panel {
+  top: 82px;
+  right: 12px;
+  width: 245px;
+  max-height: calc(100vh - 190px);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+/* =========================================================
+   PANEL HEADER
+   ========================================================= */
+
+.panel-header {
+  min-height: 43px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  color: #dce3e8;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.panel-header-small {
+  color: #98a5b1;
+  font-size: 9px;
+  letter-spacing: .6px;
+}
+
+.panel-section {
+  padding: 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-section:last-child {
+  border-bottom: 0;
+}
+
+.section-title {
+  margin-bottom: 8px;
+  color: #b9c3cc;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+/* =========================================================
+   SELECT
+   ========================================================= */
+
+.select {
+  position: relative;
+  width: 100%;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: rgba(255,255,255,.065);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  color: #e5ebef;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.select::after {
+  content: "⌄";
+  position: absolute;
+  right: 9px;
+  color: #8c99a5;
+  font-size: 15px;
+}
+
+.select:hover {
+  background: rgba(255,255,255,.09);
+}
+
+/* =========================================================
+   RADAR LIST
+   ========================================================= */
+
+.radar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.radar-row {
+  min-height: 23px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d9e0e5;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: #3d76a9;
+  border: 1px solid #609bd0;
+  color: #fff;
+  font-size: 12px;
+}
+
+.checkbox.off {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.15);
+  color: transparent;
+}
+
+/* =========================================================
+   RADIO
+   ========================================================= */
+
+.radio-row {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #dce2e6;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #536273;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radio.active {
+  border-color: #62a8ef;
+}
+
+.radio.active::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #62a8ef;
+}
+
+/* =========================================================
+   TOGGLE
+   ========================================================= */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d9e1e6;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.toggle {
+  width: 32px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 20px;
+  background: #35424f;
+  cursor: pointer;
+  transition: background .18s ease;
+}
+
+.toggle-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e7ebee;
+  transition: transform .18s ease;
+}
+
+.toggle.active {
+  background: #397fc0;
+}
+
+.toggle.active .toggle-knob {
+  transform: translateX(14px);
+}
+
+/* =========================================================
+   MAP CONTROLS
+   ========================================================= */
+
+.map-tools {
+  position: fixed;
+  z-index: 800;
+  top: 88px;
+  left: 242px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.map-tool {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17,26,35,.94);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: 0 5px 16px rgba(0,0,0,.28);
+  color: #dce5eb;
+  font-size: 18px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.map-tool:hover {
+  background: rgba(40,53,67,.97);
+}
+
+.map-tool.active {
+  color: #5baaff;
+}
+
+/* =========================================================
+   MAP STATUS
+   ========================================================= */
+
+.map-status {
+  position: fixed;
+  z-index: 800;
+  left: 50%;
+  top: 82px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border-radius: 20px;
+  background: rgba(15,23,31,.88);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 5px 18px rgba(0,0,0,.25);
+  color: #cbd4dc;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #45d381;
+  box-shadow: 0 0 8px rgba(69,211,129,.8);
+}
+
+/* =========================================================
+   RIGHT ANALYTICS
+   ========================================================= */
+
+.legend-box {
+  position: relative;
+  display: flex;
+  gap: 10px;
+}
+
+.legend {
+  width: 17px;
+  height: 205px;
+  border-radius: 2px;
+  background:
+    linear-gradient(
+      to top,
+      #173fce 0%,
+      #1687ee 18%,
+      #19c957 35%,
+      #65df28 47%,
+      #f4df25 60%,
+      #ff9e16 72%,
+      #f52d26 86%,
+      #c40063 100%
+    );
+}
+
+.legend-labels {
+  height: 205px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #8f9aa5;
+  font-size: 9px;
+}
+
+.legend-unit {
+  margin-bottom: 7px;
+  color: #d7dee4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.analytics {
+  height: 205px;
+  flex: 1;
+  border-radius: 5px;
+  overflow: hidden;
+  background:
+    linear-gradient(
+      160deg,
+      rgba(190,46,105,.6),
+      rgba(89,59,143,.75) 25%,
+      rgba(48,126,153,.8) 52%,
+      rgba(41,149,104,.75) 72%,
+      rgba(238,196,48,.7)
+    );
+  border: 1px solid rgba(255,255,255,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.analytics-text {
+  color: rgba(255,255,255,.85);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* =========================================================
+   DATA CARDS
+   ========================================================= */
+
+.data-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  color: #aeb9c3;
+  font-size: 10px;
+}
+
+.data-line strong {
+  color: #f0f4f7;
+  font-weight: 600;
+}
+
+.warning {
+  padding: 9px;
+  border-radius: 6px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(157,55,64,.35),
+      rgba(157,55,64,.12)
+    );
+  border: 1px solid rgba(255,80,92,.14);
+  color: #e7b6b9;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* =========================================================
+   RADAR MARKERS
+   ========================================================= */
+
+.radar-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #56a9ff;
+  border: 2px solid #eaf5ff;
+  box-shadow:
+    0 0 0 3px rgba(77,159,255,.18),
+    0 0 13px rgba(77,159,255,.75);
+}
+
+.station-label {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(13,20,27,.9);
+  border: 1px solid rgba(255,255,255,.1);
+  color: #dce4e9;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   BOTTOM TIMELINE
+   ========================================================= */
+
+.timeline {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 82px;
+  z-index: 950;
+  border-radius: 9px;
+  background: rgba(16,25,34,.96);
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  padding: 9px 11px;
+  gap: 12px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.play-controls {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 195px;
+}
+
+.play-main {
+  height: 42px;
+  padding: 0 17px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 7px;
+  background: #263544;
+  border: 1px solid rgba(255,255,255,.08);
+  cursor: pointer;
+  color: #eef3f6;
+  font-size: 12px;
+}
+
+.play-main:hover {
+  background: #304253;
+}
+
+.play-small {
+  width: 37px;
+  height: 37px;
+  border-radius: 7px;
+  background: #202d39;
+  border: 1px solid rgba(255,255,255,.07);
+  color: #cdd6dd;
+  cursor: pointer;
+}
+
+.play-small:hover {
+  background: #2b3b4a;
+}
+
+.timeline-main {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.timeline-date {
+  position: absolute;
+  top: -3px;
+  right: 5px;
+  color: #9ca8b3;
+  font-size: 9px;
+}
+
+.slider-wrap {
+  position: relative;
+  height: 45px;
+  margin-top: 13px;
+}
+
+.slider-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 13px;
+  height: 13px;
+  border-radius: 6px;
+  background:
+    linear-gradient(
+      90deg,
+      #1f5d8e 0%,
+      #2b6f9e 44%,
+      #2d4557 44%,
+      #2d4557 100%
+    );
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.range {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 5px;
+  width: 13px;
+  height: 29px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: #f3f6f8;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+  pointer-events: none;
+}
+
+.now-label {
+  position: absolute;
+  top: -18px;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #f0f3f5;
+  color: #26313a;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.time-labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 31px;
+  display: flex;
+  justify-content: space-between;
+  color: #7d8994;
+  font-size: 9px;
+}
+
+.speed-controls {
+  display: flex;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.speed {
+  width: 34px;
+  height: 36px;
+  border-radius: 6px;
+  background: #202c37;
+  color: #87939e;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.speed.active {
+  background: #344757;
+  color: #fff;
+}
+
+/* =========================================================
+   POPUP
+   ========================================================= */
+
+.info-popup {
+  position: fixed;
+  z-index: 1200;
+  min-width: 210px;
+  display: none;
+  padding: 11px;
+  border-radius: 8px;
+  background: rgba(16,24,32,.96);
+  border: 1px solid rgba(255,255,255,.11);
+  box-shadow: 0 14px 35px rgba(0,0,0,.42);
+  pointer-events: none;
+}
+
+.info-popup.visible {
+  display: block;
+}
+
+.popup-title {
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.popup-value {
+  color: #5eafff;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.popup-muted {
+  margin-top: 3px;
+  color: #87949f;
+  font-size: 9px;
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+.mobile-menu {
+  display: none;
+}
+
+@media (max-width: 1050px) {
+
+  .nav-item {
+    padding: 0 9px;
+    font-size: 12px;
+  }
+
+  .logo {
+    min-width: 165px;
+  }
+
+  .logo-name {
+    font-size: 21px;
+  }
+
+  .search {
+    width: 190px;
+  }
+
+  .right-panel {
+    width: 215px;
+  }
+
+  .left-panel {
+    width: 205px;
+  }
+
+  .map-tools {
+    left: 225px;
+  }
+}
+
+@media (max-width: 800px) {
+
+  :root {
+    --topbar: 57px;
+  }
+
+  .topbar {
+    height: 57px;
+    padding: 0 9px;
+  }
+
+  .logo {
+    min-width: auto;
+  }
+
+  .logo-mark {
+    width: 31px;
+    height: 31px;
+  }
+
+  .logo-name {
+    font-size: 19px;
+  }
+
+  .logo-sub {
+    display: none;
+  }
+
+  .nav {
+    display: none;
+  }
+
+  .top-actions {
+    margin-left: auto;
+  }
+
+  .search {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+  }
+
+  .search input {
+    display: none;
+  }
+
+  .search-icon {
+    font-size: 19px;
+  }
+
+  .clock {
+    display: none;
+  }
+
+  .avatar {
+    display: none;
+  }
+
+  .mobile-menu {
+    display: flex;
+  }
+
+  .left-panel,
+  .right-panel {
+    top: 67px;
+    bottom: 102px;
+    width: calc(100vw - 24px);
+    max-height: none;
+    transition:
+      transform .25s ease,
+      opacity .25s ease;
+  }
+
+  .left-panel {
+    left: 12px;
+  }
+
+  .right-panel {
+    right: 12px;
+  }
+
+  .left-panel.mobile-hidden {
+    transform: translateX(calc(-100% - 20px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .right-panel.mobile-hidden {
+    transform: translateX(calc(100% + 20px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-tools {
+    top: 68px;
+    left: auto;
+    right: 12px;
+  }
+
+  .map-status {
+    top: 66px;
+    max-width: calc(100vw - 120px);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .timeline {
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    height: 92px;
+    padding: 7px;
+    gap: 6px;
+  }
+
+  .play-controls {
+    min-width: 100px;
+    gap: 4px;
+  }
+
+  .play-main {
+    width: 43px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .play-main span {
+    font-size: 18px;
+  }
+
+  .play-small {
+    width: 31px;
+    height: 35px;
+  }
+
+  .speed-controls {
+    min-width: 42px;
+    flex-direction: column;
+  }
+
+  .speed {
+    width: 38px;
+    height: 28px;
+  }
+
+  .timeline-date {
+    right: 2px;
+  }
+
+  .time-labels {
+    font-size: 8px;
+  }
+}
+
+@media (max-width: 430px) {
+
+  .logo-name {
+    font-size: 17px;
+  }
+
+  .icon-button {
+    width: 34px;
+  }
+
+  .map-tool {
+    width: 38px;
+    height: 38px;
+  }
+
+  .timeline {
+    height: 89px;
+  }
+
+  .play-controls {
+    min-width: 96px;
+  }
+
+  .slider-wrap {
+    margin-top: 15px;
+  }
+}
+
+/* =========================================================
+   LIGHT THEME
+   ========================================================= */
+
+body.light {
+  --bg: #e9edf1;
+  --panel: rgba(248,250,252,.96);
+  --panel2: rgba(240,244,247,.96);
+  --panel3: rgba(230,236,241,.96);
+  --border: rgba(0,0,0,.10);
+  --border2: rgba(0,0,0,.16);
+  --text: #18222b;
+  --muted: #687580;
+}
+
+body.light .topbar {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(248,250,252,.98),
+      rgba(238,242,246,.96)
+    );
+  border-bottom-color: rgba(0,0,0,.1);
+}
+
+body.light .nav-item {
+  color: #5c6872;
+}
+
+body.light .nav-item.active {
+  color: #18222b;
+  background: rgba(0,0,0,.08);
+}
+
+body.light .search {
+  background: rgba(0,0,0,.05);
+  border-color: rgba(0,0,0,.08);
+}
+
+body.light .search input {
+  color: #17212a;
+}
+
+body.light .panel,
+body.light .timeline,
+body.light .map-tool {
+  box-shadow: 0 10px 28px rgba(0,0,0,.15);
+}
+
+/* =========================================================
+   EXTRA UI
+   ========================================================= */
+
+.separator {
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(255,255,255,.07);
+}
+
+.coordinates {
+  color: #7d8a95;
+  font-size: 9px;
+}
+
+.empty-radar {
+  padding: 13px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.035);
+  color: #7f8c98;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.fake-echo {
+  pointer-events: none;
+  opacity: .16;
+}
+
+.corner-label {
+  position: fixed;
+  z-index: 700;
+  left: 15px;
+  bottom: 101px;
+  color: rgba(255,255,255,.45);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.map-crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  z-index: 500;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.map-crosshair::before,
+.map-crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(255,255,255,.65);
+}
+
+.map-crosshair::before {
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 1px;
+}
+
+.map-crosshair::after {
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: 1px;
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- =======================================================
+     MAP
+     ======================================================= -->
+
+<div id="map"></div>
+
+<!-- =======================================================
+     TOP BAR
+     ======================================================= -->
+
+<header class="topbar">
+
+  <div class="logo">
+
+    <div class="logo-mark"></div>
+
+    <div>
+      <div class="logo-name">CLOrad</div>
+      <div class="logo-sub">meteorological radar</div>
+    </div>
+
+  </div>
+
+  <nav class="nav">
+
+    <div class="nav-item active">
+      Интерактивная карта
+    </div>
+
+    <div class="nav-item">
+      Региональный
+    </div>
+
+    <div class="nav-item">
+      3D-Анализ
+    </div>
+
+    <div class="nav-item">
+      Архив
+    </div>
+
+    <div class="nav-item">
+      Предупреждения
+    </div>
+
+    <div class="nav-item">
+      Аналитика
+    </div>
+
+  </nav>
+
+  <div class="top-actions">
+
+    <div class="search">
+
+      <span class="search-icon">⌕</span>
+
+      <input
+        id="searchInput"
+        type="text"
+        placeholder="Поиск города или региона..."
+      >
+
+    </div>
+
+    <button
+      class="icon-button"
+      id="themeButton"
+      title="Тема"
+    >
+      ◉
+    </button>
+
+    <button
+      class="icon-button"
+      title="Уведомления"
+    >
+      ♧
+      <span class="notification-dot"></span>
+    </button>
+
+    <div class="clock">
+      <div class="clock-time" id="clockTime">
+        12:20
+      </div>
+
+      <div class="clock-date" id="clockDate">
+        12 сентября
+      </div>
+    </div>
+
+    <div class="avatar">
+      ◉
+    </div>
+
+    <button
+      class="icon-button mobile-menu"
+      id="menuButton"
+    >
+      ☰
+    </button>
+
+  </div>
+
+</header>
+
+<!-- =======================================================
+     LEFT PANEL
+     ======================================================= -->
+
+<aside class="panel left-panel" id="leftPanel">
+
+  <div class="panel-header">
+    <span>Выбор радара и настройки</span>
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Регион
+    </div>
+
+    <div class="select" id="regionSelect">
+      Центральный ФО
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Список радара
+    </div>
+
+    <div class="radar-list">
+
+      <div class="radar-row" data-station="Москва">
+        <span class="checkbox">✓</span>
+        <span>Москва (Внуково)</span>
+      </div>
+
+      <div class="radar-row" data-station="Шереметьево">
+        <span class="checkbox">✓</span>
+        <span>Москва (Шереметьево)</span>
+      </div>
+
+      <div class="radar-row" data-station="Тверь">
+        <span class="checkbox">✓</span>
+        <span>Тверь</span>
+      </div>
+
+      <div class="radar-row" data-station="Калуга">
+        <span class="checkbox">✓</span>
+        <span>Калуга</span>
+      </div>
+
+      <div class="radar-row" data-station="Рязань">
+        <span class="checkbox">✓</span>
+        <span>Рязань</span>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Режим
+    </div>
+
+    <div class="radio-row">
+      <span class="radio active"></span>
+      <span>Отражаемость (dBZ)</span>
+    </div>
+
+    <div class="radio-row">
+      <span class="radio"></span>
+      <span>Доплер (ветер)</span>
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Высота сканирования
+    </div>
+
+    <div class="select">
+      1.5 км
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Движение фронта
+    </div>
+
+    <div class="toggle-row">
+
+      <div class="toggle-label">
+        <span>ϟ</span>
+        <span>
+          Движение фронта<br>
+          (анимация)
+        </span>
+      </div>
+
+      <div
+        class="toggle"
+        id="frontToggle"
+      >
+        <div class="toggle-knob"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Отображение
+    </div>
+
+    <div class="toggle-row">
+
+      <div class="toggle-label">
+        Названия городов
+      </div>
+
+      <div
+        class="toggle active"
+        id="citiesToggle"
+      >
+        <div class="toggle-knob"></div>
+      </div>
+
+    </div>
+
+    <div class="toggle-row">
+
+      <div class="toggle-label">
+        Зоны покрытия
+      </div>
+
+      <div
+        class="toggle active"
+        id="coverageToggle"
+      >
+        <div class="toggle-knob"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="empty-radar">
+      Радарные данные пока не подключены.<br>
+      Здесь появится реальная отражаемость.
+    </div>
+
+  </div>
+
+</aside>
+
+<!-- =======================================================
+     RIGHT PANEL
+     ======================================================= -->
+
+<aside class="panel right-panel" id="rightPanel">
+
+  <div class="panel-header">
+
+    <span>(dBZ)</span>
+
+    <span class="panel-header-small">
+      Анализ данных
+    </span>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="legend-box">
+
+      <div>
+
+        <div class="legend-unit">
+          Отражаемость
+        </div>
+
+        <div class="legend"></div>
+
+      </div>
+
+      <div class="legend-labels">
+
+        <span>75+</span>
+        <span>70</span>
+        <span>60</span>
+        <span>50</span>
+        <span>40</span>
+        <span>30</span>
+        <span>20</span>
+        <span>10</span>
+        <span>0</span>
+
+      </div>
+
+      <div class="analytics">
+
+        <div class="analytics-text">
+          Анализ<br>
+          появится после<br>
+          подключения<br>
+          радарных данных
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Данные по шторму
+    </div>
+
+    <div class="data-line">
+      <span>Макс. отражаемость:</span>
+      <strong>— dBZ</strong>
+    </div>
+
+    <div class="data-line">
+      <span>Высота облаков:</span>
+      <strong>— км</strong>
+    </div>
+
+    <div class="data-line">
+      <span>Движение:</span>
+      <strong>—</strong>
+    </div>
+
+    <div class="data-line">
+      <span>Скорость:</span>
+      <strong>— км/ч</strong>
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Предупреждения
+    </div>
+
+    <div class="warning">
+      Активных радарных предупреждений
+      пока нет.
+    </div>
+
+  </div>
+
+  <div class="panel-section">
+
+    <div class="section-title">
+      Точка карты
+    </div>
+
+    <div class="data-line">
+      <span>Широта:</span>
+      <strong id="latValue">—</strong>
+    </div>
+
+    <div class="data-line">
+      <span>Долгота:</span>
+      <strong id="lonValue">—</strong>
+    </div>
+
+    <div class="coordinates">
+      Нажмите на карту для выбора точки
+    </div>
+
+  </div>
+
+</aside>
+
+<!-- =======================================================
+     MAP TOOLS
+     ======================================================= -->
+
+<div class="map-tools">
+
+  <button
+    class="map-tool"
+    id="locateButton"
+    title="Моё местоположение"
+  >
+    ◎
+  </button>
+
+  <button
+    class="map-tool"
+    id="zoomIn"
+    title="Приблизить"
+  >
+    +
+  </button>
+
+  <button
+    class="map-tool"
+    id="zoomOut"
+    title="Отдалить"
+  >
+    −
+  </button>
+
+  <button
+    class="map-tool"
+    id="settingsButton"
+    title="Настройки"
+  >
+    ⚙
+  </button>
+
+</div>
+
+<!-- =======================================================
+     MAP STATUS
+     ======================================================= -->
+
+<div class="map-status">
+
+  <span class="status-dot"></span>
+
+  <span id="statusText">
+    Карта готова · радарные данные не подключены
+  </span>
+
+</div>
+
+<!-- =======================================================
+     CROSSHAIR
+     ======================================================= -->
+
+<div class="map-crosshair"></div>
+
+<!-- =======================================================
+     POPUP
+     ======================================================= -->
+
+<div
+  class="info-popup"
+  id="infoPopup"
+>
+
+  <div class="popup-title">
+    Точка наблюдения
+  </div>
+
+  <div
+    class="popup-value"
+    id="popupCoords"
+  >
+    —
+  </div>
+
+  <div class="popup-muted">
+    Радарные значения появятся после подключения данных
+  </div>
+
+</div>
+
+<!-- =======================================================
+     TIMELINE
+     ======================================================= -->
+
+<div class="timeline">
+
+  <div class="play-controls">
+
+    <button
+      class="play-main"
+      id="playButton"
+      title="Запустить анимацию"
+    >
+      <span>▶</span>
+      <span>Пуск</span>
+    </button>
+
+    <button
+      class="play-small"
+      id="previousButton"
+      title="Предыдущий кадр"
+    >
+      |◀
+    </button>
+
+    <button
+      class="play-small"
+      id="nextButton"
+      title="Следующий кадр"
+    >
+      ▶|
+    </button>
+
+  </div>
+
+  <div class="timeline-main">
+
+    <div class="timeline-date">
+      12 СЕНТЯБРЯ
+    </div>
+
+    <div class="slider-wrap">
+
+      <div class="slider-line"></div>
+
+      <div
+        class="slider-thumb"
+        id="sliderThumb"
+        style="left: 50%;"
+      ></div>
+
+      <div
+        class="now-label"
+        id="nowLabel"
+        style="left: 50%;"
+      >
+        СЕЙЧАС
+      </div>
+
+      <input
+        class="range"
+        id="timeRange"
+        type="range"
+        min="0"
+        max="24"
+        value="12"
+        step="1"
+      >
+
+      <div class="time-labels">
+
+        <span>00:00</span>
+        <span>03:00</span>
+        <span>06:00</span>
+        <span>09:00</span>
+        <span>12:00</span>
+        <span>15:00</span>
+        <span>18:00</span>
+        <span>21:00</span>
+        <span>00:00</span>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="speed-controls">
+
+    <button
+      class="speed active"
+      data-speed="1"
+    >
+      1x
+    </button>
+
+    <button
+      class="speed"
+      data-speed="2"
+    >
+      2x
+    </button>
+
+  </div>
+
+</div>
+
+<div class="corner-label">
+  CLOrad · карта без радарного слоя
+</div>
+
+<!-- =======================================================
+     LEAFLET
+     ======================================================= -->
+
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+<script>
+
+/* =========================================================
+   CLOrad JavaScript
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   MAP
+   --------------------------------------------------------- */
+
+const map = L.map("map", {
+  zoomControl: false,
+  attributionControl: true,
+  minZoom: 3,
+  maxZoom: 12,
+  preferCanvas: true,
+  worldCopyJump: true
+});
+
+/* ---------------------------------------------------------
+   DARK MAP
+   --------------------------------------------------------- */
+
+const darkMap = L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {
+    maxZoom: 20,
+    attribution:
+      '&copy; OpenStreetMap &copy; CARTO'
+  }
+);
+
+darkMap.addTo(map);
+
+/* ---------------------------------------------------------
+   LIGHT MAP
+   --------------------------------------------------------- */
+
+const lightMap = L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {
+    maxZoom: 20,
+    attribution:
+      '&copy; OpenStreetMap contributors'
+  }
+);
+
+/* ---------------------------------------------------------
+   INITIAL VIEW
+   --------------------------------------------------------- */
+
+map.setView(
+  [55.7558, 37.6173],
+  5
+);
+
+/* ---------------------------------------------------------
+   RADAR ICON
+   --------------------------------------------------------- */
+
+const radarIcon = L.divIcon({
+  className: "",
+  html:
+    '<div class="radar-marker"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
+});
+
+/* ---------------------------------------------------------
+   RADAR STATIONS
+   --------------------------------------------------------- */
+
+const stations = [
+
+  {
+    name: "Москва",
+    short: "Внуково",
+    lat: 55.596,
+    lon: 37.267
+  },
+
+  {
+    name: "Москва",
+    short: "Шереметьево",
+    lat: 55.972,
+    lon: 37.414
+  },
+
+  {
+    name: "Тверь",
+    short: "Тверь",
+    lat: 56.858,
+    lon: 35.911
+  },
+
+  {
+    name: "Калуга",
+    short: "Калуга",
+    lat: 54.529,
+    lon: 36.275
+  },
+
+  {
+    name: "Рязань",
+    short: "Рязань",
+    lat: 54.629,
+    lon: 39.742
+  },
+
+  {
+    name: "Ярославль",
+    short: "Ярославль",
+    lat: 57.626,
+    lon: 39.893
+  },
+
+  {
+    name: "Владимир",
+    short: "Владимир",
+    lat: 56.129,
+    lon: 40.407
+  }
+
+];
+
+/* ---------------------------------------------------------
+   LAYERS
+   --------------------------------------------------------- */
+
+const stationLayer = L.layerGroup().addTo(map);
+
+const coverageLayer = L.layerGroup().addTo(map);
+
+/* ---------------------------------------------------------
+   DRAW STATIONS
+   --------------------------------------------------------- */
+
+stations.forEach(
+  station => {
+
+    const marker =
+      L.marker(
+        [
+          station.lat,
+          station.lon
+        ],
+        {
+          icon: radarIcon
+        }
+      )
+      .bindTooltip(
+        station.name +
+        " (" +
+        station.short +
+        ")",
+        {
+          direction: "top",
+          className: "station-label",
+          opacity: 1
+        }
+      );
+
+    stationLayer.addLayer(marker);
+
+    const circle =
+      L.circle(
+        [
+          station.lat,
+          station.lon
+        ],
+        {
+          radius: 120000,
+          color: "#b6c0c8",
+          weight: 1,
+          opacity: .32,
+          fill: false,
+          interactive: false
+        }
+      );
+
+    coverageLayer.addLayer(circle);
+
+  }
+);
+
+/* ---------------------------------------------------------
+   FAKE RADAR RINGS
+   --------------------------------------------------------- */
+
+const ringLayer = L.layerGroup().addTo(map);
+
+const rings = [
+
+  100000,
+  200000,
+  300000
+
+];
+
+rings.forEach(
+  radius => {
+
+    L.circle(
+      [
+        55.7558,
+        37.6173
+      ],
+      {
+        radius: radius,
+        color: "#d8e0e5",
+        weight: 1,
+        opacity: .16,
+        fill: false,
+        interactive: false,
+        className: "fake-echo"
+      }
+    ).addTo(ringLayer);
+
+  }
+);
+
+/* =========================================================
+   MAP CLICK
+   ========================================================= */
+
+map.on(
+  "click",
+  event => {
+
+    const lat =
+      event.latlng.lat.toFixed(4);
+
+    const lon =
+      event.latlng.lng.toFixed(4);
+
+    document.getElementById(
+      "latValue"
+    ).textContent = lat;
+
+    document.getElementById(
+      "lonValue"
+    ).textContent = lon;
+
+    document.getElementById(
+      "popupCoords"
+    ).textContent =
+      lat + "°, " + lon + "°";
+
+    const popup =
+      document.getElementById(
+        "infoPopup"
+      );
+
+    popup.style.left =
+      (event.originalEvent.clientX + 14) +
+      "px";
+
+    popup.style.top =
+      (event.originalEvent.clientY - 25) +
+      "px";
+
+    popup.classList.add(
+      "visible"
+    );
+
+    setTimeout(
+      () => {
+        popup.classList.remove(
+          "visible"
+        );
+      },
+      3500
+    );
+
+  }
+);
+
+/* =========================================================
+   ZOOM BUTTONS
+   ========================================================= */
+
+document.getElementById(
+  "zoomIn"
+).addEventListener(
+  "click",
+  () => map.zoomIn()
+);
+
+document.getElementById(
+  "zoomOut"
+).addEventListener(
+  "click",
+  () => map.zoomOut()
+);
+
+/* =========================================================
+   LOCATION
+   ========================================================= */
+
+document.getElementById(
+  "locateButton"
+).addEventListener(
+  "click",
+  () => {
+
+    if (!navigator.geolocation) {
+
+      alert(
+        "Геолокация не поддерживается."
+      );
+
+      return;
+
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+
+        const lat =
+          position.coords.latitude;
+
+        const lon =
+          position.coords.longitude;
+
+        map.flyTo(
+          [
+            lat,
+            lon
+          ],
+          9,
+          {
+            duration: 1
+          }
+        );
+
+        L.circleMarker(
+          [
+            lat,
+            lon
+          ],
+          {
+            radius: 7,
+            color: "#fff",
+            weight: 3,
+            fillColor: "#4da2ff",
+            fillOpacity: 1
+          }
+        )
+        .addTo(map)
+        .bindTooltip(
+          "Ваше местоположение",
+          {
+            direction: "top"
+          }
+        )
+        .openTooltip();
+
+        document.getElementById(
+          "statusText"
+        ).textContent =
+          "Ваше местоположение";
+
+      },
+      () => {
+
+        alert(
+          "Не удалось получить местоположение."
+        );
+
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+
+  }
+);
+
+/* =========================================================
+   RADAR CHECKBOXES
+   ========================================================= */
+
+document
+  .querySelectorAll(".radar-row")
+  .forEach(
+    row => {
+
+      row.addEventListener(
+        "click",
+        () => {
+
+          const checkbox =
+            row.querySelector(
+              ".checkbox"
+            );
+
+          checkbox.classList.toggle(
+            "off"
+          );
+
+          checkbox.textContent =
+            checkbox.classList.contains(
+              "off"
+            )
+            ? ""
+            : "✓";
+
+          const station =
+            row.dataset.station;
+
+          const target =
+            stations.find(
+              item =>
+                item.name === station
+            );
+
+          if (target) {
+
+            const markerElements =
+              stationLayer.getLayers();
+
+            markerElements.forEach(
+              marker => {
+
+                const pos =
+                  marker.getLatLng();
+
+                if (
+                  Math.abs(
+                    pos.lat -
+                    target.lat
+                  ) < .01 &&
+                  Math.abs(
+                    pos.lng -
+                    target.lon
+                  ) < .01
+                ) {
+
+                  if (
+                    stationLayer.hasLayer(
+                      marker
+                    )
+                  ) {
+
+                    if (
+                      checkbox.classList.contains(
+                        "off"
+                      )
+                    ) {
+                      stationLayer.removeLayer(
+                        marker
+                      );
+                    }
+
+                  }
+
+                }
+
+              }
+            );
+
+          }
+
+        }
+      );
+
+    }
+  );
+
+/* =========================================================
+   TOGGLES
+   ========================================================= */
+
+document
+  .querySelectorAll(".toggle")
+  .forEach(
+    toggle => {
+
+      toggle.addEventListener(
+        "click",
+        () => {
+
+          toggle.classList.toggle(
+            "active"
+          );
+
+          if (
+            toggle.id ===
+            "coverageToggle"
+          ) {
+
+            if (
+              toggle.classList.contains(
+                "active"
+              )
+            ) {
+
+              coverageLayer.addTo(
+                map
+              );
+
+            } else {
+
+              map.removeLayer(
+                coverageLayer
+              );
+
+            }
+
+          }
+
+          if (
+            toggle.id ===
+            "citiesToggle"
+          ) {
+
+            document.body.classList.toggle(
+              "hide-city-labels"
+            );
+
+          }
+
+        }
+      );
+
+    }
+  );
+
+/* =========================================================
+   FRONT TOGGLE
+   ========================================================= */
+
+document.getElementById(
+  "frontToggle"
+).addEventListener(
+  "click",
+  function() {
+
+    this.classList.toggle(
+      "active"
+    );
+
+    if (
+      this.classList.contains(
+        "active"
+      )
+    ) {
+
+      document.getElementById(
+        "statusText"
+      ).textContent =
+        "Анимация движения включена";
+
+    } else {
+
+      document.getElementById(
+        "statusText"
+      ).textContent =
+        "Карта готова · радарные данные не подключены";
+
+    }
+
+  }
+);
+
+/* =========================================================
+   THEME
+   ========================================================= */
+
+let lightMode = false;
+
+document.getElementById(
+  "themeButton"
+).addEventListener(
+  "click",
+  () => {
+
+    lightMode =
+      !lightMode;
+
+    if (lightMode) {
+
+      document.body.classList.add(
+        "light"
+      );
+
+      map.removeLayer(
+        darkMap
+      );
+
+      lightMap.addTo(
+        map
+      );
+
+    } else {
+
+      document.body.classList.remove(
+        "light"
+      );
+
+      map.removeLayer(
+        lightMap
+      );
+
+      darkMap.addTo(
+        map
+      );
+
+    }
+
+  }
+);
+
+/* =========================================================
+   SEARCH
+   ========================================================= */
+
+const cities = {
+
+  "москва": [
+    55.7558,
+    37.6173
+  ],
+
+  "тверь": [
+    56.8587,
+    35.9118
+  ],
+
+  "калуга": [
+    54.5293,
+    36.2754
+  ],
+
+  "рязань": [
+    54.6296,
+    39.7425
+  ],
+
+  "ярославль": [
+    57.6261,
+    39.8845
+  ],
+
+  "владимир": [
+    56.129,
+    40.4066
+  ],
+
+  "уфа": [
+    54.7388,
+    55.9721
+  ],
+
+  "санкт-петербург": [
+    59.9343,
+    30.3351
+  ],
+
+  "петербург": [
+    59.9343,
+    30.3351
+  ],
+
+  "казань": [
+    55.7879,
+    49.1233
+  ],
+
+  "нижний новгород": [
+    56.2965,
+    43.9361
+  ],
+
+  "екатеринбург": [
+    56.8389,
+    60.6057
+  ]
+
+};
+
+document.getElementById(
+  "searchInput"
+).addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key !==
+      "Enter"
+    ) {
+      return;
+    }
+
+    const query =
+      event.target.value
+        .trim()
+        .toLowerCase();
+
+    if (
+      !cities[query]
+    ) {
+
+      document.getElementById(
+        "statusText"
+      ).textContent =
+        "Город не найден";
+
+      return;
+
+    }
+
+    const coords =
+      cities[query];
+
+    map.flyTo(
+      coords,
+      9,
+      {
+        duration: 1.1
+      }
+    );
+
+    L.circleMarker(
+      coords,
+      {
+        radius: 6,
+        color: "#fff",
+        weight: 2,
+        fillColor: "#4d9fff",
+        fillOpacity: 1
+      }
+    )
+    .addTo(map)
+    .bindTooltip(
+      query
+        .charAt(0)
+        .toUpperCase() +
+      query.slice(1),
+      {
+        direction: "top"
+      }
+    )
+    .openTooltip();
+
+    document.getElementById(
+      "statusText"
+    ).textContent =
+      "Центр карты: " +
+      query
+        .charAt(0)
+        .toUpperCase() +
+      query.slice(1);
+
+  }
+);
+
+/* =========================================================
+   CLOCK
+   ========================================================= */
+
+function updateClock() {
+
+  const now =
+    new Date();
+
+  const hours =
+    String(
+      now.getHours()
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const minutes =
+    String(
+      now.getMinutes()
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const months = [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря"
+  ];
+
+  document.getElementById(
+    "clockTime"
+  ).textContent =
+    hours +
+    ":" +
+    minutes;
+
+  document.getElementById(
+    "clockDate"
+  ).textContent =
+    now.getDate() +
+    " " +
+    months[
+      now.getMonth()
+    ];
+
+}
+
+updateClock();
+
+setInterval(
+  updateClock,
+  1000
+);
+
+/* =========================================================
+   TIMELINE
+   ========================================================= */
+
+const range =
+  document.getElementById(
+    "timeRange"
+  );
+
+const thumb =
+  document.getElementById(
+    "sliderThumb"
+  );
+
+const nowLabel =
+  document.getElementById(
+    "nowLabel"
+  );
+
+function updateTimeline() {
+
+  const value =
+    Number(
+      range.value
+    );
+
+  const max =
+    Number(
+      range.max
+    );
+
+  const percent =
+    (value / max) *
+    100;
+
+  thumb.style.left =
+    percent + "%";
+
+  nowLabel.style.left =
+    percent + "%";
+
+  const hour =
+    String(
+      value
+    ).padStart(
+      2,
+      "0"
+    );
+
+  document.getElementById(
+    "statusText"
+  ).textContent =
+    "Время карты: " +
+    hour +
+    ":00 · данных пока нет";
+
+}
+
+range.addEventListener(
+  "input",
+  updateTimeline
+);
+
+updateTimeline();
+
+/* =========================================================
+   PLAYBACK
+   ========================================================= */
+
+let playing = false;
+
+let timer = null;
+
+let speed = 1;
+
+const playButton =
+  document.getElementById(
+    "playButton"
+  );
+
+function startPlayback() {
+
+  if (playing) {
+    return;
+  }
+
+  playing = true;
+
+  playButton.innerHTML =
+    "<span>Ⅱ</span><span>Пауза</span>";
+
+  timer =
+    setInterval(
+      () => {
+
+        let value =
+          Number(
+            range.value
+          );
+
+        value++;
+
+        if (
+          value >
+          Number(range.max)
+        ) {
+
+          value =
+            Number(
+              range.min
+            );
+
+        }
+
+        range.value =
+          value;
+
+        updateTimeline();
+
+      },
+      900 / speed
+    );
+
+}
+
+function stopPlayback() {
+
+  playing = false;
+
+  clearInterval(
+    timer
+  );
+
+  timer = null;
+
+  playButton.innerHTML =
+    "<span>▶</span><span>Пуск</span>";
+
+}
+
+playButton.addEventListener(
+  "click",
+  () => {
+
+    if (playing) {
+
+      stopPlayback();
+
+    } else {
+
+      startPlayback();
+
+    }
+
+  }
+);
+
+/* =========================================================
+   PREVIOUS / NEXT
+   ========================================================= */
+
+document.getElementById(
+  "previousButton"
+).addEventListener(
+  "click",
+  () => {
+
+    let value =
+      Number(
+        range.value
+      );
+
+    value--;
+
+    if (
+      value <
+      Number(range.min)
+    ) {
+
+      value =
+        Number(
+          range.max
+        );
+
+    }
+
+    range.value =
+      value;
+
+    updateTimeline();
+
+  }
+);
+
+document.getElementById(
+  "nextButton"
+).addEventListener(
+  "click",
+  () => {
+
+    let value =
+      Number(
+        range.value
+      );
+
+    value++;
+
+    if (
+      value >
+      Number(range.max)
+    ) {
+
+      value =
+        Number(
+          range.min
+        );
+
+    }
+
+    range.value =
+      value;
+
+    updateTimeline();
+
+  }
+);
+
+/* =========================================================
+   SPEED
+   ========================================================= */
+
+document
+  .querySelectorAll(".speed")
+  .forEach(
+    button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          document
+            .querySelectorAll(
+              ".speed"
+            )
+            .forEach(
+              item =>
+                item.classList.remove(
+                  "active"
+                )
+            );
+
+          button.classList.add(
+            "active"
+          );
+
+          speed =
+            Number(
+              button.dataset.speed
+            );
+
+          if (playing) {
+
+            stopPlayback();
+
+            startPlayback();
+
+          }
+
+        }
+      );
+
+    }
+  );
+
+/* =========================================================
+   MOBILE PANELS
+   ========================================================= */
+
+const leftPanel =
+  document.getElementById(
+    "leftPanel"
+  );
+
+const rightPanel =
+  document.getElementById(
+    "rightPanel"
+  );
+
+let mobilePanels =
+  false;
+
+document.getElementById(
+  "menuButton"
+).addEventListener(
+  "click",
+  () => {
+
+    mobilePanels =
+      !mobilePanels;
+
+    if (mobilePanels) {
+
+      leftPanel.classList.remove(
+        "mobile-hidden"
+      );
+
+      rightPanel.classList.remove(
+        "mobile-hidden"
+      );
+
+    } else {
+
+      leftPanel.classList.add(
+        "mobile-hidden"
+      );
+
+      rightPanel.classList.add(
+        "mobile-hidden"
+      );
+
+    }
+
+  }
+);
+
+/* =========================================================
+   SETTINGS BUTTON
+   ========================================================= */
+
+document.getElementById(
+  "settingsButton"
+).addEventListener(
+  "click",
+  () => {
+
+    if (
+      window.innerWidth <=
+      800
+    ) {
+
+      leftPanel.classList.toggle(
+        "mobile-hidden"
+      );
+
+      rightPanel.classList.add(
+        "mobile-hidden"
+      );
+
+    } else {
+
+      leftPanel.scrollIntoView({
+        behavior: "smooth"
+      });
+
+    }
+
+  }
+);
+
+/* =========================================================
+   REGION BUTTON
+   ========================================================= */
+
+document.getElementById(
+  "regionSelect"
+).addEventListener(
+  "click",
+  () => {
+
+    const regions = [
+      "Центральный ФО",
+      "Приволжский ФО",
+      "Уральский ФО",
+      "Сибирский ФО",
+      "Южный ФО",
+      "Северо-Западный ФО"
+    ];
+
+    const current =
+      document.getElementById(
+        "regionSelect"
+      );
+
+    const index =
+      regions.indexOf(
+        current.textContent
+      );
+
+    current.textContent =
+      regions[
+        (index + 1) %
+        regions.length
+      ];
+
+  }
+);
+
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+
+document
+  .querySelectorAll(".nav-item")
+  .forEach(
+    item => {
+
+      item.addEventListener(
+        "click",
+        () => {
+
+          document
+            .querySelectorAll(
+              ".nav-item"
+            )
+            .forEach(
+              nav =>
+                nav.classList.remove(
+                  "active"
+                )
+            );
+
+          item.classList.add(
+            "active"
+          );
+
+          document.getElementById(
+            "statusText"
+          ).textContent =
+            item.textContent.trim() +
+            " · раздел пока в разработке";
+
+        }
+      );
+
+    }
+  );
+
+/* =========================================================
+   MAP MOVE STATUS
+   ========================================================= */
+
+map.on(
+  "moveend",
+  () => {
+
+    const center =
+      map.getCenter();
+
+    document.getElementById(
+      "statusText"
+    ).textContent =
+      "Центр: " +
+      center.lat.toFixed(2) +
+      "°, " +
+      center.lng.toFixed(2) +
+      "°";
+
+  }
+);
+
+/* =========================================================
+   ESCAPE POPUP
+   ========================================================= */
+
+document.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key ===
+      "Escape"
+    ) {
+
+      document
+        .getElementById(
+          "infoPopup"
+        )
+        .classList.remove(
+          "visible"
+        );
+
+    }
+
+  }
+);
+
+/* =========================================================
+   PREVENT UNWANTED DOUBLE TAP
+   ========================================================= */
+
+let lastTouch =
+  0;
+
+document.addEventListener(
+  "touchend",
+  event => {
+
+    const now =
+      Date.now();
+
+    if (
+      now -
+      lastTouch <
+      280
+    ) {
+
+      event.preventDefault();
+
+    }
+
+    lastTouch =
+      now;
+
+  },
+  {
+    passive: false
+  }
+);
+
+/* =========================================================
+   INITIAL MOBILE STATE
+   ========================================================= */
+
+function setupMobile() {
+
+  if (
+    window.innerWidth <=
+    800
+  ) {
+
+    leftPanel.classList.add(
+      "mobile-hidden"
+    );
+
+    rightPanel.classList.add(
+      "mobile-hidden"
+    );
+
+  } else {
+
+    leftPanel.classList.remove(
+      "mobile-hidden"
+    );
+
+    rightPanel.classList.remove(
+      "mobile-hidden"
+    );
+
+  }
+
+}
+
+setupMobile();
+
+window.addEventListener(
+  "resize",
+  setupMobile
+);
+
+/* =========================================================
+   FINISH
+   ========================================================= */
+
+console.log(
+  "CLOrad initialized successfully."
+);
+
+console.log(
+  "Radar data layer: waiting for connection."
+);
+
+</script>
+
+</body>
+</html>
