@@ -80,7 +80,7 @@ export default async function handler(req, res) {
 
   /*
   ---------------------------------------------------------
-  Extract cookies from response
+  Extract cookies
   ---------------------------------------------------------
   */
 
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
 
   /*
   ---------------------------------------------------------
-  Create browser-like headers
+  Browser-like headers
   ---------------------------------------------------------
   */
 
@@ -198,9 +198,9 @@ export default async function handler(req, res) {
 
 
   /*
-  ---------------------------------------------------------
-  Bootstrap Nowcast session
-  ---------------------------------------------------------
+  =========================================================
+  NOWCAST SESSION
+  =========================================================
   */
 
   async function createNowcastSession(){
@@ -209,7 +209,9 @@ export default async function handler(req, res) {
 
 
     /*
-    Сначала открываем сам demo.html.
+    -------------------------------------------------------
+    demo.html
+    -------------------------------------------------------
     */
 
     try{
@@ -255,8 +257,9 @@ export default async function handler(req, res) {
 
 
     /*
-    Дополнительно открываем главную страницу.
-    Иногда сервер выставляет cookie именно там.
+    -------------------------------------------------------
+    Главная страница
+    -------------------------------------------------------
     */
 
     try{
@@ -321,9 +324,9 @@ export default async function handler(req, res) {
 
 
   /*
-  ---------------------------------------------------------
-  Make authenticated-ish Nowcast request
-  ---------------------------------------------------------
+  =========================================================
+  NOWCAST FETCH
+  =========================================================
   */
 
   async function nowcastFetch(
@@ -331,11 +334,11 @@ export default async function handler(req, res) {
     extraHeaders = {}
   ){
 
-    const cookies =
+    let cookies =
       await createNowcastSession();
 
 
-    const headers =
+    let headers =
       browserHeaders(
         extraHeaders
       );
@@ -350,7 +353,9 @@ export default async function handler(req, res) {
 
 
     /*
-    Первый запрос.
+    -------------------------------------------------------
+    Первый запрос
+    -------------------------------------------------------
     */
 
     let response =
@@ -365,26 +370,27 @@ export default async function handler(req, res) {
 
 
     /*
-    Если получили 403,
-    создаём новую сессию и повторяем.
+    -------------------------------------------------------
+    При 403 полностью пересоздаём сессию
+    -------------------------------------------------------
     */
 
     if(response.status === 403){
 
-      const retryCookies =
+      cookies =
         await createNowcastSession();
 
 
-      const retryHeaders =
+      headers =
         browserHeaders(
           extraHeaders
         );
 
 
-      if(retryCookies){
+      if(cookies){
 
-        retryHeaders.Cookie =
-          retryCookies;
+        headers.Cookie =
+          cookies;
 
       }
 
@@ -394,8 +400,9 @@ export default async function handler(req, res) {
           targetUrl,
           {
             method:"GET",
-            headers:
-              retryHeaders,
+
+            headers,
+
             redirect:"follow"
           }
         );
@@ -441,12 +448,15 @@ export default async function handler(req, res) {
         lon === null ||
         dbz === null
       ){
+
         return null;
+
       }
 
 
       /*
-      Иногда координаты могут быть lon/lat.
+      Иногда координаты могут идти
+      как lon / lat.
       */
 
       if(
@@ -470,7 +480,9 @@ export default async function handler(req, res) {
         Math.abs(lat) > 90 ||
         Math.abs(lon) > 180
       ){
+
         return null;
+
       }
 
 
@@ -529,7 +541,9 @@ export default async function handler(req, res) {
         lon === null ||
         dbz === null
       ){
+
         return null;
+
       }
 
 
@@ -554,7 +568,9 @@ export default async function handler(req, res) {
         Math.abs(lat) > 90 ||
         Math.abs(lon) > 180
       ){
+
         return null;
+
       }
 
 
@@ -608,7 +624,8 @@ export default async function handler(req, res) {
       }
 
 
-      const result = [];
+      const result =
+        [];
 
 
       for(
@@ -913,7 +930,9 @@ export default async function handler(req, res) {
 
 
     if(!strong.length){
+
       return [];
+
     }
 
 
@@ -1030,7 +1049,9 @@ export default async function handler(req, res) {
             dx === 0 &&
             dy === 0
           ){
+
             continue;
+
           }
 
 
@@ -1058,7 +1079,9 @@ export default async function handler(req, res) {
           startKey
         )
       ){
+
         continue;
+
       }
 
 
@@ -1111,7 +1134,9 @@ export default async function handler(req, res) {
           if(
             visited.has(next)
           ){
+
             continue;
+
           }
 
 
@@ -1137,7 +1162,9 @@ export default async function handler(req, res) {
       if(
         cellPoints.length < 2
       ){
+
         continue;
+
       }
 
 
@@ -1408,9 +1435,7 @@ export default async function handler(req, res) {
 
 
       /*
-      -------------------------------------------------------
       ISO timestamps
-      -------------------------------------------------------
       */
 
       const matches =
@@ -1432,10 +1457,7 @@ export default async function handler(req, res) {
 
 
       /*
-      -------------------------------------------------------
-      Некоторые WMS могут отдавать timestamp
-      без Z.
-      -------------------------------------------------------
+      Timestamp без Z
       */
 
       const matchesNoZ =
@@ -1546,7 +1568,419 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  NOWCAST REFLECTIVITY
+  NOWCAST REFLECTIVITY IMAGE
+  =========================================================
+  */
+
+  if(
+    action === "nowcast-image"
+  ){
+
+    const time =
+      url.searchParams.get(
+        "time"
+      );
+
+
+    if(!time){
+
+      return res.status(400).json({
+
+        ok:false,
+
+        error:
+          "missing_time"
+
+      });
+
+    }
+
+
+    /*
+    -------------------------------------------------------
+    BBOX
+    -------------------------------------------------------
+    */
+
+    const bboxParam =
+      url.searchParams.get(
+        "bbox"
+      );
+
+
+    let bbox =
+      [
+        20,
+        40,
+        180,
+        82
+      ];
+
+
+    if(bboxParam){
+
+      const parts =
+        bboxParam
+          .split(",")
+          .map(
+            Number
+          );
+
+
+      if(
+        parts.length === 4 &&
+        parts.every(
+          Number.isFinite
+        )
+      ){
+
+        bbox =
+          parts;
+
+      }
+
+    }
+
+
+    /*
+    -------------------------------------------------------
+    SIZE
+    -------------------------------------------------------
+    */
+
+    let width =
+      Number(
+        url.searchParams.get(
+          "width"
+        )
+      );
+
+
+    let height =
+      Number(
+        url.searchParams.get(
+          "height"
+        )
+      );
+
+
+    if(
+      !Number.isFinite(width) ||
+      width <= 0
+    ){
+
+      width =
+        1200;
+
+    }
+
+
+    if(
+      !Number.isFinite(height) ||
+      height <= 0
+    ){
+
+      height =
+        800;
+
+    }
+
+
+    /*
+    Не позволяем запрашивать
+    огромные изображения.
+    */
+
+    width =
+      Math.min(
+        2048,
+        Math.max(
+          256,
+          Math.round(width)
+        )
+      );
+
+
+    height =
+      Math.min(
+        2048,
+        Math.max(
+          256,
+          Math.round(height)
+        )
+      );
+
+
+    try{
+
+      /*
+      -----------------------------------------------------
+      WMS GetMap
+      -----------------------------------------------------
+      */
+
+      const params =
+        new URLSearchParams({
+
+          SERVICE:
+            "WMS",
+
+          VERSION:
+            "1.1.1",
+
+          REQUEST:
+            "GetMap",
+
+          LAYERS:
+            "bufr_dbz1",
+
+          STYLES:
+            "",
+
+          SRS:
+            "EPSG:4326",
+
+          BBOX:
+            bbox.join(","),
+
+          WIDTH:
+            String(width),
+
+          HEIGHT:
+            String(height),
+
+          FORMAT:
+            "image/png",
+
+          TRANSPARENT:
+            "true",
+
+          TIME:
+            new Date(
+              time
+            ).toISOString()
+
+        });
+
+
+      const imageUrl =
+        NOWCAST +
+        "/baltrad_wsgi?" +
+        params.toString();
+
+
+      const response =
+        await nowcastFetch(
+          imageUrl,
+          {
+            "Accept":
+              "image/png,image/*,*/*"
+          }
+        );
+
+
+      /*
+      -----------------------------------------------------
+      Получили ошибку
+      -----------------------------------------------------
+      */
+
+      if(!response.ok){
+
+        const body =
+          await response.text();
+
+
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_image_http",
+
+          status:
+            response.status,
+
+          time,
+
+          url:
+            imageUrl,
+
+          body:
+            body.slice(
+              0,
+              3000
+            )
+
+        });
+
+      }
+
+
+      /*
+      -----------------------------------------------------
+      Проверяем Content-Type
+      -----------------------------------------------------
+      */
+
+      const contentType =
+        (
+          response.headers.get(
+            "content-type"
+          ) || ""
+        ).toLowerCase();
+
+
+      /*
+      -----------------------------------------------------
+      Получаем бинарный PNG
+      -----------------------------------------------------
+      */
+
+      const buffer =
+        Buffer.from(
+          await response.arrayBuffer()
+        );
+
+
+      if(!buffer.length){
+
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_image_empty",
+
+          time
+
+        });
+
+      }
+
+
+      /*
+      -----------------------------------------------------
+      Если WMS неожиданно вернул XML/HTML,
+      не отдаём его как PNG.
+      -----------------------------------------------------
+      */
+
+      const looksLikePng =
+        buffer.length >= 8 &&
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4E &&
+        buffer[3] === 0x47 &&
+        buffer[4] === 0x0D &&
+        buffer[5] === 0x0A &&
+        buffer[6] === 0x1A &&
+        buffer[7] === 0x0A;
+
+
+      if(
+        !looksLikePng &&
+        !contentType.includes(
+          "image/"
+        )
+      ){
+
+        const text =
+          buffer
+            .toString(
+              "utf8"
+            )
+            .slice(
+              0,
+              3000
+            );
+
+
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_image_not_png",
+
+          time,
+
+          contentType,
+
+          body:
+            text
+
+        });
+
+      }
+
+
+      /*
+      -----------------------------------------------------
+      PNG
+      -----------------------------------------------------
+      */
+
+      res.setHeader(
+        "Content-Type",
+        "image/png"
+      );
+
+      res.setHeader(
+        "Content-Length",
+        String(
+          buffer.length
+        )
+      );
+
+      res.setHeader(
+        "Cache-Control",
+        "no-store, no-cache, must-revalidate"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        "inline; filename=\"nowcast-bufr_dbz1.png\""
+      );
+
+
+      return res
+        .status(200)
+        .send(
+          buffer
+        );
+
+    }catch(error){
+
+      console.error(
+        "CLOrad nowcast-image error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        ok:false,
+
+        error:
+          "nowcast_image_exception",
+
+        time,
+
+        message:
+          error?.message ||
+          String(error)
+
+      });
+
+    }
+
+  }
+
+
+  /*
+  =========================================================
+  NOWCAST REFLECTIVITY VECTOR
   =========================================================
   */
 
