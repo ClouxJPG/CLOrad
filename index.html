@@ -53,12 +53,6 @@ button{
   display:none
 }
 
-/*
-  Сам WMS-слой.
-  Убираем фон изображения и оставляем
-  только прозрачные/цветные данные радара.
-*/
-
 .leaflet-image-layer.clorad-radar{
   image-rendering:auto;
 }
@@ -858,7 +852,7 @@ body.light .frameInput{
   }
 
   .layers{
-    left:17px;
+    left:17px
     width:190px
   }
 
@@ -1214,7 +1208,8 @@ body.light .frameInput{
 <script>
 
 /* =====================================================
-   CLORAD + NOWCAST WMS
+   CLORAD + NOWCAST
+   API PROXY
 ===================================================== */
 
 let map=null;
@@ -1222,27 +1217,10 @@ let tiles=null;
 
 let reflectivityLayer=null;
 
-const NOWCAST_WMS=
-  "https://www.nowcast.ru/baltrad_wsgi";
-
-/*
-  Основной реальный слой.
-  
-  bufr_dbz1 — отражаемость.
-  
-  Оригинальный demo Nowcast использует
-  комбинированную запись:
-  
-  bufr_dbz1,
-  bufr_novosib_dbz1,
-  bufr_vlad_dbz1
-  
-  Но для чистого WMS GetMap сначала используем
-  непосредственно bufr_dbz1.
-*/
+const RADAR_API="/api/radar";
 
 const NOWCAST_LAYER=
-  "bufr_dbz1";
+  "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
 
 const light=
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -1268,7 +1246,10 @@ function initMap(){
         preferCanvas:false,
         zoomAnimation:true,
         fadeAnimation:false,
-        markerZoomAnimation:false
+        markerZoomAnimation:false,
+        worldCopyJump:false,
+        minZoom:2,
+        maxZoom:14
       }
     ).setView(
       [55.75,37.62],
@@ -1290,8 +1271,9 @@ function initMap(){
     tiles.addTo(map);
 
     /*
-      Отражаемость НЕ добавляем сразу.
-      Она появится только после включения переключателя.
+      При движении/зуме карты
+      радар обновляется после завершения
+      действия пользователя.
     */
 
     map.on(
@@ -1468,6 +1450,8 @@ let radarPlayTimer=null;
 
 let radarRefreshTimer=null;
 
+let radarAutoTimer=null;
+
 let radarRequestId=0;
 
 
@@ -1561,17 +1545,6 @@ function buildFallbackTimes(){
 
   const result=[];
 
-  /*
-    Создаём последние 24 часа.
-    
-    Важно:
-    эти времена используются только для
-    ручного таймлайна.
-    
-    Для текущего кадра TIME можно не передавать,
-    тогда Nowcast сам выбирает последний доступный.
-  */
-
   for(
     let i=143;
     i>=0;
@@ -1593,103 +1566,7 @@ function buildFallbackTimes(){
 
 
 /* =====================================================
-   GETCAPABILITIES
-===================================================== */
-
-function extractTimesFromCapabilities(text){
-
-  if(
-    typeof text!=="string" ||
-    !text
-  ){
-    return [];
-  }
-
-  const result=[];
-
-  const patterns=[
-
-    /<Dimension[^>]*name=["']time["'][^>]*>([\s\S]*?)<\/Dimension>/i,
-
-    /<Extent[^>]*name=["']time["'][^>]*>([\s\S]*?)<\/Extent>/i,
-
-    /<Dimension[^>]*name=["']TIME["'][^>]*>([\s\S]*?)<\/Dimension>/i,
-
-    /<Extent[^>]*name=["']TIME["'][^>]*>([\s\S]*?)<\/Extent>/i
-
-  ];
-
-  let content=null;
-
-  for(
-    const pattern of patterns
-  ){
-
-    const match=
-      text.match(pattern);
-
-    if(match){
-
-      content=
-        match[1];
-
-      break;
-
-    }
-
-  }
-
-  const timestampRegex=
-    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g;
-
-  if(content){
-
-    const matches=
-      content.match(
-        timestampRegex
-      );
-
-    if(matches){
-
-      result.push(
-        ...matches
-      );
-
-    }
-
-  }
-
-  /*
-    Если Dimension/Extent не найден,
-    ищем даты по всему XML.
-  */
-
-  if(!result.length){
-
-    const matches=
-      text.match(
-        timestampRegex
-      );
-
-    if(matches){
-
-      result.push(
-        ...matches
-      );
-
-    }
-
-  }
-
-  return normalizeNowcastTimes(
-    result
-  );
-
-}
-
-
-/* =====================================================
-   LOAD TIMES
+   LOAD TIMES THROUGH VERCEL
 ===================================================== */
 
 async function loadNowcastTimes(){
@@ -1699,15 +1576,10 @@ async function loadNowcastTimes(){
 
   try{
 
-    const url=
-      NOWCAST_WMS+
-      "?SERVICE=WMS"+
-      "&VERSION=1.1.1"+
-      "&REQUEST=GetCapabilities";
-
     const response=
       await fetch(
-        url,
+        RADAR_API+
+        "?action=times",
         {
           method:"GET",
           cache:"no-store"
@@ -1722,24 +1594,27 @@ async function loadNowcastTimes(){
 
     }
 
-    const text=
-      await response.text();
+    const json=
+      await response.json();
 
-    const times=
-      extractTimesFromCapabilities(
-        text
-      );
-
-    if(!times.length){
+    if(
+      !json.ok ||
+      !Array.isArray(
+        json.times
+      ) ||
+      !json.times.length
+    ){
 
       throw new Error(
-        "В GetCapabilities нет времён"
+        "Список времён пуст"
       );
 
     }
 
     allNowcastTimes=
-      times;
+      normalizeNowcastTimes(
+        json.times
+      );
 
     $("framesInfo").textContent=
       "Доступно: "+
@@ -1747,10 +1622,6 @@ async function loadNowcastTimes(){
       " кадров";
 
     await applyFrameCount();
-
-    /*
-      Последний реальный timestamp.
-    */
 
     if(radarFrames.length){
 
@@ -1764,65 +1635,55 @@ async function loadNowcastTimes(){
 
     }
 
-    /*
-      Если отражаемость уже включена,
-      обновляем карту.
-    */
-
     if(radarVisible){
 
       refreshReflectivity();
 
     }
 
-    return;
+    return true;
 
   }catch(error){
 
     console.warn(
-      "GetCapabilities недоступен:",
+      "Не удалось получить времена Nowcast:",
       error
     );
 
-  }
-
-  /*
-    CORS fallback.
-    
-    Сам радар при этом НЕ выключается.
-  */
-
-  allNowcastTimes=
-    buildFallbackTimes();
-
-  $("framesInfo").textContent=
-    "Последние 24 часа";
-
-  await applyFrameCount();
-
-  if(radarFrames.length){
-
-    currentFrame=
-      radarFrames.length-1;
-
-    $("range").value=
-      currentFrame;
-
-    updateRadarTimeline();
-
-  }
-
-  if(radarVisible){
-
     /*
-      Для fallback первый запрос делаем
-      без TIME — Nowcast сам отдаёт
-      последний доступный продукт.
+      Даже если список времён временно
+      недоступен, карта продолжает работать.
     */
 
-    refreshReflectivity(
-      true
-    );
+    allNowcastTimes=
+      buildFallbackTimes();
+
+    $("framesInfo").textContent=
+      "Последние 24 часа";
+
+    await applyFrameCount();
+
+    if(radarFrames.length){
+
+      currentFrame=
+        radarFrames.length-1;
+
+      $("range").value=
+        currentFrame;
+
+      updateRadarTimeline();
+
+    }
+
+    if(radarVisible){
+
+      refreshReflectivity(
+        true
+      );
+
+    }
+
+    return false;
 
   }
 
@@ -1831,6 +1692,133 @@ async function loadNowcastTimes(){
 
 /* =====================================================
    CURRENT TIME
+===================================================== */
+
+async function refreshCurrentRadarTime(){
+
+  try{
+
+    const response=
+      await fetch(
+        RADAR_API+
+        "?action=time",
+        {
+          method:"GET",
+          cache:"no-store"
+        }
+      );
+
+    if(!response.ok){
+      throw new Error(
+        "HTTP "+response.status
+      );
+    }
+
+    const json=
+      await response.json();
+
+    if(
+      !json.ok ||
+      !json.time
+    ){
+
+      throw new Error(
+        "Текущее время не получено"
+      );
+
+    }
+
+    const time=
+      snapTo10Minutes(
+        json.time
+      );
+
+    if(!time){
+      return;
+    }
+
+    /*
+      Добавляем свежий timestamp,
+      если его ещё нет.
+    */
+
+    if(
+      !allNowcastTimes.includes(
+        time
+      )
+    ){
+
+      allNowcastTimes.push(
+        time
+      );
+
+      allNowcastTimes=
+        normalizeNowcastTimes(
+          allNowcastTimes
+        );
+
+    }
+
+    /*
+      Автоматическое обновление переводит
+      только на новый самый свежий кадр.
+    */
+
+    const newestIndex=
+      allNowcastTimes.indexOf(
+        time
+      );
+
+    if(
+      newestIndex>=0
+    ){
+
+      const count=
+        Math.min(
+          frameCount,
+          allNowcastTimes.length
+        );
+
+      radarFrames=
+        allNowcastTimes.slice(
+          Math.max(
+            0,
+            allNowcastTimes.length-count
+          )
+        );
+
+      currentFrame=
+        radarFrames.length-1;
+
+      $("range").value=
+        currentFrame;
+
+      updateRadarTimeline();
+
+      buildRadarLabels();
+
+    }
+
+    if(radarVisible){
+
+      refreshReflectivity();
+
+    }
+
+  }catch(error){
+
+    console.warn(
+      "Не удалось обновить текущий кадр:",
+      error
+    );
+
+  }
+
+}
+
+
+/* =====================================================
+   GET CURRENT WMS TIME
 ===================================================== */
 
 function getCurrentWmsTime(){
@@ -1849,7 +1837,7 @@ function getCurrentWmsTime(){
 
 
 /* =====================================================
-   BUILD REAL WMS GETMAP URL
+   BUILD WMS URL
 ===================================================== */
 
 function buildWmsUrl(
@@ -1876,11 +1864,7 @@ function buildWmsUrl(
     bounds.getNorth();
 
   /*
-    Leaflet может дать BBOX,
-    пересекающий 180°.
-    
-    Для России/Европы обычного диапазона
-    достаточно.
+    Нормализация координат.
   */
 
   west=
@@ -1919,15 +1903,47 @@ function buildWmsUrl(
       )
     );
 
+  /*
+    Если карта пересекла 180°,
+    немного расширяем BBOX.
+  */
+
+  if(
+    east<=west
+  ){
+
+    east=west+0.001;
+
+  }
+
+  if(
+    north<=south
+  ){
+
+    north=south+0.001;
+
+  }
+
   const size=
     map.getSize();
+
+  /*
+    Не отправляем гигантские изображения.
+    Для мобильного устройства этого достаточно.
+  */
 
   const width=
     Math.max(
       512,
       Math.min(
         2048,
-        Math.round(size.x*window.devicePixelRatio)
+        Math.round(
+          size.x*
+          Math.min(
+            window.devicePixelRatio || 1,
+            2
+          )
+        )
       )
     );
 
@@ -1936,16 +1952,23 @@ function buildWmsUrl(
       512,
       Math.min(
         2048,
-        Math.round(size.y*window.devicePixelRatio)
+        Math.round(
+          size.y*
+          Math.min(
+            window.devicePixelRatio || 1,
+            2
+          )
+        )
       )
     );
 
   const params=
     new URLSearchParams();
 
-  /*
-    Именно WMS 1.1.1.
-  */
+  params.set(
+    "action",
+    "wms"
+  );
 
   params.set(
     "SERVICE",
@@ -1977,22 +2000,10 @@ function buildWmsUrl(
     "image/png"
   );
 
-  /*
-    Ключевой параметр.
-    
-    WMS должен возвращать прозрачность
-    там, где нет данных.
-  */
-
   params.set(
     "TRANSPARENT",
-    "true"
+    "TRUE"
   );
-
-  /*
-    В оригинальном radar-wms используется
-    EPSG:4326 для GetMap.
-  */
 
   params.set(
     "SRS",
@@ -2002,10 +2013,10 @@ function buildWmsUrl(
   params.set(
     "BBOX",
     [
-      west,
-      south,
-      east,
-      north
+      west.toFixed(6),
+      south.toFixed(6),
+      east.toFixed(6),
+      north.toFixed(6)
     ].join(",")
   );
 
@@ -2020,11 +2031,8 @@ function buildWmsUrl(
   );
 
   /*
-    TIME передаём только если он
-    действительно нужен.
-    
-    Если TIME отсутствует, backend Nowcast
-    выбирает самый новый RadarDataset.
+    Передаём TIME только для выбранного
+    пользователем кадра.
   */
 
   if(useTime){
@@ -2033,11 +2041,6 @@ function buildWmsUrl(
       getCurrentWmsTime();
 
     if(time){
-
-      /*
-        WMS допускает ISO-время.
-        Убираем миллисекунды.
-      */
 
       const d=
         new Date(time);
@@ -2048,16 +2051,13 @@ function buildWmsUrl(
         )
       ){
 
-        const clean=
+        params.set(
+          "TIME",
           d.toISOString()
             .replace(
               ".000Z",
               "Z"
-            );
-
-        params.set(
-          "TIME",
-          clean
+            )
         );
 
       }
@@ -2067,7 +2067,7 @@ function buildWmsUrl(
   }
 
   return (
-    NOWCAST_WMS+
+    RADAR_API+
     "?"+
     params.toString()
   );
@@ -2076,7 +2076,7 @@ function buildWmsUrl(
 
 
 /* =====================================================
-   CUSTOM WMS IMAGE OVERLAY
+   REMOVE RADAR
 ===================================================== */
 
 function removeReflectivityLayer(){
@@ -2100,69 +2100,8 @@ function removeReflectivityLayer(){
 }
 
 
-/*
-  Здесь не используется canvas.
-  
-  Это важно:
-  браузеру не нужно читать пиксели
-  чужого PNG.
-  
-  PNG просто отображается как ImageOverlay.
-*/
-
-function createReflectivityOverlay(
-  url
-){
-
-  if(!map){
-    return;
-  }
-
-  const bounds=
-    map.getBounds();
-
-  const image=
-    L.imageOverlay(
-      url,
-      bounds,
-      {
-        opacity:0.86,
-        interactive:false,
-        crossOrigin:false,
-        className:"clorad-radar"
-      }
-    );
-
-  image.on(
-    "load",
-    ()=>{
-      /*
-        Ничего не делаем.
-        PNG уже содержит прозрачные
-        области no-data.
-      */
-    }
-  );
-
-  image.on(
-    "error",
-    ()=>{
-      console.warn(
-        "Nowcast WMS image не загрузилась"
-      );
-    }
-  );
-
-  image.addTo(map);
-
-  reflectivityLayer=
-    image;
-
-}
-
-
 /* =====================================================
-   REFRESH RADAR
+   REFRESH
 ===================================================== */
 
 function refreshReflectivity(
@@ -2176,10 +2115,6 @@ function refreshReflectivity(
     return;
   }
 
-  /*
-    Отменяем отложенное обновление.
-  */
-
   if(radarRefreshTimer){
 
     clearTimeout(
@@ -2188,12 +2123,6 @@ function refreshReflectivity(
 
   }
 
-  /*
-    Небольшой debounce.
-    Поэтому при жестком pinch-zoom
-    десятки запросов не летят одновременно.
-  */
-
   radarRefreshTimer=
     setTimeout(
       ()=>{
@@ -2201,13 +2130,17 @@ function refreshReflectivity(
           newest
         );
       },
-      120
+      150
     );
 
 }
 
 
-async function loadReflectivityImage(
+/* =====================================================
+   LOAD RADAR IMAGE
+===================================================== */
+
+function loadReflectivityImage(
   newest=false
 ){
 
@@ -2221,15 +2154,6 @@ async function loadReflectivityImage(
   const requestId=
     ++radarRequestId;
 
-  /*
-    Если пользователь двигает карту,
-    сначала используем последний доступный
-    timestamp.
-    
-    newest=true означает:
-    вообще не передавать TIME.
-  */
-
   const url=
     buildWmsUrl(
       !newest
@@ -2240,10 +2164,9 @@ async function loadReflectivityImage(
   }
 
   /*
-    Не удаляем старый слой ДО загрузки нового.
-    
-    Благодаря этому при зуме карта
-    не мигает.
+    Сохраняем старый кадр.
+    Новый заменит его только после
+    полной загрузки.
   */
 
   const oldLayer=
@@ -2255,19 +2178,8 @@ async function loadReflectivityImage(
   const img=
     new Image();
 
-  /*
-    Для простого отображения WMS PNG
-    crossorigin не нужен.
-  */
-
   img.onload=
     ()=>{
-
-      /*
-        Если за это время пользователь
-        уже сделал другой запрос,
-        этот кадр устарел.
-      */
 
       if(
         requestId!==radarRequestId ||
@@ -2279,12 +2191,49 @@ async function loadReflectivityImage(
 
       }
 
+      /*
+        Проверяем, что карта всё ещё
+        находится примерно в том же месте.
+        Старый кадр не удаляем,
+        если пользователь уже изменил карту.
+      */
+
+      const currentBounds=
+        map.getBounds();
+
+      const center=
+        bounds.getCenter();
+
+      const currentCenter=
+        currentBounds.getCenter();
+
+      /*
+        Допуск большой специально:
+        нам важнее не оставлять белый экран.
+      */
+
+      const sameArea=
+        Math.abs(
+          center.lat-
+          currentCenter.lat
+        ) < 1.5 &&
+        Math.abs(
+          center.lng-
+          currentCenter.lng
+        ) < 2.5;
+
+      if(!sameArea){
+
+        return;
+
+      }
+
       const newLayer=
         L.imageOverlay(
           url,
           bounds,
           {
-            opacity:0.86,
+            opacity:1,
             interactive:false,
             className:"clorad-radar"
           }
@@ -2293,11 +2242,8 @@ async function loadReflectivityImage(
       newLayer.addTo(map);
 
       /*
-        Только после успешной загрузки
-        удаляем старый кадр.
-        
-        Поэтому при обновлении нет
-        большого мигания.
+        Старый слой удаляется только после
+        появления нового.
       */
 
       if(
@@ -2316,22 +2262,30 @@ async function loadReflectivityImage(
       reflectivityLayer=
         newLayer;
 
+      $("intensityValue").textContent=
+        "Радарные данные";
+
     };
 
   img.onerror=
     ()=>{
+
       console.warn(
-        "Не удалось получить Nowcast WMS:",
+        "Nowcast WMS не загрузился:",
         url
       );
 
-      /*
-        Старый рабочий кадр оставляем.
-      */
     };
 
+  /*
+    Cache-buster нужен только для браузера.
+    Сам TIME остаётся тем же.
+  */
+
   img.src=
-    url;
+    url+
+    "&_="+
+    Date.now();
 
 }
 
@@ -2359,11 +2313,6 @@ function updateReflectivity(){
     return;
 
   }
-
-  /*
-    Если времён пока нет,
-    запрашиваем newest без TIME.
-  */
 
   if(
     !radarFrames.length
@@ -2399,7 +2348,9 @@ function setFrameCount(
   if(
     !Number.isFinite(value)
   ){
+
     value=1;
+
   }
 
   const max=
@@ -2492,7 +2443,8 @@ function formatRadarTime(
       month:"2-digit",
       hour:"2-digit",
       minute:"2-digit",
-      hourCycle:"h23"
+      hourCycle:"h23",
+      timeZone:"Europe/Moscow"
     }
   ).format(date);
 
@@ -2530,7 +2482,9 @@ function updateRadarTimeline(){
       : "Последний кадр";
 
   $("intensityValue").textContent=
-    "Нет данных";
+    radarVisible
+      ? "Загрузка…"
+      : "Нет данных";
 
 }
 
@@ -2618,14 +2572,6 @@ $("range").addEventListener(
       );
 
     updateRadarTimeline();
-
-    /*
-      ВАЖНО:
-      кадр меняется только когда пользователь
-      двигает ползунок.
-      
-      Автоматического перехода нет.
-    */
 
     if(radarVisible){
 
@@ -2895,6 +2841,9 @@ oyaSwitch.onclick=
       radarRequestId++;
 
       removeReflectivityLayer();
+
+      $("intensityValue").textContent=
+        "Нет данных";
 
     }else{
 
@@ -3457,10 +3406,60 @@ document.addEventListener(
 
 
 /* =====================================================
+   AUTOMATIC RADAR UPDATE
+===================================================== */
+
+/*
+  Получаем новый timestamp примерно
+  раз в 10 минут.
+
+  Сам ползунок при этом НЕ двигается
+  постоянно сам по себе.
+
+  Автоматическое обновление происходит
+  только когда появляется новый реальный
+  timestamp Nowcast.
+*/
+
+async function automaticRadarUpdate(){
+
+  if(
+    document.hidden
+  ){
+    return;
+  }
+
+  await refreshCurrentRadarTime();
+
+}
+
+
+/* =====================================================
    START
 ===================================================== */
 
 loadNowcastTimes();
+
+/*
+  Проверяем новый реальный кадр
+  каждые 10 минут.
+*/
+
+radarAutoTimer=
+  setInterval(
+    automaticRadarUpdate,
+    10*60*1000
+  );
+
+/*
+  Первый автоматический запрос
+  через несколько секунд после запуска.
+*/
+
+setTimeout(
+  automaticRadarUpdate,
+  2500
+);
 
 </script>
 
