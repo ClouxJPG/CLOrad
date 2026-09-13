@@ -1,56 +1,50 @@
 // api/radar.js
 
 const NOWCAST = "https://www.nowcast.ru";
-const DEMO = `${NOWCAST}/demo/demo.html`;
-const TOKEN = `${NOWCAST}/get_token`;
-const WMS = `${NOWCAST}/baltrad_wsgi`;
-const VECTOR = `${NOWCAST}/vector_wsgi`;
+const DEMO_URL = `${NOWCAST}/demo/demo.html`;
+const TOKEN_URL = `${NOWCAST}/get_token`;
+const WMS_URL = `${NOWCAST}/baltrad_wsgi`;
+const VECTOR_URL = `${NOWCAST}/vector_wsgi`;
 
 const DEFAULT_LAYER =
   "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
 
+const UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1";
+
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
 }
 
-function json(res, status, data) {
+function sendJSON(res, status, data) {
   cors(res);
   res.status(status);
-  res.setHeader(
-    "Content-Type",
-    "application/json; charset=utf-8"
-  );
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(data));
 }
 
-/*
-========================================================
-Запрос как можно ближе к demo.js
-========================================================
-*/
+/* =====================================================
+   TOKEN
+===================================================== */
 
 async function getToken() {
-  const headers = {
-    "Accept": "application/json, text/plain, */*",
-    "Referer": DEMO,
-    "User-Agent":
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
-  };
-
-  const response = await fetch(TOKEN, {
+  const response = await fetch(TOKEN_URL, {
     method: "GET",
-    headers,
-    redirect: "follow"
+    redirect: "follow",
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      Referer: DEMO_URL,
+      "User-Agent": UA
+    }
   });
 
   const text = await response.text();
 
   if (!response.ok) {
     throw new Error(
-      `Nowcast /get_token: HTTP ${response.status}; ` +
-      `response: ${text.substring(0, 1000)}`
+      `/get_token HTTP ${response.status}: ${text.slice(0, 1000)}`
     );
   }
 
@@ -60,102 +54,73 @@ async function getToken() {
     data = JSON.parse(text);
   } catch {
     throw new Error(
-      "Nowcast /get_token вернул не JSON: " +
-      text.substring(0, 1000)
+      `/get_token вернул не JSON: ${text.slice(0, 1000)}`
     );
   }
 
   if (!data.token) {
-    throw new Error(
-      "Nowcast /get_token не вернул token: " +
-      text.substring(0, 1000)
-    );
+    throw new Error("В ответе Nowcast отсутствует token");
   }
 
-  return {
-    token: data.token,
-    headers
-  };
+  return data.token;
 }
 
-/*
-========================================================
-Добавление token
-========================================================
-*/
-
-function withToken(url, token) {
+function addToken(url, token) {
   const u = new URL(url);
   u.searchParams.set("token", token);
   return u.toString();
 }
 
-/*
-========================================================
-Запрос Nowcast с токеном
-========================================================
-*/
+/* =====================================================
+   NOWCAST REQUEST
+===================================================== */
 
-async function requestNowcast(url, options = {}) {
-  let auth = await getToken();
+async function nowcastFetch(url, options = {}) {
+  let token = await getToken();
 
-  let response = await fetch(
-    withToken(url, auth.token),
-    {
+  let response = await fetch(addToken(url, token), {
+    ...options,
+    redirect: "follow",
+    headers: {
+      Accept: "*/*",
+      Referer: DEMO_URL,
+      Origin: NOWCAST,
+      "User-Agent": UA,
+      ...(options.headers || {})
+    }
+  });
+
+  if (response.status === 403) {
+    token = await getToken();
+
+    response = await fetch(addToken(url, token), {
       ...options,
       redirect: "follow",
       headers: {
-        "Accept": "*/*",
-        "Referer": DEMO,
-        "User-Agent": auth.headers["User-Agent"],
+        Accept: "*/*",
+        Referer: DEMO_URL,
+        Origin: NOWCAST,
+        "User-Agent": UA,
         ...(options.headers || {})
       }
-    }
-  );
-
-  /*
-   * Токен живёт недолго.
-   * Если Nowcast ответил 403 — получаем новый.
-   */
-
-  if (response.status === 403) {
-    auth = await getToken();
-
-    response = await fetch(
-      withToken(url, auth.token),
-      {
-        ...options,
-        redirect: "follow",
-        headers: {
-          "Accept": "*/*",
-          "Referer": DEMO,
-          "User-Agent": auth.headers["User-Agent"],
-          ...(options.headers || {})
-        }
-      }
-    );
+    });
   }
 
   return response;
 }
 
-/*
-========================================================
-GETCAPABILITIES
-========================================================
-*/
+/* =====================================================
+   GETCAPABILITIES
+===================================================== */
 
-async function capabilities() {
+async function getCapabilities() {
   const url =
-    `${WMS}?SERVICE=WMS` +
+    `${WMS_URL}?SERVICE=WMS` +
     `&VERSION=1.1.1` +
     `&REQUEST=GetCapabilities`;
 
-  const response =
-    await requestNowcast(url);
-
-  const text =
-    await response.text();
+  const response = await nowcastFetch(url);
+  const text = await response.text();
 
   return {
     response,
@@ -163,40 +128,66 @@ async function capabilities() {
   };
 }
 
-/*
-========================================================
-TIME
-========================================================
-*/
+/* =====================================================
+   TIMES
+===================================================== */
 
 function extractTimes(xml) {
   const set = new Set();
 
-  const re =
+  const regex =
     /20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
 
-  const matches =
-    xml.match(re) || [];
+  const matches = xml.match(regex) || [];
 
-  for (const t of matches) {
-    set.add(t);
+  for (const time of matches) {
+    set.add(time);
   }
 
   return [...set].sort();
 }
 
+/* =====================================================
+   PNG ANALYSIS
+===================================================== */
+
 /*
-========================================================
-IMAGE
-========================================================
+   PNG имеет сигнатуру:
+   89 50 4E 47 0D 0A 1A 0A
+
+   Здесь мы не декодируем PNG полностью.
+   Просто определяем, что сервер действительно
+   вернул PNG, а не XML/ошибку.
 */
 
-async function radarImage({
+function isPNG(buffer) {
+  if (!buffer || buffer.length < 24) {
+    return false;
+  }
+
+  return (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  );
+}
+
+/* =====================================================
+   WMS GETMAP
+===================================================== */
+
+async function requestMap({
   time,
   layer,
+  srs,
+  bbox,
   width,
-  height,
-  bbox
+  height
 }) {
   const params = new URLSearchParams();
 
@@ -211,43 +202,23 @@ async function radarImage({
 
   params.set("STYLES", "");
 
-  params.set("SRS", "EPSG:4326");
+  params.set("SRS", srs);
 
-  params.set(
-    "BBOX",
-    bbox || "20,40,180,82"
-  );
+  params.set("BBOX", bbox);
 
-  params.set(
-    "WIDTH",
-    String(width || 1200)
-  );
+  params.set("WIDTH", String(width));
+  params.set("HEIGHT", String(height));
 
-  params.set(
-    "HEIGHT",
-    String(height || 700)
-  );
+  params.set("FORMAT", "image/png");
+  params.set("TRANSPARENT", "TRUE");
 
-  params.set(
-    "FORMAT",
-    "image/png"
-  );
+  params.set("TIME", time);
 
-  params.set(
-    "TRANSPARENT",
-    "TRUE"
-  );
-
-  params.set(
-    "TIME",
-    time
-  );
-
-  const url =
-    `${WMS}?${params.toString()}`;
+  const cleanUrl =
+    `${WMS_URL}?${params.toString()}`;
 
   const response =
-    await requestNowcast(url);
+    await nowcastFetch(cleanUrl);
 
   const buffer =
     Buffer.from(
@@ -256,38 +227,145 @@ async function radarImage({
 
   return {
     response,
-    buffer
+    buffer,
+    url: cleanUrl,
+    png: isPNG(buffer)
   };
 }
 
-/*
-========================================================
-VECTOR
-========================================================
-*/
+/* =====================================================
+   AUTOMATIC WMS SEARCH
+===================================================== */
 
-async function vector({
-  time,
-  layer
-}) {
-  const params =
-    new URLSearchParams();
+async function findWorkingMap(time, layer) {
+  /*
+    Пробуем наиболее вероятные варианты.
+  */
 
-  params.set(
-    "time",
-    time
-  );
+  const attempts = [
 
+    // 1. WGS84 — стандартный вариант WMS 1.1.1
+    {
+      name: "EPSG:4326-EuropeRussia",
+      srs: "EPSG:4326",
+      bbox: "20,40,180,82",
+      width: 1200,
+      height: 700
+    },
+
+    // 2. Более широкий охват
+    {
+      name: "EPSG:4326-wide",
+      srs: "EPSG:4326",
+      bbox: "-20,35,180,85",
+      width: 1200,
+      height: 700
+    },
+
+    // 3. Только европейская часть
+    {
+      name: "EPSG:4326-EuropeanRussia",
+      srs: "EPSG:4326",
+      bbox: "20,40,100,75",
+      width: 1200,
+      height: 700
+    },
+
+    // 4. Web Mercator
+    {
+      name: "EPSG:3857-world",
+      srs: "EPSG:3857",
+      bbox:
+        "-20037508,-20037508,20037508,20037508",
+      width: 1200,
+      height: 700
+    },
+
+    // 5. Web Mercator — Россия
+    {
+      name: "EPSG:3857-Russia",
+      srs: "EPSG:3857",
+      bbox:
+        "2226389,4865942,20037508,15538711",
+      width: 1200,
+      height: 700
+    }
+  ];
+
+  const results = [];
+
+  for (const attempt of attempts) {
+    try {
+      const result =
+        await requestMap({
+          time,
+          layer,
+          srs: attempt.srs,
+          bbox: attempt.bbox,
+          width: attempt.width,
+          height: attempt.height
+        });
+
+      const info = {
+        name: attempt.name,
+        status: result.response.status,
+        contentType:
+          result.response.headers.get("content-type"),
+        bytes: result.buffer.length,
+        png: result.png,
+        url: result.url
+      };
+
+      results.push(info);
+
+      /*
+        Первый настоящий PNG используем.
+      */
+
+      if (
+        result.response.ok &&
+        result.png
+      ) {
+        return {
+          ...result,
+          attempt: info,
+          attempts: results
+        };
+      }
+
+    } catch (e) {
+      results.push({
+        name: attempt.name,
+        ok: false,
+        error: e.message
+      });
+    }
+  }
+
+  return {
+    result: null,
+    attempts: results
+  };
+}
+
+/* =====================================================
+   VECTOR
+===================================================== */
+
+async function getVector(time, layer) {
+  const params = new URLSearchParams();
+
+  params.set("time", time);
   params.set(
     "title",
     layer || DEFAULT_LAYER
   );
 
   const url =
-    `${VECTOR}?${params.toString()}`;
+    `${VECTOR_URL}?${params.toString()}`;
 
   const response =
-    await requestNowcast(url);
+    await nowcastFetch(url);
 
   const text =
     await response.text();
@@ -308,11 +386,9 @@ async function vector({
   };
 }
 
-/*
-========================================================
-HANDLER
-========================================================
-*/
+/* =====================================================
+   HANDLER
+===================================================== */
 
 export default async function handler(req, res) {
   cors(res);
@@ -327,31 +403,28 @@ export default async function handler(req, res) {
 
   try {
 
-    /*
-    ----------------------------------------------
-    TOKEN
-    ----------------------------------------------
-    */
+    /* ================================================
+       TOKEN
+    ================================================ */
 
     if (action === "token") {
       try {
-        const result =
+        const token =
           await getToken();
 
-        return json(
+        return sendJSON(
           res,
           200,
           {
             ok: true,
             source: "nowcast",
             tokenReceived: true,
-            tokenLength:
-              result.token.length
+            tokenLength: token.length
           }
         );
 
       } catch (e) {
-        return json(
+        return sendJSON(
           res,
           502,
           {
@@ -363,18 +436,16 @@ export default async function handler(req, res) {
       }
     }
 
-    /*
-    ----------------------------------------------
-    TIMES
-    ----------------------------------------------
-    */
+    /* ================================================
+       TIMES
+    ================================================ */
 
     if (action === "nowcast-times") {
       const result =
-        await capabilities();
+        await getCapabilities();
 
       if (!result.response.ok) {
-        return json(
+        return sendJSON(
           res,
           result.response.status,
           {
@@ -382,10 +453,8 @@ export default async function handler(req, res) {
             source: "nowcast",
             status:
               result.response.status,
-            error:
-              "GetCapabilities failed",
             body:
-              result.text.substring(0, 3000)
+              result.text.slice(0, 3000)
           }
         );
       }
@@ -393,7 +462,7 @@ export default async function handler(req, res) {
       const times =
         extractTimes(result.text);
 
-      return json(
+      return sendJSON(
         res,
         200,
         {
@@ -409,62 +478,51 @@ export default async function handler(req, res) {
       );
     }
 
-    /*
-    ----------------------------------------------
-    IMAGE
-    ----------------------------------------------
-    */
+    /* ================================================
+       IMAGE
+    ================================================ */
 
     if (action === "nowcast-image") {
       const time =
         req.query.time;
 
+      const layer =
+        req.query.layer ||
+        DEFAULT_LAYER;
+
       if (!time) {
-        return json(
+        return sendJSON(
           res,
           400,
           {
             ok: false,
             error:
-              "Не указан time"
+              "Не указан параметр time"
           }
         );
       }
 
       const result =
-        await radarImage({
+        await findWorkingMap(
           time,
-          layer:
-            req.query.layer ||
-            DEFAULT_LAYER,
-          width:
-            Number(req.query.width) ||
-            1200,
-          height:
-            Number(req.query.height) ||
-            700,
-          bbox:
-            req.query.bbox ||
-            "20,40,180,82"
-        });
+          layer
+        );
 
-      if (!result.response.ok) {
-        const body =
-          result.buffer
-            .toString("utf8")
-            .substring(0, 3000);
-
-        return json(
+      if (
+        !result ||
+        !result.buffer ||
+        !result.png
+      ) {
+        return sendJSON(
           res,
-          result.response.status,
+          502,
           {
             ok: false,
             source: "nowcast",
-            status:
-              result.response.status,
             error:
-              "WMS GetMap failed",
-            body
+              "Не найден рабочий WMS PNG",
+            attempts:
+              result?.attempts || []
           }
         );
       }
@@ -488,23 +546,35 @@ export default async function handler(req, res) {
         time
       );
 
+      res.setHeader(
+        "X-Nowcast-Layer",
+        layer
+      );
+
+      res.setHeader(
+        "X-WMS-Variant",
+        result.attempt.name
+      );
+
       res.end(result.buffer);
 
       return;
     }
 
-    /*
-    ----------------------------------------------
-    VECTOR
-    ----------------------------------------------
-    */
+    /* ================================================
+       DEBUG IMAGE
+    ================================================ */
 
-    if (action === "nowcast") {
+    if (action === "nowcast-image-debug") {
       const time =
         req.query.time;
 
+      const layer =
+        req.query.layer ||
+        DEFAULT_LAYER;
+
       if (!time) {
-        return json(
+        return sendJSON(
           res,
           400,
           {
@@ -515,18 +585,60 @@ export default async function handler(req, res) {
         );
       }
 
+      const result =
+        await findWorkingMap(
+          time,
+          layer
+        );
+
+      return sendJSON(
+        res,
+        200,
+        {
+          ok:
+            !!result?.png,
+          time,
+          layer,
+          selected:
+            result?.attempt || null,
+          attempts:
+            result?.attempts || []
+        }
+      );
+    }
+
+    /* ================================================
+       VECTOR
+    ================================================ */
+
+    if (action === "nowcast") {
+      const time =
+        req.query.time;
+
       const layer =
         req.query.layer ||
         DEFAULT_LAYER;
 
+      if (!time) {
+        return sendJSON(
+          res,
+          400,
+          {
+            ok: false,
+            error:
+              "Не указан time"
+          }
+        );
+      }
+
       const result =
-        await vector({
+        await getVector(
           time,
           layer
-        });
+        );
 
       if (!result.response.ok) {
-        return json(
+        return sendJSON(
           res,
           result.response.status,
           {
@@ -540,7 +652,7 @@ export default async function handler(req, res) {
         );
       }
 
-      return json(
+      return sendJSON(
         res,
         200,
         {
@@ -556,15 +668,13 @@ export default async function handler(req, res) {
       );
     }
 
-    /*
-    ----------------------------------------------
-    RAW CAPABILITIES
-    ----------------------------------------------
-    */
+    /* ================================================
+       RAW CAPABILITIES
+    ================================================ */
 
     if (action === "capabilities") {
       const result =
-        await capabilities();
+        await getCapabilities();
 
       cors(res);
 
@@ -582,147 +692,173 @@ export default async function handler(req, res) {
       return;
     }
 
-    /*
-    ----------------------------------------------
-    DIAGNOSTIC
-    ----------------------------------------------
-    */
+    /* ================================================
+       DIAGNOSTIC
+    ================================================ */
 
     if (action === "diagnostic") {
-      const start =
+      const started =
         Date.now();
 
-      const result = {
+      const output = {
         ok: true,
         service:
-          "CLOrad → Nowcast diagnostic v2",
+          "CLOrad → Nowcast diagnostic v3",
         nowcast: NOWCAST,
         requests: []
       };
 
-      /*
-      homepage
-      */
-
-      const home =
-        await fetch(
-          `${NOWCAST}/`,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0"
-            }
-          }
-        );
-
-      result.requests.push({
-        name: "homepage",
-        status:
-          home.status,
-        ok:
-          home.ok
-      });
-
-      /*
-      demo
-      */
-
-      const demo =
-        await fetch(
-          DEMO,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0"
-            }
-          }
-        );
-
-      result.requests.push({
-        name: "demo",
-        status:
-          demo.status,
-        ok:
-          demo.ok
-      });
-
-      /*
-      token
-      */
+      /* homepage */
 
       try {
-        const auth =
+        const r =
+          await fetch(
+            `${NOWCAST}/`,
+            {
+              headers: {
+                "User-Agent": UA
+              }
+            }
+          );
+
+        output.requests.push({
+          name: "homepage",
+          status: r.status,
+          ok: r.ok
+        });
+
+      } catch (e) {
+        output.ok = false;
+
+        output.requests.push({
+          name: "homepage",
+          ok: false,
+          error: e.message
+        });
+      }
+
+      /* demo */
+
+      try {
+        const r =
+          await fetch(
+            DEMO_URL,
+            {
+              headers: {
+                "User-Agent": UA
+              }
+            }
+          );
+
+        output.requests.push({
+          name: "demo",
+          status: r.status,
+          ok: r.ok
+        });
+
+      } catch (e) {
+        output.ok = false;
+
+        output.requests.push({
+          name: "demo",
+          ok: false,
+          error: e.message
+        });
+      }
+
+      /* token */
+
+      try {
+        const token =
           await getToken();
 
-        result.requests.push({
+        output.requests.push({
           name: "get_token",
           status: 200,
           ok: true,
           tokenReceived: true,
           tokenLength:
-            auth.token.length
+            token.length
         });
 
-        /*
-        capabilities
-        */
+      } catch (e) {
+        output.ok = false;
 
-        const cap =
-          await capabilities();
-
-        result.requests.push({
-          name:
-            "GetCapabilities_with_token",
-          status:
-            cap.response.status,
-          ok:
-            cap.response.ok,
-          contentType:
-            cap.response.headers.get(
-              "content-type"
-            ),
-          bodyPreview:
-            cap.text.substring(0, 1000)
+        output.requests.push({
+          name: "get_token",
+          ok: false,
+          error: e.message
         });
 
-        /*
-        Получаем настоящий timestamp,
-        найденный в Capabilities.
-        */
+        return sendJSON(
+          res,
+          502,
+          output
+        );
+      }
 
-        const times =
-          extractTimes(cap.text);
+      /* capabilities */
 
-        const testTime =
+      const cap =
+        await getCapabilities();
+
+      output.requests.push({
+        name:
+          "GetCapabilities_with_token",
+        status:
+          cap.response.status,
+        ok:
+          cap.response.ok,
+        contentType:
+          cap.response.headers.get(
+            "content-type"
+          ),
+        bodyPreview:
+          cap.text.slice(0, 800)
+      });
+
+      if (!cap.response.ok) {
+        output.ok = false;
+
+        return sendJSON(
+          res,
+          502,
+          output
+        );
+      }
+
+      /* times */
+
+      const times =
+        extractTimes(cap.text);
+
+      const latest =
+        times.length
+          ? times[times.length - 1]
+          : null;
+
+      output.requests.push({
+        name:
+          "latest_timestamp",
+        ok:
+          !!latest,
+        timestamp:
+          latest,
+        totalTimes:
           times.length
-            ? times[times.length - 1]
-            : null;
+      });
 
-        result.requests.push({
-          name:
-            "latest_timestamp",
-          ok:
-            !!testTime,
-          timestamp:
-            testTime,
-          totalTimes:
-            times.length
-        });
+      /* vector */
 
-        /*
-        vector с настоящим временем
-        */
-
-        if (testTime) {
+      if (latest) {
+        try {
           const v =
-            await vector({
-              time:
-                testTime,
-              layer:
-                DEFAULT_LAYER
-            });
+            await getVector(
+              latest,
+              DEFAULT_LAYER
+            );
 
-          result.requests.push({
+          output.requests.push({
             name:
               "vector_with_real_timestamp",
             status:
@@ -739,73 +875,76 @@ export default async function handler(req, res) {
                 : null
           });
 
-          /*
-          WMS image с настоящим временем
-          */
+        } catch (e) {
+          output.ok = false;
 
-          const img =
-            await radarImage({
-              time:
-                testTime,
-              layer:
-                DEFAULT_LAYER,
-              width: 800,
-              height: 600,
-              bbox:
-                "20,40,180,82"
-            });
-
-          result.requests.push({
+          output.requests.push({
             name:
-              "WMS_GetMap_real_timestamp",
-            status:
-              img.response.status,
-            ok:
-              img.response.ok,
-            contentType:
-              img.response.headers.get(
-                "content-type"
-              ),
-            bytes:
-              img.buffer.length
+              "vector_with_real_timestamp",
+            ok: false,
+            error: e.message
           });
         }
 
-      } catch (e) {
-        result.ok = false;
+        /* WMS */
 
-        result.requests.push({
-          name:
-            "authenticated_requests",
-          ok: false,
-          error:
-            e.message
-        });
+        try {
+          const map =
+            await findWorkingMap(
+              latest,
+              DEFAULT_LAYER
+            );
+
+          output.requests.push({
+            name:
+              "WMS_GetMap_auto",
+            ok:
+              !!map?.png,
+            selected:
+              map?.attempt || null,
+            attempts:
+              map?.attempts || []
+          });
+
+          if (!map?.png) {
+            output.ok = false;
+          }
+
+        } catch (e) {
+          output.ok = false;
+
+          output.requests.push({
+            name:
+              "WMS_GetMap_auto",
+            ok: false,
+            error: e.message
+          });
+        }
       }
 
-      result.summary = {
+      output.summary = {
         durationMs:
-          Date.now() - start,
+          Date.now() - started,
+        totalTimes:
+          times.length,
         failedRequests:
-          result.requests.filter(
+          output.requests.filter(
             x => x.ok === false
           ).length
       };
 
-      return json(
+      return sendJSON(
         res,
-        result.ok ? 200 : 502,
-        result
+        output.ok ? 200 : 502,
+        output
       );
     }
 
-    /*
-    ----------------------------------------------
-    UNKNOWN
-    ----------------------------------------------
-    */
+    /* ================================================
+       UNKNOWN
+    ================================================ */
 
-    return json(
+    return sendJSON(
       res,
       400,
       {
@@ -817,6 +956,7 @@ export default async function handler(req, res) {
           "token",
           "nowcast-times",
           "nowcast-image",
+          "nowcast-image-debug",
           "nowcast",
           "capabilities"
         ]
@@ -824,7 +964,12 @@ export default async function handler(req, res) {
     );
 
   } catch (e) {
-    return json(
+    console.error(
+      "CLOrad radar error:",
+      e
+    );
+
+    return sendJSON(
       res,
       500,
       {
