@@ -5,428 +5,315 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
 <style>
 /* =========================
-   BASE
+BASE
 ========================= */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151b21;color:#eee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+html,body,#map{width:100%;height:100%;margin:0}
+body{overflow:hidden;background:#11161b;color:#e9ecef;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 button,input{font:inherit;border:0;outline:0}
 button{cursor:pointer}
-#map{position:fixed;inset:0;background:#20262c}
-.leaflet-control-attribution{font-size:9px!important;background:rgba(10,14,18,.7)!important;color:#89919a!important}
-.leaflet-control-attribution a{color:#9ba3aa!important}
+#map{position:fixed;inset:0;z-index:0}
+.leaflet-control-attribution{background:#11161bcc!important;color:#89929a!important;font-size:9px!important}
+.leaflet-control-attribution a{color:#9ca5ac!important}
 
 /* =========================
-   HEADER
+HEADER
 ========================= */
-.header{position:fixed;z-index:20;top:0;left:0;right:0;height:125px;background:#10151b;border-bottom:1px solid #20262c}
-.brand{position:absolute;left:20px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:10px}
-.brand-name{font-size:39px;font-weight:800;letter-spacing:-2px;line-height:1;color:#f4f5f6}
+.header{position:fixed;z-index:20;top:0;left:0;right:0;height:125px;background:#10151b;border-bottom:1px solid #252c33}
+.brand{position:absolute;left:20px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:11px}
+.name{font-size:39px;font-weight:800;letter-spacing:-2px;color:#f4f5f6}
 
 /* =========================
-   RADAR LOGO
+RADAR LOGO
 ========================= */
-.radar-logo{position:relative;width:53px;height:53px;border:2px solid #54e7a0;border-radius:50%;overflow:hidden;background:#11171c;box-shadow:0 0 12px #54e7a01c}
-.radar-logo:before,.radar-logo:after{content:"";position:absolute;left:50%;top:50%;border:1px solid #54e7a066;border-radius:50%;transform:translate(-50%,-50%)}
-.radar-logo:before{width:35px;height:35px}
-.radar-logo:after{width:19px;height:19px}
-.radar-dot{position:absolute;z-index:4;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#54e7a0;transform:translate(-50%,-50%);box-shadow:0 0 8px #54e7a0}
-.radar-sweep{position:absolute;z-index:2;left:50%;top:50%;width:48%;height:48%;transform-origin:0 0;background:linear-gradient(45deg,#54e7a099,#54e7a000);clip-path:polygon(0 0,100% 0,0 100%);animation:sweep 2.7s linear infinite}
-@keyframes sweep{to{transform:rotate(360deg)}}
+.logo{width:54px;height:54px;border:2px solid #50e29a;border-radius:50%;position:relative;overflow:hidden;background:#11181d;box-shadow:0 0 12px #50e29a18}
+.logo:before,.logo:after{content:"";position:absolute;border:1px solid #50e29a66;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
+.logo:before{width:38px;height:38px}.logo:after{width:20px;height:20px}
+.dot{position:absolute;z-index:5;width:6px;height:6px;border-radius:50%;background:#50e29a;left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px #50e29a}
+.sweep{position:absolute;z-index:2;width:52%;height:52%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#50e29a99,#50e29a00);clip-path:polygon(0 0,100% 0,0 100%);animation:radar 2.6s linear infinite}
+@keyframes radar{to{transform:rotate(360deg)}}
 
 /* =========================
-   HEADER BUTTONS
+HEADER BUTTONS
 ========================= */
-.header-actions{position:absolute;right:17px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:8px}
-.hbtn{width:52px;height:52px;background:transparent;color:#b9c0c7;border-radius:10px;display:grid;place-items:center}
-.hbtn:hover{background:#202832}
-.hbtn.search{width:57px;height:57px;background:#202832;border:1px solid #2c353f}
-.hbtn svg{width:31px;height:31px}
-.notify{position:relative}
-.notify:after{content:"";position:absolute;right:7px;top:7px;width:9px;height:9px;border-radius:50%;background:#ff5c69}
+.actions{position:absolute;right:17px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:5px}
+.h{width:53px;height:53px;background:transparent;color:#b9c0c6;border-radius:10px;display:grid;place-items:center}
+.h svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.h.search{width:58px;height:58px;background:#202832;border:1px solid #303a44}
+.bell{position:relative}.bell:after{content:"";position:absolute;right:7px;top:7px;width:9px;height:9px;border-radius:50%;background:#ff5c68}
 
 /* =========================
-   NAV
+NAVIGATION
 ========================= */
-.nav{position:fixed;z-index:19;top:125px;left:0;right:0;height:130px;background:#273039;display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid #39434c}
+.nav{position:fixed;z-index:19;top:125px;left:0;right:0;height:130px;background:#273039;display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid #3b454e}
 .nav::-webkit-scrollbar{display:none}
-.nav-item{position:relative;min-width:112px;height:130px;background:transparent;color:#aab2ba;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:19px}
-.nav-item svg{width:37px;height:37px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.nav-item.active{color:#55e5a1}
-.nav-item.active:after{content:"";position:absolute;bottom:0;left:10px;right:10px;height:4px;background:#55e5a1}
+.n{position:relative;min-width:113px;height:130px;background:transparent;color:#aab1b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:19px}
+.n svg{width:37px;height:37px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.n.active{color:#55e3a0}
+.n.active:after{content:"";position:absolute;bottom:0;left:10px;right:10px;height:4px;background:#55e3a0}
 
 /* =========================
-   MAP TOOLS
+MAP TOOLS
 ========================= */
-.map-tools{position:fixed;z-index:8;left:15px;top:275px;display:flex;flex-direction:column;gap:9px}
-.map-tool{width:74px;height:74px;border-radius:13px;background:#1b222a;border:1px solid #39434d;color:#e0e4e7;display:grid;place-items:center;box-shadow:0 5px 16px #0004}
-.map-tool svg{width:37px;height:37px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-.map-tool:active{transform:scale(.96)}
+.tools{position:fixed;z-index:8;left:15px;top:275px;display:flex;flex-direction:column;gap:9px}
+.tool{width:74px;height:74px;border-radius:13px;background:#1b222aeb;border:1px solid #3a444e;color:#e1e5e8;display:grid;place-items:center;box-shadow:0 5px 16px #0005}
+.tool svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* =========================
-   CENTER
+CENTER CROSS
 ========================= */
-.center{position:fixed;z-index:3;left:50%;top:55%;transform:translate(-50%,-50%);width:50px;height:50px;pointer-events:none;opacity:.7}
-.center:before,.center:after{content:"";position:absolute;background:#c3c8cc}
-.center:before{width:2px;height:50px;left:24px}
-.center:after{width:50px;height:2px;top:24px}
+.cross{position:fixed;z-index:3;left:50%;top:56%;width:50px;height:50px;transform:translate(-50%,-50%);pointer-events:none;opacity:.6}
+.cross:before,.cross:after{content:"";position:absolute;background:#c4c9cc}
+.cross:before{width:2px;height:50px;left:24px}.cross:after{width:50px;height:2px;top:24px}
 
 /* =========================
-   LAYERS
+LAYERS
 ========================= */
-.layers{position:fixed;z-index:8;left:15px;top:53%;transform:translateY(-50%);width:276px;background:#182028f5;border:1px solid #39434d;border-radius:16px;padding:9px 14px;box-shadow:0 12px 30px #0005}
-.layer{height:72px;display:flex;align-items:center;gap:13px}
-.layer-icon{width:39px;height:39px;display:grid;place-items:center;color:#54e7a0;flex:none}
-.layer-icon.blue{color:#55a8ff}.layer-icon.red{color:#ff7279}
-.layer-icon svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.layer-name{font-size:21px;color:#e4e7e9;flex:1}
-.switch{width:65px;height:39px;border-radius:25px;background:#4a535c;position:relative;flex:none;transition:.2s}
-.switch i{position:absolute;left:4px;top:4px;width:31px;height:31px;border-radius:50%;background:#f1f3f4;transition:.2s;box-shadow:0 2px 5px #0004}
-.switch.on{background:#45d58d}
-.switch.on i{left:30px}
+.layers{position:fixed;z-index:8;left:15px;top:53%;transform:translateY(-50%);width:276px;background:#182028f5;border:1px solid #39434d;border-radius:16px;padding:8px 13px;box-shadow:0 12px 30px #0006}
+.layer{height:72px;display:flex;align-items:center;gap:12px}
+.li{width:39px;height:39px;display:grid;place-items:center;color:#55e4a0;flex:none}
+.li.blue{color:#4fa9ff}.li.red{color:#ff7279}
+.li svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.lt{font-size:21px;color:#e5e8ea;flex:1}
+.sw{width:65px;height:39px;border-radius:22px;background:#525b63;position:relative;flex:none;transition:.2s}
+.sw i{position:absolute;width:31px;height:31px;left:4px;top:4px;border-radius:50%;background:#f2f4f5;transition:.2s}
+.sw.on{background:#45d58d}.sw.on i{left:30px}
 
 /* =========================
-   DATA STRIP
+DATA
 ========================= */
-.data{position:fixed;z-index:7;left:70px;right:70px;bottom:153px;height:91px;border-radius:12px;background:#141a20f5;border:1px solid #2f3943;display:grid;grid-template-columns:1.2fr 1fr 1fr;overflow:hidden}
-.data-cell{padding:13px 18px;border-right:1px solid #303943}
-.data-cell:last-child{border:0}
-.data-label{font-size:12px;color:#858e96;letter-spacing:1px;text-transform:uppercase;margin-bottom:7px}
-.data-value{font-size:19px;font-weight:650}
+.data{position:fixed;z-index:7;left:70px;right:70px;bottom:153px;height:91px;border:1px solid #303a44;border-radius:12px;background:#141a20f5;display:grid;grid-template-columns:1.2fr 1fr 1fr;overflow:hidden}
+.cell{padding:13px 18px;border-right:1px solid #303943}
+.cell:last-child{border:0}
+.label{font-size:12px;color:#858e96;letter-spacing:1px;margin-bottom:7px;text-transform:uppercase}
+.value{font-size:19px;font-weight:650}
 
 /* =========================
-   ALERT
+ALERT
 ========================= */
-.alert{position:fixed;z-index:10;left:70px;right:70px;bottom:247px;min-height:76px;border-radius:13px;background:#59636df2;border:1px solid #69737c;display:none;align-items:center;padding:12px 15px;box-shadow:0 8px 25px #0005}
+.alert{position:fixed;z-index:10;left:70px;right:70px;bottom:247px;min-height:76px;border-radius:13px;background:#59636df2;border:1px solid #69737c;display:none;align-items:center;padding:12px 15px;box-shadow:0 8px 25px #0006}
 .alert.show{display:flex}
-.alert svg{width:31px;height:31px;fill:none;stroke:#ffd22e;stroke-width:2;flex:none}
-.alert-text{margin-left:10px;font-size:18px;line-height:1.3}
-.alert-text b{font-weight:500}
-.alert-close{margin-left:auto;background:transparent;color:#dce0e3;font-size:28px}
+.alert svg{width:31px;height:31px;fill:none;stroke:#ffd42e;stroke-width:2;flex:none}
+.alert span{font-size:18px;line-height:1.3;margin-left:10px}
+.close{margin-left:auto;background:transparent;color:#dce0e3;font-size:29px}
 
 /* =========================
-   TIMELINE
+TIMELINE
 ========================= */
-.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:10px;height:126px;border-radius:13px;background:#141a20f7;border:1px solid #303a44;box-shadow:0 8px 30px #0005}
-.timeline-title{text-align:center;height:43px;display:flex;align-items:center;justify-content:center;font-size:15px}
-.timeline-row{height:74px;display:flex;align-items:center;gap:7px;padding:0 10px}
-.time-button{flex:none;width:48px;height:48px;border-radius:50%;background:#eef0f1;color:#11171c;display:grid;place-items:center}
-.time-button.small{width:43px;height:43px;border-radius:11px;background:#202832;color:#e2e5e7;border:1px solid #37414b}
-.time-button svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:10px;height:126px;border:1px solid #303a44;border-radius:13px;background:#141a20f7;box-shadow:0 8px 30px #0006}
+.t-title{height:43px;display:flex;justify-content:center;align-items:center;font-size:15px}
+.t-row{height:74px;display:flex;align-items:center;gap:7px;padding:0 10px}
+.tb{width:48px;height:48px;flex:none;border-radius:50%;background:#f0f2f3;color:#10161b;display:grid;place-items:center}
+.tb.small{width:43px;height:43px;border-radius:11px;background:#202832;color:#e0e4e7;border:1px solid #37414b}
+.tb svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .slider{flex:1;min-width:0}
-input[type=range]{appearance:none;width:100%;height:7px;background:#777f86;border-radius:8px;outline:0}
-input[type=range]::-webkit-slider-thumb{appearance:none;width:32px;height:32px;border-radius:50%;background:#f7f8f8;border:0}
-input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;background:#f7f8f8;border:0}
-.labels{display:flex;justify-content:space-between;color:#a1a8ae;font-size:11px;margin-top:8px;padding:0 2px}
+input[type=range]{appearance:none;width:100%;height:7px;border-radius:8px;background:#777f86}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:32px;height:32px;border-radius:50%;background:#f8f9f9}
+input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;background:#f8f9f9;border:0}
+.times{display:flex;justify-content:space-between;color:#9da5ab;font-size:11px;margin-top:8px}
 
 /* =========================
-   POPUPS
+POPUPS
 ========================= */
-.menu,.search,.settings{position:fixed;z-index:40;background:#181f27;border:1px solid #343e48;border-radius:14px;box-shadow:0 15px 45px #0008;display:none}
+.popup{position:fixed;z-index:50;background:#181f27;border:1px solid #35404a;border-radius:13px;box-shadow:0 15px 45px #0008;display:none}
+.popup.open{display:block}
+.searchbox{right:12px;top:82px;width:310px;padding:9px}
+.searchbox input{width:100%;height:44px;border-radius:9px;background:#252e37;color:#fff;padding:0 12px}
 .menu{right:12px;top:80px;width:220px;padding:7px}
-.menu button{width:100%;padding:12px;background:transparent;color:#d8dde1;text-align:left;border-radius:9px}
+.menu button{display:block;width:100%;padding:12px;background:transparent;color:#dce0e3;text-align:left;border-radius:8px}
 .menu button:hover{background:#252e37}
-.search{right:12px;top:82px;width:310px;padding:9px}
-.search.open,.menu.open,.settings.open{display:block}
-.search input{width:100%;height:44px;border-radius:9px;background:#252e37;color:#fff;padding:0 12px}
-.settings{right:15px;top:270px;width:250px;padding:10px}
-.settings button{display:block;width:100%;padding:12px;background:#232c35;color:#dce1e4;border-radius:8px;margin:4px 0;text-align:left}
-.settings button.active{color:#55e5a1}
+.settings{right:15px;top:270px;width:250px;padding:9px}
+.settings button{width:100%;padding:11px;margin:3px 0;border-radius:8px;background:#232c35;color:#dce0e3;text-align:left}
+.settings .active{color:#55e3a0}
 
 /* =========================
-   TOAST
+TOAST
 ========================= */
-.toast{position:fixed;z-index:100;left:50%;bottom:145px;transform:translate(-50%,15px);opacity:0;background:#252e37;border:1px solid #3a4550;border-radius:10px;padding:10px 15px;transition:.2s;pointer-events:none;font-size:14px}
+.toast{position:fixed;z-index:100;left:50%;bottom:145px;transform:translate(-50%,15px);opacity:0;padding:10px 15px;background:#252e37;border:1px solid #3a4550;border-radius:10px;transition:.2s;pointer-events:none;font-size:14px}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* =========================
-   MOBILE
+MOBILE
 ========================= */
 @media(max-width:700px){
-.header-actions{right:8px;gap:0}
-.hbtn{width:45px;height:48px}
-.hbtn.search{width:54px;height:54px}
-.brand{left:18px}
-.brand-name{font-size:34px}
-.radar-logo{width:50px;height:50px}
-.nav-item{min-width:103px;font-size:18px}
-.map-tools{left:14px}
-.layers{left:14px;width:274px}
-.data{left:70px;right:70px}
-.alert{left:70px;right:70px}
+.brand{left:18px}.name{font-size:34px}.actions{right:7px;gap:0}.h{width:46px}.h.search{width:54px}
+.n{min-width:103px;font-size:18px}
+.layers{left:14px;width:274px}.data,.alert{left:70px;right:70px}
 }
 @media(max-width:430px){
-.brand{left:13px;gap:7px}
-.brand-name{font-size:29px}
-.radar-logo{width:48px;height:48px}
-.hbtn:nth-child(2){display:none}
-.nav-item{min-width:101px}
-.layers{width:267px}
-.data{left:70px;right:70px}
-.alert{left:70px;right:70px}
-.timeline{bottom:8px}
+.brand{left:13px;gap:7px}.name{font-size:29px}.logo{width:49px;height:49px}
+.actions{right:4px}.h:nth-child(2){display:none}
+.n{min-width:101px}.layers{width:267px}
 }
+
+/* =========================
+LIGHT MODE
+========================= */
+.light body{background:#e8ebed}
 </style>
 </head>
-
 <body>
 
 <!-- =========================
-   MAP
+MAP
 ========================= -->
 <div id="map"></div>
-<div class="center"></div>
+<div class="cross"></div>
 
 <!-- =========================
-   HEADER
+HEADER
 ========================= -->
 <header class="header">
-
 <div class="brand">
-  <div class="radar-logo">
-    <div class="radar-sweep"></div>
-    <div class="radar-dot"></div>
-  </div>
-  <div class="brand-name">CLOrad</div>
+<div class="logo"><div class="sweep"></div><div class="dot"></div></div>
+<div class="name">CLOrad</div>
 </div>
 
-<div class="header-actions">
-
-<button class="hbtn search" id="searchBtn">
-<svg viewBox="0 0 24 24">
-<circle cx="10.5" cy="10.5" r="6.5"/>
-<path d="M16 16l5 5"/>
-</svg>
+<div class="actions">
+<button class="h search" id="searchBtn">
+<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg>
 </button>
-
-<button class="hbtn" id="themeBtn">
-<svg viewBox="0 0 24 24">
-<circle cx="12" cy="12" r="4"/>
-<path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>
-</svg>
+<button class="h" id="themeBtn">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
 </button>
-
-<button class="hbtn notify" id="notifyBtn">
-<svg viewBox="0 0 24 24">
-<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/>
-<path d="M10 21h4"/>
-</svg>
+<button class="h bell" id="bell">
+<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
 </button>
-
-<button class="hbtn" id="menuBtn">
-<svg viewBox="0 0 24 24">
-<path d="M4 6h16M4 12h16M4 18h16"/>
-</svg>
+<button class="h" id="menuBtn">
+<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
-
 </div>
 </header>
 
 <!-- =========================
-   SEARCH
+SEARCH
 ========================= -->
-<div class="search" id="search">
+<div class="popup searchbox" id="search">
 <input id="searchInput" placeholder="Поиск города..." autocomplete="off">
 </div>
 
 <!-- =========================
-   MENU
+MENU
 ========================= -->
-<div class="menu" id="menu">
-<button>Карта</button>
-<button>Регионы</button>
-<button>3D</button>
-<button>Предупреждения</button>
-<button>Архив</button>
-<button>Аналитика</button>
-<button>Слои</button>
+<div class="popup menu" id="menu">
+<button>Карта</button><button>Регионы</button><button>3D</button>
+<button>Предупреждения</button><button>Архив</button><button>Аналитика</button><button>Слои</button>
 </div>
 
 <!-- =========================
-   NAVIGATION
+NAV
 ========================= -->
 <nav class="nav">
 
-<button class="nav-item active" data-name="Карта">
-<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
-<span>Карта</span>
+<button class="n active" data-n="Карта">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Карта</span>
 </button>
 
-<button class="nav-item" data-name="Регионы">
-<svg viewBox="0 0 24 24"><path d="M4 18V7l6 3 5-6 5 3v11l-5-3-5 4-6-1z"/><path d="M10 10v9M15 4v11"/></svg>
-<span>Регионы</span>
+<button class="n" data-n="Регионы">
+<!-- силуэт России -->
+<svg viewBox="0 0 64 40"><path d="M4 17l7-5 4-6 8 2 4-4 7 3 5-1 5 5 8 1 7 6-5 5-8-1-5 5-7-2-7 3-7-5-7 1-5-4z"/></svg><span>Регионы</span>
 </button>
 
-<button class="nav-item" data-name="3D">
-<svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5 8-5z"/><path d="M4 8v9l8 4 8-4V8M12 13v8"/></svg>
-<span>3D</span>
+<button class="n" data-n="3D">
+<svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5 8-5z"/><path d="M4 8v9l8 4 8-4V8M12 13v8"/></svg><span>3D</span>
 </button>
 
-<button class="nav-item" data-name="Предупреждения">
-<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 9v5"/><circle cx="12" cy="17.5" r=".7"/></svg>
-<span>Предупреждения</span>
+<button class="n" data-n="Предупреждения">
+<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 9v5"/><circle cx="12" cy="17.5" r=".7"/></svg><span>Предупр.</span>
 </button>
 
-<button class="nav-item" data-name="Архив">
-<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>
-<span>Архив</span>
+<button class="n" data-n="Архив">
+<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg><span>Архив</span>
 </button>
 
-<button class="nav-item" data-name="Аналитика">
-<svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg>
-<span>Аналитика</span>
+<button class="n" data-n="Аналитика">
+<svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg><span>Аналитика</span>
 </button>
 
-<button class="nav-item" data-name="Слои">
-<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-<span>Слои</span>
+<button class="n" data-n="Слои">
+<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Слои</span>
 </button>
 
 </nav>
 
 <!-- =========================
-   MAP TOOLS
+MAP TOOLS
 ========================= -->
-<div class="map-tools">
-
-<button class="map-tool" id="plus">
-<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-</button>
-
-<button class="map-tool" id="minus">
-<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
-</button>
-
-<button class="map-tool" id="locate">
-<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
-</button>
-
+<div class="tools">
+<button class="tool" id="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+<button class="tool" id="minus"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+<button class="tool" id="locate"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg></button>
 </div>
 
 <!-- =========================
-   LAYERS
+LAYERS
 ========================= -->
 <div class="layers">
 
 <div class="layer">
-<div class="layer-icon">
-<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3"/></svg>
-</div>
-<div class="layer-name">Радар</div>
-<button class="switch on"><i></i></button>
+<div class="li"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3"/></svg></div>
+<div class="lt">Радар</div><button class="sw on"><i></i></button>
 </div>
 
 <div class="layer">
-<div class="layer-icon blue">
-<svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg>
-</div>
-<div class="layer-name">Осадки</div>
-<button class="switch on"><i></i></button>
+<div class="li blue"><svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg></div>
+<div class="lt">Осадки</div><button class="sw on"><i></i></button>
 </div>
 
 <div class="layer">
-<div class="layer-icon red">
-<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7l0-7z"/></svg>
-</div>
-<div class="layer-name">Гроза</div>
-<button class="switch on"><i></i></button>
+<div class="li red"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7l0-7z"/></svg></div>
+<div class="lt">Гроза</div><button class="sw on"><i></i></button>
 </div>
 
 </div>
 
 <!-- =========================
-   DATA
+DATA
 ========================= -->
 <div class="data">
-
-<div class="data-cell">
-<div class="data-label">Интенсивность:</div>
-<div class="data-value">Нет данных</div>
-</div>
-
-<div class="data-cell">
-<div class="data-label">Гроза</div>
-<div class="data-value">—</div>
-</div>
-
-<div class="data-cell">
-<div class="data-label">Скорость:</div>
-<div class="data-value">—</div>
-</div>
-
+<div class="cell"><div class="label">Интенсивность:</div><div class="value">Нет данных</div></div>
+<div class="cell"><div class="label">Гроза</div><div class="value">—</div></div>
+<div class="cell"><div class="label">Скорость:</div><div class="value">—</div></div>
 </div>
 
 <!-- =========================
-   ALERT
+ALERT
 ========================= -->
 <div class="alert" id="alert">
-
-<svg viewBox="0 0 24 24">
-<path d="M12 3l10 18H2L12 3z"/>
-<path d="M12 9v5"/>
-<circle cx="12" cy="17.5" r=".7"/>
-</svg>
-
-<div class="alert-text">
-<b>ШТОРМ:</b> Активных предупреждений пока нет
-</div>
-
-<button class="alert-close" id="closeAlert">×</button>
-
+<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 9v5"/><circle cx="12" cy="17.5" r=".7"/></svg>
+<span><b>ШТОРМ:</b> Активных предупреждений пока нет</span>
+<button class="close" id="close">×</button>
 </div>
 
 <!-- =========================
-   SETTINGS
+SETTINGS
 ========================= -->
-<div class="settings" id="settings">
+<div class="popup settings" id="settings">
 <button class="active" id="dark">Тёмная тема</button>
 <button id="light">Светлая тема</button>
 <button id="move">Движение карты: включено</button>
 </div>
 
 <!-- =========================
-   TIMELINE
+TIMELINE
 ========================= -->
 <div class="timeline">
+<div class="t-title" id="clock">СЕЙЧАС 17:20, 13 СЕНТЯБРЯ</div>
 
-<div class="timeline-title" id="time">
-СЕЙЧАС 17:20, 13 СЕНТЯБРЯ
-</div>
+<div class="t-row">
 
-<div class="timeline-row">
-
-<button class="time-button" id="play">
-<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7V5z"/></svg>
-</button>
-
-<button class="time-button small" id="pause">
-<svg viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"/></svg>
-</button>
-
-<button class="time-button small" id="prev">
-<svg viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6M6 6v12"/></svg>
-</button>
+<button class="tb" id="play"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7V5z"/></svg></button>
+<button class="tb small" id="pause"><svg viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"/></svg></button>
+<button class="tb small" id="prev"><svg viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6M6 6v12"/></svg></button>
 
 <div class="slider">
-<input type="range" id="range" min="0" max="100" value="70">
-<div class="labels">
-<span>06:00</span>
-<span>08:00</span>
-<span>10:00</span>
-<span>12:00</span>
-<span>14:00</span>
-<span>17:20</span>
-<span>18:00</span>
-<span>20:00</span>
-<span>22:00</span>
-</div>
+<input id="range" type="range" min="0" max="100" value="70">
+<div class="times"><span>06:00</span><span>08:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span>17:20</span><span>18:00</span><span>20:00</span><span>22:00</span></div>
 </div>
 
-<button class="time-button small" id="next">
-<svg viewBox="0 0 24 24"><path d="M6 6l8 6-8 6M18 6v12"/></svg>
-</button>
+<button class="tb small" id="next"><svg viewBox="0 0 24 24"><path d="M6 6l8 6-8 6M18 6v12"/></svg></button>
 
 </div>
 </div>
@@ -434,274 +321,185 @@ input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;bac
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 /* =========================
-   MAP
+MAP
 ========================= */
 const map=L.map("map",{zoomControl:false,minZoom:2,maxZoom:18}).setView([55.75,37.62],5);
 
-L.tileLayer(
-"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-{maxZoom:18,attribution:"© Esri © OpenStreetMap"}
-).addTo(map);
-
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",{
+maxZoom:18,attribution:"© Esri © OpenStreetMap"
+}).addTo(map);
 
 /* =========================
-   HELPERS
+HELPERS
 ========================= */
-const $=x=>document.getElementById(x);
-let toastTimer;
+const $=id=>document.getElementById(id);
+let tt;
 
-function toast(t){
- $("toast").textContent=t;
- $("toast").classList.add("show");
- clearTimeout(toastTimer);
- toastTimer=setTimeout(()=>$("toast").classList.remove("show"),1500);
+function toast(x){
+$("toast").textContent=x;
+$("toast").classList.add("show");
+clearTimeout(tt);
+tt=setTimeout(()=>$("toast").classList.remove("show"),1400);
 }
 
-
 /* =========================
-   ZOOM
+ZOOM
 ========================= */
 $("plus").onclick=()=>map.zoomIn();
 $("minus").onclick=()=>map.zoomOut();
 
-
 /* =========================
-   LOCATION
+LOCATION
 ========================= */
 $("locate").onclick=()=>{
-
- if(!navigator.geolocation){
-   toast("Геолокация недоступна");
-   return;
- }
-
- toast("Определяем местоположение…");
-
- navigator.geolocation.getCurrentPosition(
- p=>{
-   map.setView([p.coords.latitude,p.coords.longitude],9);
-   L.circleMarker([p.coords.latitude,p.coords.longitude],{
-     radius:7,color:"#fff",weight:2,fillColor:"#54e7a0",fillOpacity:1
-   }).addTo(map);
-   toast("Местоположение найдено");
- },
- ()=>toast("Не удалось определить местоположение")
-);
+if(!navigator.geolocation)return toast("Геолокация недоступна");
+toast("Определяем местоположение…");
+navigator.geolocation.getCurrentPosition(p=>{
+map.setView([p.coords.latitude,p.coords.longitude],9);
+L.circleMarker([p.coords.latitude,p.coords.longitude],{
+radius:7,color:"#fff",weight:2,fillColor:"#55e3a0",fillOpacity:1
+}).addTo(map);
+toast("Местоположение найдено");
+},()=>toast("Не удалось определить местоположение"));
 };
 
-
 /* =========================
-   LAYERS
+LAYERS
 ========================= */
-document.querySelectorAll(".switch").forEach(x=>{
- x.onclick=()=>{
-   x.classList.toggle("on");
-   toast(
-     x.parentElement.querySelector(".layer-name").textContent+
-     (x.classList.contains("on")?" включён":" выключен")
-   );
- };
+document.querySelectorAll(".sw").forEach(x=>x.onclick=()=>{
+x.classList.toggle("on");
+toast(x.parentNode.querySelector(".lt").textContent+(x.classList.contains("on")?" включён":" выключен"));
 });
 
-
 /* =========================
-   NAV
+NAV
 ========================= */
-document.querySelectorAll(".nav-item").forEach(x=>{
- x.onclick=()=>{
-   document.querySelectorAll(".nav-item").forEach(y=>y.classList.remove("active"));
-   x.classList.add("active");
-   toast(x.dataset.name);
- };
+document.querySelectorAll(".n").forEach(x=>x.onclick=()=>{
+document.querySelectorAll(".n").forEach(y=>y.classList.remove("active"));
+x.classList.add("active");
+toast(x.dataset.n);
 });
 
-
 /* =========================
-   SEARCH
+SEARCH
 ========================= */
-$("searchBtn").onclick=()=>{};
-
-const searchBox=$("search");
 $("searchBtn").onclick=()=>{
- searchBox.classList.toggle("open");
- $("menu").classList.remove("open");
- if(searchBox.classList.contains("open"))$("searchInput").focus();
+$("search").classList.toggle("open");
+$("menu").classList.remove("open");
+if($("search").classList.contains("open"))$("searchInput").focus();
 };
 
+const cities={
+москва:[55.7558,37.6173],уфа:[54.7388,55.9721],казань:[55.7879,49.1233],
+самара:[53.1959,50.1002],нижний:[56.3269,44.0059],екатеринбург:[56.8389,60.6057],
+омск:[54.9885,73.3242],новосибирск:[55.0084,82.9357]
+};
+
+$("searchInput").oninput=e=>{
+let q=e.target.value.trim().toLowerCase(),k=Object.keys(cities).find(x=>x.startsWith(q));
+if(k){
+map.setView(cities[k],8);
+toast(k[0].toUpperCase()+k.slice(1));
+$("search").classList.remove("open");
+e.target.value="";
+}
+};
 
 /* =========================
-   MENU
+MENU
 ========================= */
 $("menuBtn").onclick=()=>{
- $("menu").classList.toggle("open");
- searchBox.classList.remove("open");
+$("menu").classList.toggle("open");
+$("search").classList.remove("open");
 };
 
-
 /* =========================
-   NOTIFICATIONS
+NOTIFICATIONS
 ========================= */
-$("notifyBtn").onclick=()=>{
- $("alert").classList.add("show");
-};
-
-$("closeAlert").onclick=()=>{
- $("alert").classList.remove("show");
-};
-
+$("bell").onclick=()=>$("alert").classList.add("show");
+$("close").onclick=()=>$("alert").classList.remove("show");
 
 /* =========================
-   THEME
+THEME
 ========================= */
 $("themeBtn").onclick=()=>{
- $("settings").classList.toggle("open");
- $("menu").classList.remove("open");
+$("settings").classList.toggle("open");
+$("menu").classList.remove("open");
 };
 
 $("dark").onclick=()=>{
- document.body.style.filter="";
- $("dark").classList.add("active");
- $("light").classList.remove("active");
- toast("Тёмная тема");
+document.documentElement.classList.remove("light");
+$("dark").classList.add("active");
+$("light").classList.remove("active");
+toast("Тёмная тема");
 };
 
 $("light").onclick=()=>{
- document.body.style.filter="invert(.92) hue-rotate(180deg)";
- $("light").classList.add("active");
- $("dark").classList.remove("active");
- toast("Светлая тема");
+document.documentElement.classList.add("light");
+$("light").classList.add("active");
+$("dark").classList.remove("active");
+toast("Светлая тема");
 };
 
-
 /* =========================
-   MOVEMENT
+MOVEMENT
 ========================= */
 let moving=true;
-
 $("move").onclick=()=>{
- moving=!moving;
- moving?map.dragging.enable():map.dragging.disable();
- $("move").textContent="Движение карты: "+(moving?"включено":"выключено");
+moving=!moving;
+moving?map.dragging.enable():map.dragging.disable();
+$("move").textContent="Движение карты: "+(moving?"включено":"выключено");
 };
 
-
 /* =========================
-   TIMELINE
+TIMELINE
 ========================= */
 const range=$("range");
 let timer=null;
 
 function updateTime(){
-
- const min=360+Math.round(960*(range.value/100));
- const h=Math.floor(min/60);
- const m=min%60;
-
- $("time").textContent=
- "СЕЙЧАС "+
- String(h).padStart(2,"0")+":"+
- String(m).padStart(2,"0")+
- ", 13 СЕНТЯБРЯ";
+let m=360+Math.round(960*range.value/100),h=Math.floor(m/60),mm=m%60;
+$("clock").textContent="СЕЙЧАС "+String(h).padStart(2,"0")+":"+String(mm).padStart(2,"0")+", 13 СЕНТЯБРЯ";
 }
-
 range.oninput=updateTime;
 
-
-/* =========================
-   PLAY
-========================= */
 $("play").onclick=()=>{
-
- if(timer)return;
-
- timer=setInterval(()=>{
-
-   range.value=Number(range.value)+1;
-
-   if(range.value>100)range.value=0;
-
-   updateTime();
-
- },350);
-
- toast("Воспроизведение");
+if(timer)return;
+timer=setInterval(()=>{
+range.value=+range.value+1;
+if(range.value>100)range.value=0;
+updateTime();
+},350);
+toast("Воспроизведение");
 };
 
-
-/* =========================
-   PAUSE
-========================= */
 $("pause").onclick=()=>{
- clearInterval(timer);
- timer=null;
- toast("Пауза");
+clearInterval(timer);
+timer=null;
+toast("Пауза");
 };
 
-
-/* =========================
-   PREVIOUS
-========================= */
 $("prev").onclick=()=>{
- range.value=Math.max(0,Number(range.value)-5);
- updateTime();
+range.value=Math.max(0,+range.value-5);
+updateTime();
 };
 
-
-/* =========================
-   NEXT
-========================= */
 $("next").onclick=()=>{
- range.value=Math.min(100,Number(range.value)+5);
- updateTime();
+range.value=Math.min(100,+range.value+5);
+updateTime();
 };
-
 
 /* =========================
-   SEARCH CITIES
-========================= */
-const cities={
- москва:[55.7558,37.6173],
- уфа:[54.7388,55.9721],
- казань:[55.7879,49.1233],
- самара:[53.1959,50.1002],
- нижний:[56.3269,44.0059],
- екатеринбург:[56.8389,60.6057],
- омск:[54.9885,73.3242],
- новосибирск:[55.0084,82.9357]
-};
-
-$("searchInput").oninput=e=>{
-
- const q=e.target.value.trim().toLowerCase();
-
- if(!q)return;
-
- const key=Object.keys(cities).find(x=>x.startsWith(q));
-
- if(key){
-
-   map.setView(cities[key],8);
-   toast(key[0].toUpperCase()+key.slice(1));
-
-   $("search").classList.remove("open");
-   e.target.value="";
- }
-};
-
-
-/* =========================
-   CLOSE
+CLOSE POPUPS
 ========================= */
 map.on("click",()=>{
- $("menu").classList.remove("open");
- $("settings").classList.remove("open");
+$("menu").classList.remove("open");
+$("settings").classList.remove("open");
 });
 
 updateTime();
 </script>
-
 </body>
 </html>
