@@ -8,6 +8,13 @@ export default async function handler(req, res) {
   const action =
     url.searchParams.get("action") || "";
 
+
+  /*
+  =========================================================
+  CORS
+  =========================================================
+  */
+
   res.setHeader(
     "Access-Control-Allow-Origin",
     "*"
@@ -36,6 +43,26 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
+  CONSTANTS
+  =========================================================
+  */
+
+  const NOWCAST =
+    "https://www.nowcast.ru";
+
+  const DEMO_URL =
+    "https://www.nowcast.ru/demo/demo.html";
+
+  const CAPABILITIES_URL =
+    NOWCAST +
+    "/baltrad_wsgi" +
+    "?SERVICE=WMS" +
+    "&VERSION=1.1.1" +
+    "&REQUEST=GetCapabilities";
+
+
+  /*
+  =========================================================
   HELPERS
   =========================================================
   */
@@ -51,6 +78,342 @@ export default async function handler(req, res) {
   }
 
 
+  /*
+  ---------------------------------------------------------
+  Extract cookies from response
+  ---------------------------------------------------------
+  */
+
+  function extractCookies(response){
+
+    try{
+
+      if(
+        response.headers &&
+        typeof response.headers.getSetCookie === "function"
+      ){
+
+        const cookies =
+          response.headers.getSetCookie();
+
+        if(
+          Array.isArray(cookies) &&
+          cookies.length
+        ){
+
+          return cookies
+            .map(
+              cookie =>
+                cookie.split(";")[0]
+            )
+            .join("; ");
+
+        }
+
+      }
+
+    }catch(error){
+
+      console.error(
+        "Cookie extraction error:",
+        error
+      );
+
+    }
+
+
+    try{
+
+      const raw =
+        response.headers.get(
+          "set-cookie"
+        );
+
+      if(raw){
+
+        return raw
+          .split(/,(?=[^;,]+=)/)
+          .map(
+            cookie =>
+              cookie.split(";")[0]
+          )
+          .join("; ");
+
+      }
+
+    }catch(error){
+
+      console.error(
+        "Fallback cookie extraction error:",
+        error
+      );
+
+    }
+
+
+    return "";
+
+  }
+
+
+  /*
+  ---------------------------------------------------------
+  Create browser-like headers
+  ---------------------------------------------------------
+  */
+
+  function browserHeaders(extra = {}){
+
+    return {
+
+      "User-Agent":
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+
+      "Accept-Language":
+        "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+
+      "Accept":
+        "*/*",
+
+      "Referer":
+        DEMO_URL,
+
+      "Origin":
+        NOWCAST,
+
+      "Sec-Fetch-Site":
+        "same-origin",
+
+      "Sec-Fetch-Mode":
+        "cors",
+
+      "Sec-Fetch-Dest":
+        "empty",
+
+      ...extra
+
+    };
+
+  }
+
+
+  /*
+  ---------------------------------------------------------
+  Bootstrap Nowcast session
+  ---------------------------------------------------------
+  */
+
+  async function createNowcastSession(){
+
+    let cookies = "";
+
+
+    /*
+    Сначала открываем сам demo.html.
+    */
+
+    try{
+
+      const demoResponse =
+        await fetch(
+          DEMO_URL,
+          {
+            method:"GET",
+
+            headers:
+              browserHeaders({
+                "Accept":
+                  "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+              }),
+
+            redirect:"follow"
+          }
+        );
+
+
+      const demoCookies =
+        extractCookies(
+          demoResponse
+        );
+
+
+      if(demoCookies){
+
+        cookies =
+          demoCookies;
+
+      }
+
+    }catch(error){
+
+      console.error(
+        "demo.html session error:",
+        error
+      );
+
+    }
+
+
+    /*
+    Дополнительно открываем главную страницу.
+    Иногда сервер выставляет cookie именно там.
+    */
+
+    try{
+
+      const homeResponse =
+        await fetch(
+          NOWCAST + "/",
+          {
+            method:"GET",
+
+            headers:
+              browserHeaders({
+                "Accept":
+                  "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+
+                "Referer":
+                  DEMO_URL
+              }),
+
+            redirect:"follow"
+          }
+        );
+
+
+      const homeCookies =
+        extractCookies(
+          homeResponse
+        );
+
+
+      if(homeCookies){
+
+        if(cookies){
+
+          cookies =
+            cookies +
+            "; " +
+            homeCookies;
+
+        }else{
+
+          cookies =
+            homeCookies;
+
+        }
+
+      }
+
+    }catch(error){
+
+      console.error(
+        "nowcast homepage session error:",
+        error
+      );
+
+    }
+
+
+    return cookies;
+
+  }
+
+
+  /*
+  ---------------------------------------------------------
+  Make authenticated-ish Nowcast request
+  ---------------------------------------------------------
+  */
+
+  async function nowcastFetch(
+    targetUrl,
+    extraHeaders = {}
+  ){
+
+    const cookies =
+      await createNowcastSession();
+
+
+    const headers =
+      browserHeaders(
+        extraHeaders
+      );
+
+
+    if(cookies){
+
+      headers.Cookie =
+        cookies;
+
+    }
+
+
+    /*
+    Первый запрос.
+    */
+
+    let response =
+      await fetch(
+        targetUrl,
+        {
+          method:"GET",
+          headers,
+          redirect:"follow"
+        }
+      );
+
+
+    /*
+    Если получили 403,
+    создаём новую сессию и повторяем.
+    */
+
+    if(response.status === 403){
+
+      const retryCookies =
+        await createNowcastSession();
+
+
+      const retryHeaders =
+        browserHeaders(
+          extraHeaders
+        );
+
+
+      if(retryCookies){
+
+        retryHeaders.Cookie =
+          retryCookies;
+
+      }
+
+
+      response =
+        await fetch(
+          targetUrl,
+          {
+            method:"GET",
+            headers:
+              retryHeaders,
+            redirect:"follow"
+          }
+        );
+
+    }
+
+
+    return response;
+
+  }
+
+
+  /*
+  =========================================================
+  NORMALIZE POINT
+  =========================================================
+  */
+
   function normalizePoint(item){
 
     if(Array.isArray(item)){
@@ -58,6 +421,7 @@ export default async function handler(req, res) {
       if(item.length < 3){
         return null;
       }
+
 
       let lat =
         number(item[0]);
@@ -71,6 +435,7 @@ export default async function handler(req, res) {
       let direction =
         number(item[3]);
 
+
       if(
         lat === null ||
         lon === null ||
@@ -81,7 +446,7 @@ export default async function handler(req, res) {
 
 
       /*
-      Иногда координаты идут lon/lat.
+      Иногда координаты могут быть lon/lat.
       */
 
       if(
@@ -89,10 +454,14 @@ export default async function handler(req, res) {
         Math.abs(lon) <= 90
       ){
 
-        const tmp = lat;
+        const tmp =
+          lat;
 
-        lat = lon;
-        lon = tmp;
+        lat =
+          lon;
+
+        lon =
+          tmp;
 
       }
 
@@ -106,10 +475,12 @@ export default async function handler(req, res) {
 
 
       return {
+
         lat,
         lon,
         dbz,
         direction
+
       };
 
     }
@@ -127,6 +498,7 @@ export default async function handler(req, res) {
           item.y
         );
 
+
       let lon =
         number(
           item.lon ??
@@ -135,6 +507,7 @@ export default async function handler(req, res) {
           item.x
         );
 
+
       let dbz =
         number(
           item.dbz ??
@@ -142,6 +515,7 @@ export default async function handler(req, res) {
           item.reflectivity ??
           item.z
         );
+
 
       let direction =
         number(
@@ -164,10 +538,14 @@ export default async function handler(req, res) {
         Math.abs(lon) <= 90
       ){
 
-        const tmp = lat;
+        const tmp =
+          lat;
 
-        lat = lon;
-        lon = tmp;
+        lat =
+          lon;
+
+        lon =
+          tmp;
 
       }
 
@@ -181,10 +559,12 @@ export default async function handler(req, res) {
 
 
       return {
+
         lat,
         lon,
         dbz,
         direction
+
       };
 
     }
@@ -195,21 +575,19 @@ export default async function handler(req, res) {
   }
 
 
+  /*
+  =========================================================
+  EXTRACT POINTS
+  =========================================================
+  */
+
   function extractRawPoints(raw){
-
-    /*
-    Вариант 1:
-
-    [
-      [lat,lon,value,direction],
-      ...
-    ]
-    */
 
     if(Array.isArray(raw)){
 
       /*
-      Одна точка.
+      Одна точка:
+      [lat, lon, dbz, direction]
       */
 
       if(
@@ -218,7 +596,10 @@ export default async function handler(req, res) {
       ){
 
         const point =
-          normalizePoint(raw);
+          normalizePoint(
+            raw
+          );
+
 
         return point
           ? [point]
@@ -229,29 +610,33 @@ export default async function handler(req, res) {
 
       const result = [];
 
-      for(const item of raw){
+
+      for(
+        const item
+        of raw
+      ){
 
         const point =
-          normalizePoint(item);
+          normalizePoint(
+            item
+          );
+
 
         if(point){
-          result.push(point);
+
+          result.push(
+            point
+          );
+
         }
 
       }
+
 
       return result;
 
     }
 
-
-    /*
-    Вариант 2:
-
-    {
-      data:[...]
-    }
-    */
 
     if(
       raw &&
@@ -259,7 +644,9 @@ export default async function handler(req, res) {
     ){
 
       if(
-        Array.isArray(raw.data)
+        Array.isArray(
+          raw.data
+        )
       ){
 
         return extractRawPoints(
@@ -268,16 +655,6 @@ export default async function handler(req, res) {
 
       }
 
-
-      /*
-      Вариант:
-
-      {
-        data:{
-          data:[...]
-        }
-      }
-      */
 
       if(
         raw.data &&
@@ -299,12 +676,10 @@ export default async function handler(req, res) {
       }
 
 
-      /*
-      GeoJSON / object arrays.
-      */
-
       if(
-        Array.isArray(raw.features)
+        Array.isArray(
+          raw.features
+        )
       ){
 
         return extractRawPoints(
@@ -321,15 +696,23 @@ export default async function handler(req, res) {
   }
 
 
+  /*
+  =========================================================
+  MAXIMUM
+  =========================================================
+  */
+
   function calculateMaximum(points){
 
     if(!points.length){
 
       return {
+
         dbz:null,
         lat:null,
         lon:null,
         direction:null
+
       };
 
     }
@@ -386,6 +769,12 @@ export default async function handler(req, res) {
   }
 
 
+  /*
+  =========================================================
+  STATS
+  =========================================================
+  */
+
   function calculateStats(points){
 
     if(!points.length){
@@ -421,6 +810,7 @@ export default async function handler(req, res) {
     let sum =
       0;
 
+
     let above20 = 0;
     let above30 = 0;
     let above40 = 0;
@@ -443,11 +833,14 @@ export default async function handler(req, res) {
         min = dbz;
       }
 
+
       if(dbz > max){
         max = dbz;
       }
 
-      sum += dbz;
+
+      sum +=
+        dbz;
 
 
       if(dbz >= 20) above20++;
@@ -502,13 +895,15 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  CELLS
+  CELL DETECTION
   =========================================================
   */
 
   function detectCells(points){
 
-    const threshold = 40;
+    const threshold =
+      40;
+
 
     const strong =
       points.filter(
@@ -522,7 +917,9 @@ export default async function handler(req, res) {
     }
 
 
-    const GRID = 0.02;
+    const GRID =
+      0.02;
+
 
     const buckets =
       new Map();
@@ -532,13 +929,17 @@ export default async function handler(req, res) {
 
       const x =
         Math.floor(
-          point.lon / GRID
+          point.lon /
+          GRID
         );
+
 
       const y =
         Math.floor(
-          point.lat / GRID
+          point.lat /
+          GRID
         );
+
 
       return `${x}:${y}`;
 
@@ -554,11 +955,15 @@ export default async function handler(req, res) {
         keyFor(point);
 
 
-      if(!buckets.has(key)){
+      if(
+        !buckets.has(key)
+      ){
+
         buckets.set(
           key,
           []
         );
+
       }
 
 
@@ -572,7 +977,9 @@ export default async function handler(req, res) {
     const visited =
       new Set();
 
-    const cells = [];
+
+    const cells =
+      [];
 
 
     function parseKey(key){
@@ -580,9 +987,15 @@ export default async function handler(req, res) {
       const parts =
         key.split(":");
 
+
       return {
-        x:Number(parts[0]),
-        y:Number(parts[1])
+
+        x:
+          Number(parts[0]),
+
+        y:
+          Number(parts[1])
+
       };
 
     }
@@ -597,18 +1010,19 @@ export default async function handler(req, res) {
         parseKey(key);
 
 
-      const result = [];
+      const result =
+        [];
 
 
       for(
-        let dx=-1;
-        dx<=1;
+        let dx = -1;
+        dx <= 1;
         dx++
       ){
 
         for(
-          let dy=-1;
-          dy<=1;
+          let dy = -1;
+          dy <= 1;
           dy++
         ){
 
@@ -640,7 +1054,9 @@ export default async function handler(req, res) {
     ){
 
       if(
-        visited.has(startKey)
+        visited.has(
+          startKey
+        )
       ){
         continue;
       }
@@ -649,15 +1065,19 @@ export default async function handler(req, res) {
       const queue =
         [startKey];
 
+
       visited.add(
         startKey
       );
 
 
-      const cellPoints = [];
+      const cellPoints =
+        [];
 
 
-      while(queue.length){
+      while(
+        queue.length
+      ){
 
         const key =
           queue.shift();
@@ -699,9 +1119,13 @@ export default async function handler(req, res) {
             buckets.has(next)
           ){
 
-            visited.add(next);
+            visited.add(
+              next
+            );
 
-            queue.push(next);
+            queue.push(
+              next
+            );
 
           }
 
@@ -720,11 +1144,15 @@ export default async function handler(req, res) {
       let maxDbz =
         -Infinity;
 
-      let sumDbz = 0;
+      let sumDbz =
+        0;
 
-      let sumLat = 0;
+      let sumLat =
+        0;
 
-      let sumLon = 0;
+      let sumLon =
+        0;
+
 
       let minLat =
         Infinity;
@@ -771,17 +1199,20 @@ export default async function handler(req, res) {
             point.lat
           );
 
+
         maxLat =
           Math.max(
             maxLat,
             point.lat
           );
 
+
         minLon =
           Math.min(
             minLon,
             point.lon
           );
+
 
         maxLon =
           Math.max(
@@ -795,6 +1226,7 @@ export default async function handler(req, res) {
       const centerLat =
         sumLat /
         cellPoints.length;
+
 
       const centerLon =
         sumLon /
@@ -824,7 +1256,8 @@ export default async function handler(req, res) {
       const areaKm2 =
         Math.max(
           0,
-          latKm * lonKm
+          latKm *
+          lonKm
         );
 
 
@@ -852,6 +1285,7 @@ export default async function handler(req, res) {
           ),
 
         center:{
+
           lat:
             Number(
               centerLat.toFixed(5)
@@ -861,6 +1295,7 @@ export default async function handler(req, res) {
             Number(
               centerLon.toFixed(5)
             )
+
         },
 
         areaKm2:
@@ -869,6 +1304,7 @@ export default async function handler(req, res) {
           ),
 
         bounds:{
+
           north:
             Number(
               maxLat.toFixed(5)
@@ -888,6 +1324,7 @@ export default async function handler(req, res) {
             Number(
               minLon.toFixed(5)
             )
+
         }
 
       });
@@ -929,23 +1366,12 @@ export default async function handler(req, res) {
 
     try{
 
-      const capabilitiesUrl =
-        "https://www.nowcast.ru/baltrad_wsgi" +
-        "?SERVICE=WMS" +
-        "&VERSION=1.1.1" +
-        "&REQUEST=GetCapabilities";
-
-
       const response =
-        await fetch(
-          capabilitiesUrl,
+        await nowcastFetch(
+          CAPABILITIES_URL,
           {
-            headers:{
-              "User-Agent":
-                "Mozilla/5.0 CLOrad/1.0",
-              "Accept":
-                "application/xml,text/xml,*/*"
-            }
+            "Accept":
+              "application/xml,text/xml,text/plain,*/*"
           }
         );
 
@@ -967,7 +1393,10 @@ export default async function handler(req, res) {
             response.status,
 
           body:
-            text.slice(0,2000)
+            text.slice(
+              0,
+              3000
+            )
 
         });
 
@@ -979,7 +1408,9 @@ export default async function handler(req, res) {
 
 
       /*
-      ISO timestamps.
+      -------------------------------------------------------
+      ISO timestamps
+      -------------------------------------------------------
       */
 
       const matches =
@@ -993,39 +1424,91 @@ export default async function handler(req, res) {
         of matches
       ){
 
-        times.add(time);
+        times.add(
+          time
+        );
+
+      }
+
+
+      /*
+      -------------------------------------------------------
+      Некоторые WMS могут отдавать timestamp
+      без Z.
+      -------------------------------------------------------
+      */
+
+      const matchesNoZ =
+        text.match(
+          /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?/g
+        ) || [];
+
+
+      for(
+        const time
+        of matchesNoZ
+      ){
+
+        try{
+
+          const date =
+            new Date(
+              time + "Z"
+            );
+
+
+          if(
+            !Number.isNaN(
+              date.getTime()
+            )
+          ){
+
+            times.add(
+              date.toISOString()
+            );
+
+          }
+
+        }catch(error){
+
+          // ignore
+
+        }
 
       }
 
 
       const result =
-        Array.from(times)
-          .map(
-            x =>
-              new Date(x)
-          )
-          .filter(
-            x =>
-              !Number.isNaN(
-                x.getTime()
-              )
-          )
-          .sort(
-            (a,b) =>
-              a.getTime() -
-              b.getTime()
-          )
-          .map(
-            x =>
-              x.toISOString()
-          );
+        Array.from(
+          times
+        )
+        .map(
+          x =>
+            new Date(x)
+        )
+        .filter(
+          x =>
+            !Number.isNaN(
+              x.getTime()
+            )
+        )
+        .sort(
+          (a,b) =>
+            a.getTime() -
+            b.getTime()
+        )
+        .map(
+          x =>
+            x.toISOString()
+        );
 
 
       return res.status(200).json({
 
         ok:true,
 
-        source:"nowcast",
+        source:
+          "nowcast",
 
         count:
           result.length,
@@ -1094,22 +1577,21 @@ export default async function handler(req, res) {
     try{
 
       const vectorUrl =
-        "https://www.nowcast.ru/vector_wsgi" +
+        NOWCAST +
+        "/vector_wsgi" +
         "?time=" +
-        encodeURIComponent(time) +
+        encodeURIComponent(
+          time
+        ) +
         "&title=bufr_dbz1";
 
 
       const response =
-        await fetch(
+        await nowcastFetch(
           vectorUrl,
           {
-            headers:{
-              "User-Agent":
-                "Mozilla/5.0 CLOrad/1.0",
-              "Accept":
-                "application/json,text/plain,*/*"
-            }
+            "Accept":
+              "application/json,text/plain,*/*"
           }
         );
 
@@ -1136,7 +1618,10 @@ export default async function handler(req, res) {
             vectorUrl,
 
           body:
-            text.slice(0,3000)
+            text.slice(
+              0,
+              3000
+            )
 
         });
 
@@ -1149,7 +1634,9 @@ export default async function handler(req, res) {
       try{
 
         data =
-          JSON.parse(text);
+          JSON.parse(
+            text
+          );
 
       }catch(error){
 
@@ -1168,7 +1655,10 @@ export default async function handler(req, res) {
             ),
 
           body:
-            text.slice(0,3000)
+            text.slice(
+              0,
+              3000
+            )
 
         });
 
@@ -1176,7 +1666,9 @@ export default async function handler(req, res) {
 
 
       const pixels =
-        extractRawPoints(data);
+        extractRawPoints(
+          data
+        );
 
 
       const maximum =
@@ -1201,7 +1693,8 @@ export default async function handler(req, res) {
 
         ok:true,
 
-        source:"nowcast",
+        source:
+          "nowcast",
 
         time,
 
@@ -1277,7 +1770,7 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  UNKNOWN
+  UNKNOWN ACTION
   =========================================================
   */
 
