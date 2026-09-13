@@ -1471,6 +1471,17 @@ let radarPlaying=false;
 
 let radarPlayTimer=null;
 
+/*
+  Дополнительный кэш обработанных данных.
+  Здесь сохраняются:
+  pixels
+  max
+  stats
+  cells
+*/
+let radarProcessed=
+  new Map();
+
 /* =====================================================
    10-MINUTE GRID
 ===================================================== */
@@ -1545,6 +1556,111 @@ function normalizeNowcastTimes(times){
 ===================================================== */
 
 function extractRadarPoints(raw){
+
+  /*
+    НОВЫЙ ФОРМАТ BACKEND:
+
+    {
+      ok:true,
+      data:[...],
+      pixels:[
+        {
+          lat,
+          lon,
+          dbz,
+          direction
+        }
+      ],
+      max:{
+        dbz,
+        lat,
+        lon,
+        direction
+      },
+      stats:{...},
+      cells:[...]
+    }
+  */
+
+  if(
+    raw &&
+    Array.isArray(raw.pixels)
+  ){
+
+    const result=[];
+
+    for(
+      const point of raw.pixels
+    ){
+
+      if(
+        !point ||
+        typeof point!=="object"
+      ){
+        continue;
+      }
+
+      const lat=
+        Number(
+          point.lat
+        );
+
+      const lon=
+        Number(
+          point.lon
+        );
+
+      const value=
+        Number(
+          point.dbz ??
+          point.value
+        );
+
+      if(
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lon) ||
+        !Number.isFinite(value)
+      ){
+
+        continue;
+
+      }
+
+      if(
+        Math.abs(lat)>90 ||
+        Math.abs(lon)>180
+      ){
+
+        continue;
+
+      }
+
+      if(value<=0){
+        continue;
+      }
+
+      result.push({
+        lat,
+        lon,
+        value,
+        direction:
+          Number.isFinite(
+            Number(point.direction)
+          )
+            ? Number(point.direction)
+            : null
+      });
+
+    }
+
+    return result;
+
+  }
+
+  /*
+    СТАРЫЙ ФОРМАТ.
+    Оставляем совместимость.
+  */
 
   let source=raw;
 
@@ -1717,6 +1833,22 @@ function extractRadarPoints(raw){
 }
 
 /* =====================================================
+   GET CURRENT PROCESSED FRAME
+===================================================== */
+
+function getCurrentRadarFrame(){
+
+  const time=
+    radarFrames[currentFrame];
+
+  if(!time){
+    return null;
+  }
+
+  return radarData.get(time) || null;
+}
+
+/* =====================================================
    RADAR DRAW
 ===================================================== */
 
@@ -1778,6 +1910,13 @@ function redrawRadar(){
   }else{
     size=9;
   }
+
+  /*
+    Небольшое повышение качества отображения:
+    выключаем сглаживание canvas.
+  */
+
+  radarCtx.imageSmoothingEnabled=false;
 
   for(
     const point of points
@@ -1867,6 +2006,32 @@ function updateIntensity(){
 
   }
 
+  /*
+    НОВЫЙ BACKEND:
+    максимум уже вычислен на сервере.
+  */
+
+  if(
+    raw.max &&
+    Number.isFinite(
+      Number(raw.max.dbz)
+    )
+  ){
+
+    value.textContent=
+      Number(raw.max.dbz)
+        .toFixed(1)+
+      " dBZ";
+
+    return;
+
+  }
+
+  /*
+    Дополнительная совместимость
+    со старым ответом.
+  */
+
   const points=
     extractRadarPoints(raw);
 
@@ -1910,6 +2075,63 @@ function updateIntensity(){
       " dBZ";
 
   }
+
+}
+
+/* =====================================================
+   FRAME ANALYTICS
+===================================================== */
+
+function getCurrentRadarStats(){
+
+  const raw=
+    getCurrentRadarFrame();
+
+  if(
+    raw &&
+    raw.stats
+  ){
+
+    return raw.stats;
+
+  }
+
+  return null;
+}
+
+function getCurrentRadarCells(){
+
+  const raw=
+    getCurrentRadarFrame();
+
+  if(
+    raw &&
+    Array.isArray(raw.cells)
+  ){
+
+    return raw.cells;
+
+  }
+
+  return [];
+
+}
+
+function getCurrentRadarMaximum(){
+
+  const raw=
+    getCurrentRadarFrame();
+
+  if(
+    raw &&
+    raw.max
+  ){
+
+    return raw.max;
+
+  }
+
+  return null;
 
 }
 
@@ -2285,9 +2507,47 @@ async function loadRadarFrames(){
 
         }
 
+        /*
+          ВАЖНО:
+
+          Было:
+          radarData.set(time,json.data)
+
+          Теперь сохраняем ВЕСЬ ответ:
+
+          json.data
+          json.pixels
+          json.max
+          json.stats
+          json.cells
+        */
+
         radarData.set(
           time,
-          json.data
+          json
+        );
+
+        /*
+          Отдельный быстрый кэш
+          обработанной информации.
+        */
+
+        radarProcessed.set(
+          time,
+          {
+            pixels:
+              Array.isArray(json.pixels)
+                ? json.pixels
+                : [],
+            max:
+              json.max || null,
+            stats:
+              json.stats || null,
+            cells:
+              Array.isArray(json.cells)
+                ? json.cells
+                : []
+          }
         );
 
         if(
@@ -2576,14 +2836,6 @@ function setSwitchState(
 
 }
 
-/*
-  Проверяем состояние при старте.
-
-  Если каким-то образом оба слоя оказались
-  включены одновременно, оставляем ОЯ включённым
-  и выключаем отражаемость.
-*/
-
 if(
   oyaSwitch.classList.contains("on") &&
   reflectivitySwitch.classList.contains("on")
@@ -2618,11 +2870,6 @@ oyaSwitch.onclick=e=>{
 
   if(shouldEnable){
 
-    /*
-      ОЯ включаем,
-      отражайку обязательно выключаем.
-    */
-
     setSwitchState(
       oyaSwitch,
       true
@@ -2638,12 +2885,6 @@ oyaSwitch.onclick=e=>{
     redrawRadar();
 
   }else{
-
-    /*
-      ОЯ можно выключить.
-      Отражайка при этом сама
-      НЕ включается.
-    */
 
     setSwitchState(
       oyaSwitch,
@@ -2665,11 +2906,6 @@ reflectivitySwitch.onclick=e=>{
 
   if(shouldEnable){
 
-    /*
-      Отражайку включаем,
-      ОЯ обязательно выключаем.
-    */
-
     setSwitchState(
       reflectivitySwitch,
       true
@@ -2685,12 +2921,6 @@ reflectivitySwitch.onclick=e=>{
     redrawRadar();
 
   }else{
-
-    /*
-      Отражайку можно выключить.
-      ОЯ при этом сама
-      НЕ включается.
-    */
 
     setSwitchState(
       reflectivitySwitch,
@@ -2708,12 +2938,6 @@ reflectivitySwitch.onclick=e=>{
 lightningSwitch.onclick=e=>{
 
   e.stopPropagation();
-
-  /*
-    Молнии полностью независимы.
-    Здесь не изменяется состояние
-    ни ОЯ, ни отражаемости.
-  */
 
   lightningSwitch.classList.toggle(
     "on"
