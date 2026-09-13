@@ -47,19 +47,20 @@ button{
   background:#ffffffaa!important
 }
 
-/* =====================================================
-   RADAR CANVAS
-   Оставлен для совместимости с интерфейсом.
-   Отражаемость теперь рисуется WMS-слоем.
-===================================================== */
+/* RADAR */
 
 #radarCanvas{
-  position:fixed;
-  inset:0;
-  width:100%;
-  height:100%;
-  z-index:5;
-  pointer-events:none;
+  display:none
+}
+
+/*
+  Сам WMS-слой.
+  Убираем фон изображения и оставляем
+  только прозрачные/цветные данные радара.
+*/
+
+.leaflet-image-layer.clorad-radar{
+  image-rendering:auto;
 }
 
 /* HEADER */
@@ -739,7 +740,7 @@ button{
   100%{transform:translateX(350%)}
 }
 
-/* LIGHT THEME */
+/* LIGHT */
 
 body.light .header{
   background:#f5f6f7
@@ -908,7 +909,6 @@ body.light .frameInput{
 <body>
 
 <div id="map"></div>
-
 <canvas id="radarCanvas"></canvas>
 
 <header class="header">
@@ -1211,34 +1211,46 @@ body.light .frameInput{
 
 </div>
 
-<!-- =====================================================
-     LEAFLET
-===================================================== -->
-
 <script>
+
+/* =====================================================
+   CLORAD + NOWCAST WMS
+===================================================== */
 
 let map=null;
 let tiles=null;
-let reflectivityWms=null;
 
-/*
-  Реальный Nowcast WMS.
-
-  Это тот же механизм, который используется
-  оригинальным demo Nowcast.
-
-  Точный слой отражаемости:
-  bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1
-*/
+let reflectivityLayer=null;
 
 const NOWCAST_WMS=
   "https://www.nowcast.ru/baltrad_wsgi";
 
+/*
+  Основной реальный слой.
+  
+  bufr_dbz1 — отражаемость.
+  
+  Оригинальный demo Nowcast использует
+  комбинированную запись:
+  
+  bufr_dbz1,
+  bufr_novosib_dbz1,
+  bufr_vlad_dbz1
+  
+  Но для чистого WMS GetMap сначала используем
+  непосредственно bufr_dbz1.
+*/
+
 const NOWCAST_LAYER=
-  "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
+  "bufr_dbz1";
 
 const light=
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+
+/* =====================================================
+   LEAFLET
+===================================================== */
 
 function initMap(){
 
@@ -1248,11 +1260,17 @@ function initMap(){
 
   try{
 
-    map=L.map("map",{
-      zoomControl:false,
-      attributionControl:true,
-      preferCanvas:false
-    }).setView(
+    map=L.map(
+      "map",
+      {
+        zoomControl:false,
+        attributionControl:true,
+        preferCanvas:false,
+        zoomAnimation:true,
+        fadeAnimation:false,
+        markerZoomAnimation:false
+      }
+    ).setView(
       [55.75,37.62],
       5
     );
@@ -1272,90 +1290,49 @@ function initMap(){
     tiles.addTo(map);
 
     /*
-      ================================================
-      NOWCAST WMS
-      ================================================
-    */
-
-    reflectivityWms=
-      L.tileLayer.wms(
-        NOWCAST_WMS,
-        {
-          layers:NOWCAST_LAYER,
-
-          format:"image/png",
-
-          transparent:true,
-
-          version:"1.1.1",
-
-          opacity:0.86,
-
-          updateWhenZooming:false,
-
-          updateWhenIdle:true,
-
-          keepBuffer:2,
-
-          crossOrigin:true
-        }
-      );
-
-    /*
-      В начале отражаемость выключена,
-      потому что по интерфейсу ОЯ включены.
-    */
-
-    reflectivityWms.setOpacity(0);
-
-    /*
-      Важный момент:
-      WMS — это отдельный слой Leaflet.
-      Поэтому при зуме он получает новые изображения
-      с новым BBOX и новым разрешением.
+      Отражаемость НЕ добавляем сразу.
+      Она появится только после включения переключателя.
     */
 
     map.on(
-      "zoomstart",
+      "moveend",
       ()=>{
-        if(reflectivityWms){
-          reflectivityWms.setOpacity(
-            reflectivitySwitch &&
-            reflectivitySwitch.classList.contains("on")
-              ? 0.86
-              : 0
-          );
+        if(radarVisible){
+          refreshReflectivity();
         }
       }
     );
 
     map.on(
-      "zoomend",
+      "resize",
       ()=>{
-        if(reflectivityWms){
-          reflectivityWms.setOpacity(
-            reflectivitySwitch &&
-            reflectivitySwitch.classList.contains("on")
-              ? 0.86
-              : 0
-          );
+        if(radarVisible){
+          refreshReflectivity();
         }
       }
     );
 
-    setTimeout(()=>{
-      if(map){
-        map.invalidateSize();
-        resizeRadarCanvas();
-      }
-    },100);
+    setTimeout(
+      ()=>{
+        if(map){
+          map.invalidateSize();
+        }
+      },
+      100
+    );
 
-    setTimeout(()=>{
-      if(map){
-        map.invalidateSize();
-        resizeRadarCanvas();
-      }
-    },700);
+    setTimeout(
+      ()=>{
+        if(map){
+          map.invalidateSize();
+
+          if(radarVisible){
+            refreshReflectivity();
+          }
+        }
+      },
+      700
+    );
 
   }catch(error){
 
@@ -1366,9 +1343,11 @@ function initMap(){
 
     map=null;
     tiles=null;
-    reflectivityWms=null;
+
   }
+
 }
+
 
 function loadLeaflet(){
 
@@ -1385,52 +1364,61 @@ function loadLeaflet(){
 
   script.crossOrigin="";
 
-  script.onload=()=>{
-    initMap();
-  };
-
-  script.onerror=()=>{
-
-    const fallback=
-      document.createElement("script");
-
-    fallback.src=
-      "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
-
-    fallback.crossOrigin="";
-
-    fallback.onload=()=>{
+  script.onload=
+    ()=>{
       initMap();
     };
 
-    fallback.onerror=()=>{
-      console.error(
-        "Leaflet не удалось загрузить."
-      );
-    };
+  script.onerror=
+    ()=>{
 
-    document.head.appendChild(
-      fallback
-    );
-  };
+      const fallback=
+        document.createElement("script");
+
+      fallback.src=
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+
+      fallback.crossOrigin="";
+
+      fallback.onload=
+        ()=>{
+          initMap();
+        };
+
+      fallback.onerror=
+        ()=>{
+          console.error(
+            "Leaflet не удалось загрузить."
+          );
+        };
+
+      document.head.appendChild(
+        fallback
+      );
+
+    };
 
   document.head.appendChild(
     script
   );
+
 }
 
 loadLeaflet();
 
-</script>
 
-<script>
+/* =====================================================
+   HELPERS
+===================================================== */
 
-const $=id=>
-  document.getElementById(id);
+const $=
+  id=>
+    document.getElementById(id);
+
 
 function msg(t){
 
-  let x=
+  const x=
     document.createElement("div");
 
   x.textContent=t;
@@ -1450,76 +1438,21 @@ function msg(t){
 
   document.body.append(x);
 
-  setTimeout(()=>{
-    x.remove();
-  },1300);
+  setTimeout(
+    ()=>{
+      x.remove();
+    },
+    1300
+  );
+
 }
 
+
 /* =====================================================
-   RADAR CANVAS
-   Старый canvas больше НЕ рисует отражаемость.
-   WMS отвечает за отображение.
+   RADAR STATE
 ===================================================== */
-
-const radarCanvas=
-  $("radarCanvas");
-
-const radarCtx=
-  radarCanvas.getContext("2d");
 
 let radarVisible=false;
-
-function resizeRadarCanvas(){
-
-  const dpr=
-    Math.max(
-      1,
-      window.devicePixelRatio || 1
-    );
-
-  radarCanvas.width=
-    Math.round(
-      window.innerWidth*dpr
-    );
-
-  radarCanvas.height=
-    Math.round(
-      window.innerHeight*dpr
-    );
-
-  radarCanvas.style.width=
-    window.innerWidth+"px";
-
-  radarCanvas.style.height=
-    window.innerHeight+"px";
-
-  radarCtx.setTransform(
-    dpr,
-    0,
-    0,
-    dpr,
-    0,
-    0
-  );
-
-  radarCtx.clearRect(
-    0,
-    0,
-    window.innerWidth,
-    window.innerHeight
-  );
-}
-
-window.addEventListener(
-  "resize",
-  resizeRadarCanvas
-);
-
-resizeRadarCanvas();
-
-/* =====================================================
-   NOWCAST TIME
-===================================================== */
 
 let allNowcastTimes=[];
 
@@ -1533,20 +1466,14 @@ let radarPlaying=false;
 
 let radarPlayTimer=null;
 
-/*
-  true — времена реально получены
-  через WMS GetCapabilities.
-*/
+let radarRefreshTimer=null;
 
-let verifiedNowcastTimes=false;
+let radarRequestId=0;
 
-/*
-  Если GetCapabilities недоступен из-за CORS,
-  создаём сетку последних 10-минутных времён.
 
-  Это fallback.
-  Сам WMS всё равно остаётся реальным.
-*/
+/* =====================================================
+   TIME
+===================================================== */
 
 function snapTo10Minutes(value){
 
@@ -1572,6 +1499,7 @@ function snapTo10Minutes(value){
   return d.toISOString();
 
 }
+
 
 function normalizeNowcastTimes(times){
 
@@ -1613,8 +1541,59 @@ function normalizeNowcastTimes(times){
 
 }
 
+
 /* =====================================================
-   WMS GETCAPABILITIES PARSER
+   FALLBACK TIMES
+===================================================== */
+
+function buildFallbackTimes(){
+
+  const now=
+    new Date();
+
+  now.setSeconds(0,0);
+
+  now.setMinutes(
+    Math.floor(
+      now.getMinutes()/10
+    )*10
+  );
+
+  const result=[];
+
+  /*
+    Создаём последние 24 часа.
+    
+    Важно:
+    эти времена используются только для
+    ручного таймлайна.
+    
+    Для текущего кадра TIME можно не передавать,
+    тогда Nowcast сам выбирает последний доступный.
+  */
+
+  for(
+    let i=143;
+    i>=0;
+    i--
+  ){
+
+    result.push(
+      new Date(
+        now.getTime()-
+        i*10*60*1000
+      ).toISOString()
+    );
+
+  }
+
+  return result;
+
+}
+
+
+/* =====================================================
+   GETCAPABILITIES
 ===================================================== */
 
 function extractTimesFromCapabilities(text){
@@ -1623,16 +1602,10 @@ function extractTimesFromCapabilities(text){
     typeof text!=="string" ||
     !text
   ){
-
     return [];
-
   }
 
   const result=[];
-
-  /*
-    Ищем Dimension/Extent time.
-  */
 
   const patterns=[
 
@@ -1666,81 +1639,43 @@ function extractTimesFromCapabilities(text){
 
   }
 
-  if(!content){
+  const timestampRegex=
+    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g;
 
-    /*
-      Второй вариант:
-      искать timestamp'ы прямо во всём XML.
-    */
+  if(content){
 
-    const isoMatches=
-      text.match(
-        /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g
+    const matches=
+      content.match(
+        timestampRegex
       );
 
-    if(isoMatches){
+    if(matches){
 
-      return normalizeNowcastTimes(
-        isoMatches
+      result.push(
+        ...matches
       );
 
     }
 
-    return [];
-
   }
 
   /*
-    У Nowcast время может быть:
-    2026-09-13T10:00:00Z,
-    2026-09-13T10:10:00Z,...
+    Если Dimension/Extent не найден,
+    ищем даты по всему XML.
   */
 
-  const matches=
-    content.match(
-      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g
-    );
+  if(!result.length){
 
-  if(matches){
+    const matches=
+      text.match(
+        timestampRegex
+      );
 
-    result.push(
-      ...matches
-    );
+    if(matches){
 
-  }
-
-  /*
-    Иногда список может быть записан через запятую
-    или диапазоном.
-  */
-
-  if(
-    !result.length &&
-    content.includes(",")
-  ){
-
-    const parts=
-      content
-        .split(",");
-
-    for(
-      const part of parts
-    ){
-
-      const clean=
-        part.trim();
-
-      if(
-        /^\d{4}-\d{2}-\d{2}T/.test(
-          clean
-        )
-      ){
-
-        result.push(
-          clean
-        );
-
-      }
+      result.push(
+        ...matches
+      );
 
     }
 
@@ -1752,70 +1687,15 @@ function extractTimesFromCapabilities(text){
 
 }
 
-/* =====================================================
-   FALLBACK TIME GRID
-===================================================== */
-
-function buildFallbackTimes(){
-
-  const now=
-    new Date();
-
-  now.setSeconds(0,0);
-
-  now.setMinutes(
-    Math.floor(
-      now.getMinutes()/10
-    )*10
-  );
-
-  const result=[];
-
-  /*
-    144 кадров = 24 часа.
-  */
-
-  for(
-    let i=143;
-    i>=0;
-    i--
-  ){
-
-    result.push(
-      new Date(
-        now.getTime()-
-        i*10*60*1000
-      ).toISOString()
-    );
-
-  }
-
-  return result;
-
-}
 
 /* =====================================================
-   LOAD NOWCAST TIMES
+   LOAD TIMES
 ===================================================== */
 
 async function loadNowcastTimes(){
 
-  verifiedNowcastTimes=false;
-
   $("framesInfo").textContent=
     "Получение списка кадров…";
-
-  /*
-    Важно:
-    GetCapabilities запрашивается напрямую из браузера.
-
-    Если сервер разрешает CORS —
-    получаем реальные времена.
-
-    Если нет —
-    WMS всё равно работает,
-    а таймлайн получает 10-минутную сетку.
-  */
 
   try{
 
@@ -1853,7 +1733,7 @@ async function loadNowcastTimes(){
     if(!times.length){
 
       throw new Error(
-        "В GetCapabilities не найдено время"
+        "В GetCapabilities нет времён"
       );
 
     }
@@ -1861,17 +1741,15 @@ async function loadNowcastTimes(){
     allNowcastTimes=
       times;
 
-    verifiedNowcastTimes=true;
-
     $("framesInfo").textContent=
       "Доступно: "+
-      allNowcastTimes.length;
+      allNowcastTimes.length+
+      " кадров";
 
     await applyFrameCount();
 
     /*
-      Если удалось получить реальные времена,
-      сразу ставим последний доступный кадр.
+      Последний реальный timestamp.
     */
 
     if(radarFrames.length){
@@ -1884,7 +1762,16 @@ async function loadNowcastTimes(){
 
       updateRadarTimeline();
 
-      updateWmsTime();
+    }
+
+    /*
+      Если отражаемость уже включена,
+      обновляем карту.
+    */
+
+    if(radarVisible){
+
+      refreshReflectivity();
 
     }
 
@@ -1893,29 +1780,25 @@ async function loadNowcastTimes(){
   }catch(error){
 
     console.warn(
-      "WMS GetCapabilities недоступен:",
+      "GetCapabilities недоступен:",
       error
     );
 
   }
 
   /*
-    FALLBACK
+    CORS fallback.
+    
+    Сам радар при этом НЕ выключается.
   */
 
   allNowcastTimes=
     buildFallbackTimes();
 
   $("framesInfo").textContent=
-    "Автосписок: "+
-    allNowcastTimes.length+
-    " кадров";
+    "Последние 24 часа";
 
   await applyFrameCount();
-
-  /*
-    Ставим последний кадр.
-  */
 
   if(radarFrames.length){
 
@@ -1927,63 +1810,534 @@ async function loadNowcastTimes(){
 
     updateRadarTimeline();
 
-    updateWmsTime();
+  }
+
+  if(radarVisible){
+
+    /*
+      Для fallback первый запрос делаем
+      без TIME — Nowcast сам отдаёт
+      последний доступный продукт.
+    */
+
+    refreshReflectivity(
+      true
+    );
 
   }
 
 }
 
+
 /* =====================================================
-   WMS TIME
+   CURRENT TIME
 ===================================================== */
 
 function getCurrentWmsTime(){
 
-  return radarFrames[currentFrame] || null;
+  if(
+    !radarFrames.length
+  ){
+    return null;
+  }
+
+  return radarFrames[
+    currentFrame
+  ] || null;
 
 }
 
-function updateWmsTime(){
 
-  if(
-    !reflectivityWms
-  ){
+/* =====================================================
+   BUILD REAL WMS GETMAP URL
+===================================================== */
 
-    return;
+function buildWmsUrl(
+  useTime=true
+){
+
+  if(!map){
+    return null;
+  }
+
+  const bounds=
+    map.getBounds();
+
+  let west=
+    bounds.getWest();
+
+  let south=
+    bounds.getSouth();
+
+  let east=
+    bounds.getEast();
+
+  let north=
+    bounds.getNorth();
+
+  /*
+    Leaflet может дать BBOX,
+    пересекающий 180°.
+    
+    Для России/Европы обычного диапазона
+    достаточно.
+  */
+
+  west=
+    Math.max(
+      -180,
+      Math.min(
+        180,
+        west
+      )
+    );
+
+  east=
+    Math.max(
+      -180,
+      Math.min(
+        180,
+        east
+      )
+    );
+
+  south=
+    Math.max(
+      -90,
+      Math.min(
+        90,
+        south
+      )
+    );
+
+  north=
+    Math.max(
+      -90,
+      Math.min(
+        90,
+        north
+      )
+    );
+
+  const size=
+    map.getSize();
+
+  const width=
+    Math.max(
+      512,
+      Math.min(
+        2048,
+        Math.round(size.x*window.devicePixelRatio)
+      )
+    );
+
+  const height=
+    Math.max(
+      512,
+      Math.min(
+        2048,
+        Math.round(size.y*window.devicePixelRatio)
+      )
+    );
+
+  const params=
+    new URLSearchParams();
+
+  /*
+    Именно WMS 1.1.1.
+  */
+
+  params.set(
+    "SERVICE",
+    "WMS"
+  );
+
+  params.set(
+    "VERSION",
+    "1.1.1"
+  );
+
+  params.set(
+    "REQUEST",
+    "GetMap"
+  );
+
+  params.set(
+    "LAYERS",
+    NOWCAST_LAYER
+  );
+
+  params.set(
+    "STYLES",
+    ""
+  );
+
+  params.set(
+    "FORMAT",
+    "image/png"
+  );
+
+  /*
+    Ключевой параметр.
+    
+    WMS должен возвращать прозрачность
+    там, где нет данных.
+  */
+
+  params.set(
+    "TRANSPARENT",
+    "true"
+  );
+
+  /*
+    В оригинальном radar-wms используется
+    EPSG:4326 для GetMap.
+  */
+
+  params.set(
+    "SRS",
+    "EPSG:4326"
+  );
+
+  params.set(
+    "BBOX",
+    [
+      west,
+      south,
+      east,
+      north
+    ].join(",")
+  );
+
+  params.set(
+    "WIDTH",
+    width
+  );
+
+  params.set(
+    "HEIGHT",
+    height
+  );
+
+  /*
+    TIME передаём только если он
+    действительно нужен.
+    
+    Если TIME отсутствует, backend Nowcast
+    выбирает самый новый RadarDataset.
+  */
+
+  if(useTime){
+
+    const time=
+      getCurrentWmsTime();
+
+    if(time){
+
+      /*
+        WMS допускает ISO-время.
+        Убираем миллисекунды.
+      */
+
+      const d=
+        new Date(time);
+
+      if(
+        !Number.isNaN(
+          d.getTime()
+        )
+      ){
+
+        const clean=
+          d.toISOString()
+            .replace(
+              ".000Z",
+              "Z"
+            );
+
+        params.set(
+          "TIME",
+          clean
+        );
+
+      }
+
+    }
 
   }
 
-  const time=
-    getCurrentWmsTime();
+  return (
+    NOWCAST_WMS+
+    "?"+
+    params.toString()
+  );
 
-  if(!time){
+}
 
-    /*
-      Без TIME сервер сам отдаёт
-      актуальное/дефолтное изображение.
-    */
 
-    reflectivityWms.setParams({
-      TIME:null
-    });
+/* =====================================================
+   CUSTOM WMS IMAGE OVERLAY
+===================================================== */
 
+function removeReflectivityLayer(){
+
+  if(
+    reflectivityLayer &&
+    map &&
+    map.hasLayer(
+      reflectivityLayer
+    )
+  ){
+
+    map.removeLayer(
+      reflectivityLayer
+    );
+
+  }
+
+  reflectivityLayer=null;
+
+}
+
+
+/*
+  Здесь не используется canvas.
+  
+  Это важно:
+  браузеру не нужно читать пиксели
+  чужого PNG.
+  
+  PNG просто отображается как ImageOverlay.
+*/
+
+function createReflectivityOverlay(
+  url
+){
+
+  if(!map){
     return;
+  }
+
+  const bounds=
+    map.getBounds();
+
+  const image=
+    L.imageOverlay(
+      url,
+      bounds,
+      {
+        opacity:0.86,
+        interactive:false,
+        crossOrigin:false,
+        className:"clorad-radar"
+      }
+    );
+
+  image.on(
+    "load",
+    ()=>{
+      /*
+        Ничего не делаем.
+        PNG уже содержит прозрачные
+        области no-data.
+      */
+    }
+  );
+
+  image.on(
+    "error",
+    ()=>{
+      console.warn(
+        "Nowcast WMS image не загрузилась"
+      );
+    }
+  );
+
+  image.addTo(map);
+
+  reflectivityLayer=
+    image;
+
+}
+
+
+/* =====================================================
+   REFRESH RADAR
+===================================================== */
+
+function refreshReflectivity(
+  newest=false
+){
+
+  if(
+    !map ||
+    !radarVisible
+  ){
+    return;
+  }
+
+  /*
+    Отменяем отложенное обновление.
+  */
+
+  if(radarRefreshTimer){
+
+    clearTimeout(
+      radarRefreshTimer
+    );
 
   }
 
   /*
-    Главная операция:
-    меняем TIME у настоящего WMS.
+    Небольшой debounce.
+    Поэтому при жестком pinch-zoom
+    десятки запросов не летят одновременно.
   */
 
-  reflectivityWms.setParams({
-    TIME:time
-  });
+  radarRefreshTimer=
+    setTimeout(
+      ()=>{
+        loadReflectivityImage(
+          newest
+        );
+      },
+      120
+    );
 
 }
 
+
+async function loadReflectivityImage(
+  newest=false
+){
+
+  if(
+    !map ||
+    !radarVisible
+  ){
+    return;
+  }
+
+  const requestId=
+    ++radarRequestId;
+
+  /*
+    Если пользователь двигает карту,
+    сначала используем последний доступный
+    timestamp.
+    
+    newest=true означает:
+    вообще не передавать TIME.
+  */
+
+  const url=
+    buildWmsUrl(
+      !newest
+    );
+
+  if(!url){
+    return;
+  }
+
+  /*
+    Не удаляем старый слой ДО загрузки нового.
+    
+    Благодаря этому при зуме карта
+    не мигает.
+  */
+
+  const oldLayer=
+    reflectivityLayer;
+
+  const bounds=
+    map.getBounds();
+
+  const img=
+    new Image();
+
+  /*
+    Для простого отображения WMS PNG
+    crossorigin не нужен.
+  */
+
+  img.onload=
+    ()=>{
+
+      /*
+        Если за это время пользователь
+        уже сделал другой запрос,
+        этот кадр устарел.
+      */
+
+      if(
+        requestId!==radarRequestId ||
+        !map ||
+        !radarVisible
+      ){
+
+        return;
+
+      }
+
+      const newLayer=
+        L.imageOverlay(
+          url,
+          bounds,
+          {
+            opacity:0.86,
+            interactive:false,
+            className:"clorad-radar"
+          }
+        );
+
+      newLayer.addTo(map);
+
+      /*
+        Только после успешной загрузки
+        удаляем старый кадр.
+        
+        Поэтому при обновлении нет
+        большого мигания.
+      */
+
+      if(
+        oldLayer &&
+        map.hasLayer(
+          oldLayer
+        )
+      ){
+
+        map.removeLayer(
+          oldLayer
+        );
+
+      }
+
+      reflectivityLayer=
+        newLayer;
+
+    };
+
+  img.onerror=
+    ()=>{
+      console.warn(
+        "Не удалось получить Nowcast WMS:",
+        url
+      );
+
+      /*
+        Старый рабочий кадр оставляем.
+      */
+    };
+
+  img.src=
+    url;
+
+}
+
+
 /* =====================================================
-   REFLECTIVITY VISIBILITY
+   REFLECTIVITY SWITCH
 ===================================================== */
 
 function updateReflectivity(){
@@ -1993,67 +2347,48 @@ function updateReflectivity(){
       "on"
     );
 
-  if(!reflectivityWms){
+  if(!radarVisible){
+
+    radarRequestId++;
+
+    removeReflectivityLayer();
+
+    $("intensityValue").textContent=
+      "Нет данных";
 
     return;
 
   }
 
-  if(radarVisible){
+  /*
+    Если времён пока нет,
+    запрашиваем newest без TIME.
+  */
 
-    /*
-      Если слой ещё не был добавлен —
-      добавляем его сейчас.
-    */
+  if(
+    !radarFrames.length
+  ){
 
-    if(
-      !map.hasLayer(
-        reflectivityWms
-      )
-    ){
-
-      reflectivityWms.addTo(map);
-
-    }
-
-    /*
-      Устанавливаем текущий кадр.
-    */
-
-    updateWmsTime();
-
-    reflectivityWms.setOpacity(
-      0.86
+    refreshReflectivity(
+      true
     );
 
-  }else{
-
-    /*
-      Полностью убираем WMS с карты,
-      чтобы он не мешал ОЯ.
-    */
-
-    if(
-      map.hasLayer(
-        reflectivityWms
-      )
-    ){
-
-      map.removeLayer(
-        reflectivityWms
-      );
-
-    }
+    return;
 
   }
 
+  refreshReflectivity();
+
 }
+
 
 /* =====================================================
    FRAME COUNT
 ===================================================== */
 
-function setFrameCount(value){
+function setFrameCount(
+  value
+){
 
   value=
     parseInt(
@@ -2064,9 +2399,7 @@ function setFrameCount(value){
   if(
     !Number.isFinite(value)
   ){
-
     value=1;
-
   }
 
   const max=
@@ -2084,7 +2417,8 @@ function setFrameCount(value){
       )
     );
 
-  frameCount=value;
+  frameCount=
+    value;
 
   $("frameInput").value=
     frameCount;
@@ -2093,9 +2427,12 @@ function setFrameCount(value){
 
 }
 
+
 async function applyFrameCount(){
 
-  if(!allNowcastTimes.length){
+  if(
+    !allNowcastTimes.length
+  ){
     return;
   }
 
@@ -2113,12 +2450,6 @@ async function applyFrameCount(){
       )
     );
 
-  /*
-    Не двигаем автоматически.
-    После изменения количества кадров
-    показываем последний доступный кадр.
-  */
-
   currentFrame=
     radarFrames.length
       ? radarFrames.length-1
@@ -2128,15 +2459,16 @@ async function applyFrameCount(){
 
   buildRadarLabels();
 
-  updateWmsTime();
-
 }
+
 
 /* =====================================================
    FORMAT TIME
 ===================================================== */
 
-function formatRadarTime(time){
+function formatRadarTime(
+  time
+){
 
   if(!time){
     return "Нет данных";
@@ -2150,9 +2482,7 @@ function formatRadarTime(time){
       date.getTime()
     )
   ){
-
     return time;
-
   }
 
   return new Intl.DateTimeFormat(
@@ -2167,6 +2497,7 @@ function formatRadarTime(time){
   ).format(date);
 
 }
+
 
 /* =====================================================
    TIMELINE
@@ -2189,26 +2520,20 @@ function updateRadarTimeline(){
     currentFrame;
 
   const time=
-    radarFrames[currentFrame];
+    radarFrames[
+      currentFrame
+    ];
 
   $("timeLabel").textContent=
     time
       ? formatRadarTime(time)
-      : "Загрузка…";
-
-  updateWmsTime();
-
-  /*
-    Для WMS максимальный dBZ нельзя честно получить
-    из PNG без отдельного GetFeatureInfo/векторного API.
-
-    Поэтому не подделываем число.
-  */
+      : "Последний кадр";
 
   $("intensityValue").textContent=
     "Нет данных";
 
 }
+
 
 /* =====================================================
    LABELS
@@ -2221,7 +2546,9 @@ function buildRadarLabels(){
 
   container.innerHTML="";
 
-  if(!radarFrames.length){
+  if(
+    !radarFrames.length
+  ){
     return;
   }
 
@@ -2229,7 +2556,9 @@ function buildRadarLabels(){
 
   indexes.push(0);
 
-  if(radarFrames.length>2){
+  if(
+    radarFrames.length>2
+  ){
 
     indexes.push(
       Math.floor(
@@ -2239,7 +2568,9 @@ function buildRadarLabels(){
 
   }
 
-  if(radarFrames.length>1){
+  if(
+    radarFrames.length>1
+  ){
 
     indexes.push(
       radarFrames.length-1
@@ -2272,6 +2603,7 @@ function buildRadarLabels(){
 
 }
 
+
 /* =====================================================
    RANGE
 ===================================================== */
@@ -2280,11 +2612,6 @@ $("range").addEventListener(
   "input",
   ()=>{
 
-    /*
-      Только пользователь двигает ползунок.
-      Никакого автоматического перехода.
-    */
-
     currentFrame=
       Number(
         $("range").value
@@ -2292,8 +2619,23 @@ $("range").addEventListener(
 
     updateRadarTimeline();
 
+    /*
+      ВАЖНО:
+      кадр меняется только когда пользователь
+      двигает ползунок.
+      
+      Автоматического перехода нет.
+    */
+
+    if(radarVisible){
+
+      refreshReflectivity();
+
+    }
+
   }
 );
+
 
 /* =====================================================
    PLAY
@@ -2320,6 +2662,7 @@ function stopRadarPlay(){
 
 }
 
+
 function startRadarPlay(){
 
   if(
@@ -2342,139 +2685,157 @@ function startRadarPlay(){
       '<path d="M7 5v14M17 5v14"/>';
 
   radarPlayTimer=
-    setInterval(()=>{
+    setInterval(
+      ()=>{
 
-      currentFrame++;
+        currentFrame++;
 
-      if(
-        currentFrame>=
-        radarFrames.length
-      ){
+        if(
+          currentFrame>=
+          radarFrames.length
+        ){
 
-        currentFrame=0;
+          currentFrame=0;
 
-      }
+        }
 
-      $("range").value=
-        currentFrame;
+        $("range").value=
+          currentFrame;
 
-      updateRadarTimeline();
+        updateRadarTimeline();
 
-    },180);
+        if(radarVisible){
+
+          refreshReflectivity();
+
+        }
+
+      },
+      700
+    );
 
 }
 
-$("play").onclick=()=>{
 
-  if(radarPlaying){
+$("play").onclick=
+  ()=>{
 
-    stopRadarPlay();
+    if(radarPlaying){
 
-  }else{
+      stopRadarPlay();
 
-    startRadarPlay();
+    }else{
 
-  }
+      startRadarPlay();
 
-};
+    }
+
+  };
+
 
 /* =====================================================
    ZOOM
 ===================================================== */
 
-$("plus").onclick=()=>{
+$("plus").onclick=
+  ()=>{
 
-  if(!map){
+    if(!map){
 
-    msg(
-      "Карта ещё загружается"
-    );
+      msg(
+        "Карта ещё загружается"
+      );
 
-    return;
+      return;
 
-  }
+    }
 
-  map.zoomIn();
+    map.zoomIn();
 
-};
+  };
 
-$("minus").onclick=()=>{
 
-  if(!map){
+$("minus").onclick=
+  ()=>{
 
-    msg(
-      "Карта ещё загружается"
-    );
+    if(!map){
 
-    return;
+      msg(
+        "Карта ещё загружается"
+      );
 
-  }
+      return;
 
-  map.zoomOut();
+    }
 
-};
+    map.zoomOut();
+
+  };
+
 
 /* =====================================================
    GEOLOCATION
 ===================================================== */
 
-$("geo").onclick=()=>{
+$("geo").onclick=
+  ()=>{
 
-  if(!map){
-
-    msg(
-      "Карта ещё загружается"
-    );
-
-    return;
-
-  }
-
-  if(
-    !navigator.geolocation
-  ){
-
-    msg(
-      "Геолокация недоступна"
-    );
-
-    return;
-
-  }
-
-  navigator.geolocation.getCurrentPosition(
-
-    p=>{
-
-      map.setView(
-        [
-          p.coords.latitude,
-          p.coords.longitude
-        ],
-        9
-      );
+    if(!map){
 
       msg(
-        "Местоположение найдено"
+        "Карта ещё загружается"
       );
 
-    },
+      return;
 
-    ()=>{
-      msg(
-        "Не удалось определить местоположение"
-      );
-    },
-
-    {
-      enableHighAccuracy:true,
-      timeout:10000,
-      maximumAge:60000
     }
 
-  );
+    if(
+      !navigator.geolocation
+    ){
 
-};
+      msg(
+        "Геолокация недоступна"
+      );
+
+      return;
+
+    }
+
+    navigator.geolocation.getCurrentPosition(
+
+      p=>{
+
+        map.setView(
+          [
+            p.coords.latitude,
+            p.coords.longitude
+          ],
+          9
+        );
+
+        msg(
+          "Местоположение найдено"
+        );
+
+      },
+
+      ()=>{
+        msg(
+          "Не удалось определить местоположение"
+        );
+      },
+
+      {
+        enableHighAccuracy:true,
+        timeout:10000,
+        maximumAge:60000
+      }
+
+    );
+
+  };
+
 
 /* =====================================================
    LAYERS
@@ -2489,6 +2850,7 @@ const reflectivitySwitch=
 const lightningSwitch=
   $("lightningSwitch");
 
+
 function setSwitchState(
   element,
   enabled
@@ -2501,149 +2863,136 @@ function setSwitchState(
 
 }
 
-if(
-  oyaSwitch.classList.contains("on") &&
-  reflectivitySwitch.classList.contains("on")
-){
 
-  setSwitchState(
-    reflectivitySwitch,
-    false
-  );
+/* =====================================================
+   OYA
+===================================================== */
 
-}
+oyaSwitch.onclick=
+  e=>{
 
-/*
-  ОЯ
-*/
+    e.stopPropagation();
 
-oyaSwitch.onclick=e=>{
+    const shouldEnable=
+      !oyaSwitch.classList.contains(
+        "on"
+      );
 
-  e.stopPropagation();
+    if(shouldEnable){
 
-  const shouldEnable=
-    !oyaSwitch.classList.contains(
-      "on"
-    );
+      setSwitchState(
+        oyaSwitch,
+        true
+      );
 
-  if(shouldEnable){
+      setSwitchState(
+        reflectivitySwitch,
+        false
+      );
 
-    setSwitchState(
-      oyaSwitch,
-      true
-    );
+      radarVisible=false;
 
-    setSwitchState(
-      reflectivitySwitch,
-      false
-    );
+      radarRequestId++;
 
-    radarVisible=false;
+      removeReflectivityLayer();
 
-    if(
-      reflectivityWms &&
-      map &&
-      map.hasLayer(
-        reflectivityWms
-      )
-    ){
+    }else{
 
-      map.removeLayer(
-        reflectivityWms
+      setSwitchState(
+        oyaSwitch,
+        false
       );
 
     }
 
-  }else{
+  };
 
-    setSwitchState(
-      oyaSwitch,
-      false
-    );
 
-  }
+/* =====================================================
+   REFLECTIVITY
+===================================================== */
 
-};
+reflectivitySwitch.onclick=
+  e=>{
 
-/*
-  ОТРАЖАЕМОСТЬ
-*/
+    e.stopPropagation();
 
-reflectivitySwitch.onclick=e=>{
+    const shouldEnable=
+      !reflectivitySwitch.classList.contains(
+        "on"
+      );
 
-  e.stopPropagation();
+    if(shouldEnable){
 
-  const shouldEnable=
-    !reflectivitySwitch.classList.contains(
+      setSwitchState(
+        reflectivitySwitch,
+        true
+      );
+
+      setSwitchState(
+        oyaSwitch,
+        false
+      );
+
+      radarVisible=true;
+
+      updateReflectivity();
+
+      msg(
+        "Отражаемость"
+      );
+
+    }else{
+
+      setSwitchState(
+        reflectivitySwitch,
+        false
+      );
+
+      radarVisible=false;
+
+      updateReflectivity();
+
+    }
+
+  };
+
+
+/* =====================================================
+   LIGHTNING
+===================================================== */
+
+lightningSwitch.onclick=
+  e=>{
+
+    e.stopPropagation();
+
+    lightningSwitch.classList.toggle(
       "on"
     );
 
-  if(shouldEnable){
+  };
 
-    setSwitchState(
-      reflectivitySwitch,
-      true
-    );
-
-    setSwitchState(
-      oyaSwitch,
-      false
-    );
-
-    radarVisible=true;
-
-    updateReflectivity();
-
-    msg(
-      "Отражаемость"
-    );
-
-  }else{
-
-    setSwitchState(
-      reflectivitySwitch,
-      false
-    );
-
-    radarVisible=false;
-
-    updateReflectivity();
-
-  }
-
-};
-
-/*
-  МОЛНИИ
-*/
-
-lightningSwitch.onclick=e=>{
-
-  e.stopPropagation();
-
-  lightningSwitch.classList.toggle(
-    "on"
-  );
-
-};
 
 /* =====================================================
    LAYERS NAV
 ===================================================== */
 
-$("layersNav").onclick=()=>{
+$("layersNav").onclick=
+  ()=>{
 
-  $("layers")
-    .classList.toggle(
-      "hidden"
-    );
+    $("layers")
+      .classList.toggle(
+        "hidden"
+      );
 
-  $("layersNav")
-    .classList.add(
-      "active"
-    );
+    $("layersNav")
+      .classList.add(
+        "active"
+      );
 
-};
+  };
+
 
 /* =====================================================
    HORIZONTAL NAV
@@ -2652,6 +3001,7 @@ $("layersNav").onclick=()=>{
 let drag=false;
 let startX=0;
 let startScroll=0;
+
 
 $("nav").addEventListener(
   "pointerdown",
@@ -2673,6 +3023,7 @@ $("nav").addEventListener(
   }
 );
 
+
 $("nav").addEventListener(
   "pointermove",
   e=>{
@@ -2690,6 +3041,7 @@ $("nav").addEventListener(
   }
 );
 
+
 $("nav").addEventListener(
   "pointerup",
   ()=>{
@@ -2697,12 +3049,14 @@ $("nav").addEventListener(
   }
 );
 
+
 $("nav").addEventListener(
   "pointercancel",
   ()=>{
     drag=false;
   }
 );
+
 
 [
   "pointerdown",
@@ -2712,23 +3066,29 @@ $("nav").addEventListener(
   "touchstart",
   "touchmove",
   "touchend"
-].forEach(type=>{
+].forEach(
+  type=>{
 
-  $("nav").addEventListener(
-    type,
-    e=>e.stopPropagation(),
-    {
-      passive:false
-    }
-  );
+    $("nav").addEventListener(
+      type,
+      e=>
+        e.stopPropagation(),
+      {
+        passive:false
+      }
+    );
 
-});
+  }
+);
+
 
 /* =====================================================
    LEGEND
 ===================================================== */
 
-function legendToggle(open){
+function legendToggle(
+  open
+){
 
   $("legend")
     .classList.toggle(
@@ -2744,20 +3104,23 @@ function legendToggle(open){
 
 }
 
-$("legendTab").onclick=()=>{
 
-  legendToggle(
-    !$("legend")
-      .classList.contains(
-        "open"
-      )
-  );
+$("legendTab").onclick=
+  ()=>{
+    legendToggle(
+      !$("legend")
+        .classList.contains(
+          "open"
+        )
+    );
+  };
 
-};
 
-$("legendClose").onclick=()=>{
-  legendToggle(false);
-};
+$("legendClose").onclick=
+  ()=>{
+    legendToggle(false);
+  };
+
 
 /* =====================================================
    TOP NAV
@@ -2767,36 +3130,41 @@ document
   .querySelectorAll(
     ".n:not(#layersNav)"
   )
-  .forEach(x=>{
+  .forEach(
+    x=>{
 
-    x.onclick=()=>{
+      x.onclick=
+        ()=>{
 
-      document
-        .querySelectorAll(
-          ".n:not(#layersNav)"
-        )
-        .forEach(n=>
-          n.classList.remove(
+          document
+            .querySelectorAll(
+              ".n:not(#layersNav)"
+            )
+            .forEach(
+              n=>
+                n.classList.remove(
+                  "active"
+                )
+            );
+
+          x.classList.add(
             "active"
-          )
-        );
+          );
 
-      x.classList.add(
-        "active"
-      );
+          $("layersNav")
+            .classList.add(
+              "active"
+            );
 
-      $("layersNav")
-        .classList.add(
-          "active"
-        );
+          msg(
+            x.textContent.trim()
+          );
 
-      msg(
-        x.textContent.trim()
-      );
+        };
 
-    };
+    }
+  );
 
-  });
 
 /* =====================================================
    SEARCH
@@ -2820,174 +3188,202 @@ const cities={
 
 };
 
-$("searchBtn").onclick=()=>{
 
-  $("search")
-    .classList.toggle(
-      "open"
-    );
+$("searchBtn").onclick=
+  ()=>{
 
-  $("settings")
-    .classList.remove(
-      "open"
-    );
-
-  if(
     $("search")
-      .classList.contains(
+      .classList.toggle(
         "open"
-      )
-  ){
+      );
 
-    setTimeout(
-      ()=>
-        $("searchInput").focus(),
-      50
-    );
+    $("settings")
+      .classList.remove(
+        "open"
+      );
 
-  }
+    if(
+      $("search")
+        .classList.contains(
+          "open"
+        )
+    ){
 
-};
+      setTimeout(
+        ()=>
+          $("searchInput").focus(),
+        50
+      );
+
+    }
+
+  };
+
 
 /* =====================================================
    SETTINGS
 ===================================================== */
 
-$("settingsBtn").onclick=()=>{
+$("settingsBtn").onclick=
+  ()=>{
 
-  $("settings")
-    .classList.toggle(
-      "open"
-    );
-
-  $("search")
-    .classList.remove(
-      "open"
-    );
-
-};
-
-$("framesHead").onclick=()=>{
-
-  $("framesSetting")
-    .classList.toggle(
-      "open"
-    );
-
-};
-
-$("frameMinus").onclick=()=>{
-
-  setFrameCount(
-    frameCount-1
-  );
-
-};
-
-$("framePlus").onclick=()=>{
-
-  setFrameCount(
-    frameCount+1
-  );
-
-};
-
-$("frameInput").onchange=()=>{
-
-  setFrameCount(
-    $("frameInput").value
-  );
-
-};
-
-$("frameInput").onkeydown=e=>{
-
-  if(e.key==="Enter"){
-    e.target.blur();
-  }
-
-};
-
-/* =====================================================
-   SEARCH ENTER
-===================================================== */
-
-$("searchInput").onkeydown=e=>{
-
-  if(e.key!="Enter"){
-    return;
-  }
-
-  let q=
-    e.target.value
-      .toLowerCase()
-      .trim();
-
-  let k=
-    Object.keys(cities)
-      .find(
-        x=>x.includes(q)
+    $("settings")
+      .classList.toggle(
+        "open"
       );
-
-  if(k){
-
-    if(!map){
-
-      msg(
-        "Карта ещё загружается"
-      );
-
-      return;
-
-    }
-
-    map.setView(
-      cities[k],
-      9
-    );
 
     $("search")
       .classList.remove(
         "open"
       );
 
-    msg(
-      k[0].toUpperCase()+
-      k.slice(1)
+  };
+
+
+$("framesHead").onclick=
+  ()=>{
+
+    $("framesSetting")
+      .classList.toggle(
+        "open"
+      );
+
+  };
+
+
+$("frameMinus").onclick=
+  ()=>{
+
+    setFrameCount(
+      frameCount-1
     );
 
-  }else{
+  };
 
-    msg(
-      "Город не найден"
+
+$("framePlus").onclick=
+  ()=>{
+
+    setFrameCount(
+      frameCount+1
     );
 
-  }
+  };
 
-};
+
+$("frameInput").onchange=
+  ()=>{
+
+    setFrameCount(
+      $("frameInput").value
+    );
+
+  };
+
+
+$("frameInput").onkeydown=
+  e=>{
+
+    if(
+      e.key==="Enter"
+    ){
+
+      e.target.blur();
+
+    }
+
+  };
+
 
 /* =====================================================
-   TOP MENU
+   SEARCH ENTER
 ===================================================== */
 
-$("menuBtn").onclick=()=>{
+$("searchInput").onkeydown=
+  e=>{
 
-  $("nav")
-    .classList.toggle(
-      "closed"
-    );
+    if(
+      e.key!="Enter"
+    ){
+      return;
+    }
 
-  $("search")
-    .classList.remove(
-      "open"
-    );
+    const q=
+      e.target.value
+        .toLowerCase()
+        .trim();
 
-  $("settings")
-    .classList.remove(
-      "open"
-    );
+    const k=
+      Object.keys(
+        cities
+      )
+      .find(
+        x=>
+          x.includes(q)
+      );
 
-};
+    if(k){
+
+      if(!map){
+
+        msg(
+          "Карта ещё загружается"
+        );
+
+        return;
+
+      }
+
+      map.setView(
+        cities[k],
+        9
+      );
+
+      $("search")
+        .classList.remove(
+          "open"
+        );
+
+      msg(
+        k[0].toUpperCase()+
+        k.slice(1)
+      );
+
+    }else{
+
+      msg(
+        "Город не найден"
+      );
+
+    }
+
+  };
+
+
+/* =====================================================
+   MENU
+===================================================== */
+
+$("menuBtn").onclick=
+  ()=>{
+
+    $("nav")
+      .classList.toggle(
+        "closed"
+      );
+
+    $("search")
+      .classList.remove(
+        "open"
+      );
+
+    $("settings")
+      .classList.remove(
+        "open"
+      );
+
+  };
+
 
 /* =====================================================
    THEME
@@ -2995,23 +3391,26 @@ $("menuBtn").onclick=()=>{
 
 let darkMode=true;
 
-$("themeBtn").onclick=()=>{
 
-  darkMode=!darkMode;
+$("themeBtn").onclick=
+  ()=>{
 
-  document.body
-    .classList.toggle(
-      "light",
-      !darkMode
+    darkMode=!darkMode;
+
+    document.body
+      .classList.toggle(
+        "light",
+        !darkMode
+      );
+
+    msg(
+      darkMode
+        ? "Тёмная тема"
+        : "Светлая тема"
     );
 
-  msg(
-    darkMode
-      ? "Тёмная тема"
-      : "Светлая тема"
-  );
+  };
 
-};
 
 /* =====================================================
    CLOSE POPUPS
@@ -3056,8 +3455,9 @@ document.addEventListener(
   }
 );
 
+
 /* =====================================================
-   START NOWCAST
+   START
 ===================================================== */
 
 loadNowcastTimes();
