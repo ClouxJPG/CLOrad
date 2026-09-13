@@ -899,7 +899,6 @@ body.light .frameInput{
   <div class="brand">
 
     <div class="radarLogo" aria-hidden="true">
-
       <svg viewBox="0 0 48 48">
         <circle cx="24" cy="24" r="20"/>
         <circle cx="24" cy="24" r="13"/>
@@ -909,7 +908,6 @@ body.light .frameInput{
         <circle class="radarDot" cx="31.5" cy="15.5" r="2.3"/>
         <circle class="radarDot" cx="16" cy="31" r="1.8"/>
       </svg>
-
     </div>
 
     <div class="name">CLOrad</div>
@@ -1170,11 +1168,9 @@ body.light .frameInput{
   <div class="trow">
 
     <button class="play" id="play">
-
       <svg viewBox="0 0 24 24">
         <path d="M7 4l13 8-13 8z"/>
       </svg>
-
     </button>
 
     <div class="slider">
@@ -1283,10 +1279,8 @@ $("minus").onclick = () =>
 $("geo").onclick = () => {
 
   if(!navigator.geolocation){
-
     msg("Геолокация недоступна");
     return;
-
   }
 
   navigator.geolocation.getCurrentPosition(
@@ -1306,11 +1300,7 @@ $("geo").onclick = () => {
     },
 
     () => {
-
-      msg(
-        "Не удалось определить местоположение"
-      );
-
+      msg("Не удалось определить местоположение");
     },
 
     {
@@ -1378,13 +1368,25 @@ reflectivitySwitch.onclick = event => {
 };
 
 
+/* =========================
+   LIGHTNING
+========================= */
+
 lightningSwitch.onclick = event => {
 
   event.stopPropagation();
 
-  lightningSwitch.classList.toggle(
-    "on"
-  );
+  lightningSwitch.classList.toggle("on");
+
+  if (
+    window.CLOradLightning
+  ) {
+
+    window.CLOradLightning.setEnabled(
+      lightningSwitch.classList.contains("on")
+    );
+
+  }
 
 };
 
@@ -1682,9 +1684,7 @@ $("frameInput").onchange = () => {
     !Number.isFinite(value) ||
     value < 1
   ){
-
     value = 1;
-
   }
 
   frameCount = value;
@@ -1804,6 +1804,9 @@ setTimeout(
 );
 
 </script>
+
+<!-- CLOrad Lightning -->
+<script src="lightning.js"></script>
 
 </body>
 </html>
