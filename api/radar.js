@@ -25,8 +25,9 @@ export default async function handler(req, res) {
 
   res.setHeader(
     "Cache-Control",
-    "no-store"
+    "no-store, no-cache, must-revalidate"
   );
+
 
   if(req.method === "OPTIONS"){
     return res.status(200).end();
@@ -35,15 +36,13 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+  HELPERS
   =========================================================
   */
 
-
   function number(value){
 
-    const n =
-      Number(value);
+    const n = Number(value);
 
     return Number.isFinite(n)
       ? n
@@ -53,15 +52,6 @@ export default async function handler(req, res) {
 
 
   function normalizePoint(item){
-
-    /*
-    Ожидаемый Nowcast формат:
-
-    [lat, lon, value, direction]
-
-    Но дополнительно поддерживаем
-    несколько объектных вариантов.
-    */
 
     if(Array.isArray(item)){
 
@@ -89,9 +79,9 @@ export default async function handler(req, res) {
         return null;
       }
 
+
       /*
-      Иногда координаты могут оказаться
-      в порядке lon/lat.
+      Иногда координаты идут lon/lat.
       */
 
       if(
@@ -106,12 +96,14 @@ export default async function handler(req, res) {
 
       }
 
+
       if(
         Math.abs(lat) > 90 ||
         Math.abs(lon) > 180
       ){
         return null;
       }
+
 
       return {
         lat,
@@ -157,6 +149,7 @@ export default async function handler(req, res) {
           item.dir
         );
 
+
       if(
         lat === null ||
         lon === null ||
@@ -164,6 +157,7 @@ export default async function handler(req, res) {
       ){
         return null;
       }
+
 
       if(
         Math.abs(lat) > 90 &&
@@ -177,12 +171,14 @@ export default async function handler(req, res) {
 
       }
 
+
       if(
         Math.abs(lat) > 90 ||
         Math.abs(lon) > 180
       ){
         return null;
       }
+
 
       return {
         lat,
@@ -193,6 +189,7 @@ export default async function handler(req, res) {
 
     }
 
+
     return null;
 
   }
@@ -201,101 +198,127 @@ export default async function handler(req, res) {
   function extractRawPoints(raw){
 
     /*
-    Поддерживаем:
+    Вариант 1:
 
     [
-      [lat,lon,dbz,...],
+      [lat,lon,value,direction],
       ...
     ]
-
-    {
-      data:[...]
-    }
-
-    {
-      data:{
-        data:[...]
-      }
-    }
     */
 
-    let source =
-      raw;
+    if(Array.isArray(raw)){
 
-    if(
-      source &&
-      !Array.isArray(source) &&
-      typeof source === "object"
-    ){
+      /*
+      Одна точка.
+      */
 
       if(
-        Array.isArray(source.data)
+        raw.length >= 3 &&
+        typeof raw[0] !== "object"
       ){
 
-        source =
-          source.data;
+        const point =
+          normalizePoint(raw);
 
-      }else if(
-        source.data &&
-        Array.isArray(source.data.data)
-      ){
-
-        source =
-          source.data.data;
+        return point
+          ? [point]
+          : [];
 
       }
 
-    }
 
+      const result = [];
 
-    if(!Array.isArray(source)){
-      return [];
+      for(const item of raw){
+
+        const point =
+          normalizePoint(item);
+
+        if(point){
+          result.push(point);
+        }
+
+      }
+
+      return result;
+
     }
 
 
     /*
-    Иногда весь массив может быть
-    одной точкой [lat,lon,value].
+    Вариант 2:
+
+    {
+      data:[...]
+    }
     */
 
     if(
-      source.length >= 3 &&
-      typeof source[0] !== "object"
+      raw &&
+      typeof raw === "object"
     ){
 
-      const point =
-        normalizePoint(source);
+      if(
+        Array.isArray(raw.data)
+      ){
 
-      return point
-        ? [point]
-        : [];
+        return extractRawPoints(
+          raw.data
+        );
 
-    }
+      }
 
 
-    const points = [];
+      /*
+      Вариант:
 
-    for(const item of source){
+      {
+        data:{
+          data:[...]
+        }
+      }
+      */
 
-      const point =
-        normalizePoint(item);
+      if(
+        raw.data &&
+        typeof raw.data === "object"
+      ){
 
-      if(point){
-        points.push(point);
+        if(
+          Array.isArray(
+            raw.data.data
+          )
+        ){
+
+          return extractRawPoints(
+            raw.data.data
+          );
+
+        }
+
+      }
+
+
+      /*
+      GeoJSON / object arrays.
+      */
+
+      if(
+        Array.isArray(raw.features)
+      ){
+
+        return extractRawPoints(
+          raw.features
+        );
+
       }
 
     }
 
-    return points;
+
+    return [];
 
   }
-
-
-  /*
-  =========================================================
-  ПОИСК МАКСИМУМА
-  =========================================================
-  */
 
 
   function calculateMaximum(points){
@@ -311,10 +334,15 @@ export default async function handler(req, res) {
 
     }
 
+
     let best =
       points[0];
 
-    for(const point of points){
+
+    for(
+      const point
+      of points
+    ){
 
       if(
         point.dbz >
@@ -327,6 +355,7 @@ export default async function handler(req, res) {
       }
 
     }
+
 
     return {
 
@@ -357,13 +386,6 @@ export default async function handler(req, res) {
   }
 
 
-  /*
-  =========================================================
-  СТАТИСТИКА
-  =========================================================
-  */
-
-
   function calculateStats(points){
 
     if(!points.length){
@@ -371,27 +393,18 @@ export default async function handler(req, res) {
       return {
 
         pixels:0,
-
         validPixels:0,
 
         minDbz:null,
-
         maxDbz:null,
-
         meanDbz:null,
 
         above20:0,
-
         above30:0,
-
         above40:0,
-
         above45:0,
-
         above50:0,
-
         above55:0,
-
         above60:0
 
       };
@@ -417,10 +430,14 @@ export default async function handler(req, res) {
     let above60 = 0;
 
 
-    for(const point of points){
+    for(
+      const point
+      of points
+    ){
 
       const dbz =
         point.dbz;
+
 
       if(dbz < min){
         min = dbz;
@@ -431,6 +448,7 @@ export default async function handler(req, res) {
       }
 
       sum += dbz;
+
 
       if(dbz >= 20) above20++;
       if(dbz >= 30) above30++;
@@ -470,17 +488,11 @@ export default async function handler(req, res) {
         ),
 
       above20,
-
       above30,
-
       above40,
-
       above45,
-
       above50,
-
       above55,
-
       above60
 
     };
@@ -490,21 +502,13 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  ГРУППИРОВКА ПИКСЕЛЕЙ В ЯЧЕЙКИ
+  CELLS
   =========================================================
-
-  Для определения грозовых ячеек используем
-  порог 40 dBZ.
-
-  Соседними считаются точки,
-  находящиеся рядом в координатной сетке.
   */
-
 
   function detectCells(points){
 
-    const threshold =
-      40;
+    const threshold = 40;
 
     const strong =
       points.filter(
@@ -518,19 +522,7 @@ export default async function handler(req, res) {
     }
 
 
-    /*
-    Размер пространственной ячейки.
-
-    0.02° ≈ 2 км по широте.
-
-    Используем немного более крупную
-    сетку, чтобы соседние радарные
-    пиксели объединялись.
-    */
-
-    const GRID =
-      0.02;
-
+    const GRID = 0.02;
 
     const buckets =
       new Map();
@@ -548,19 +540,19 @@ export default async function handler(req, res) {
           point.lat / GRID
         );
 
-      return (
-        x +
-        ":" +
-        y
-      );
+      return `${x}:${y}`;
 
     }
 
 
-    for(const point of strong){
+    for(
+      const point
+      of strong
+    ){
 
       const key =
         keyFor(point);
+
 
       if(!buckets.has(key)){
         buckets.set(
@@ -569,18 +561,13 @@ export default async function handler(req, res) {
         );
       }
 
+
       buckets
         .get(key)
         .push(point);
 
     }
 
-
-    /*
-    Соединяем соседние клетки сетки.
-
-    Используем BFS.
-    */
 
     const visited =
       new Set();
@@ -612,6 +599,7 @@ export default async function handler(req, res) {
 
       const result = [];
 
+
       for(
         let dx=-1;
         dx<=1;
@@ -631,26 +619,25 @@ export default async function handler(req, res) {
             continue;
           }
 
+
           result.push(
-            (
-              x + dx
-            ) +
-            ":" +
-            (
-              y + dy
-            )
+            `${x + dx}:${y + dy}`
           );
 
         }
 
       }
 
+
       return result;
 
     }
 
 
-    for(const startKey of buckets.keys()){
+    for(
+      const startKey
+      of buckets.keys()
+    ){
 
       if(
         visited.has(startKey)
@@ -682,9 +669,14 @@ export default async function handler(req, res) {
 
         if(bucket){
 
-          for(const point of bucket){
+          for(
+            const point
+            of bucket
+          ){
 
-            cellPoints.push(point);
+            cellPoints.push(
+              point
+            );
 
           }
 
@@ -702,6 +694,7 @@ export default async function handler(req, res) {
             continue;
           }
 
+
           if(
             buckets.has(next)
           ){
@@ -717,11 +710,6 @@ export default async function handler(req, res) {
       }
 
 
-      /*
-      Маленькие одиночные группы
-      не считаем полноценной ячейкой.
-      */
-
       if(
         cellPoints.length < 2
       ){
@@ -732,14 +720,11 @@ export default async function handler(req, res) {
       let maxDbz =
         -Infinity;
 
-      let sumDbz =
-        0;
+      let sumDbz = 0;
 
-      let sumLat =
-        0;
+      let sumLat = 0;
 
-      let sumLon =
-        0;
+      let sumLon = 0;
 
       let minLat =
         Infinity;
@@ -750,7 +735,14 @@ export default async function handler(req, res) {
       let minLon =
         Infinity;
 
-      for(const point of cellPoints){
+      let maxLon =
+        -Infinity;
+
+
+      for(
+        const point
+        of cellPoints
+      ){
 
         if(
           point.dbz >
@@ -762,6 +754,7 @@ export default async function handler(req, res) {
 
         }
 
+
         sumDbz +=
           point.dbz;
 
@@ -771,55 +764,49 @@ export default async function handler(req, res) {
         sumLon +=
           point.lon;
 
-        if(
-          point.lat <
-          minLat
-        ){
-          minLat =
-            point.lat;
-        }
 
-        if(
-          point.lat >
-          maxLat
-        ){
-          maxLat =
-            point.lat;
-        }
+        minLat =
+          Math.min(
+            minLat,
+            point.lat
+          );
 
-        if(
-          point.lon <
-          minLon
-        ){
-          minLon =
-            point.lon;
-        }
+        maxLat =
+          Math.max(
+            maxLat,
+            point.lat
+          );
 
-        if(
-          point.lon >
-          maxLon
-        ){
-          maxLon =
-            point.lon;
-        }
+        minLon =
+          Math.min(
+            minLon,
+            point.lon
+          );
+
+        maxLon =
+          Math.max(
+            maxLon,
+            point.lon
+          );
 
       }
 
 
-      /*
-      Очень приблизительная площадь.
+      const centerLat =
+        sumLat /
+        cellPoints.length;
 
-      Это площадь bounding box.
-      Она нужна как ориентировочный
-      параметр, пока у нас нет
-      полноценной геометрии радарной сетки.
-      */
+      const centerLon =
+        sumLon /
+        cellPoints.length;
+
 
       const latKm =
         (
           maxLat -
           minLat
         ) * 111;
+
 
       const lonKm =
         (
@@ -828,12 +815,7 @@ export default async function handler(req, res) {
         ) *
         111 *
         Math.cos(
-          (
-            (
-              minLat +
-              maxLat
-            ) / 2
-          ) *
+          centerLat *
           Math.PI /
           180
         );
@@ -842,8 +824,7 @@ export default async function handler(req, res) {
       const areaKm2 =
         Math.max(
           0,
-          latKm *
-          lonKm
+          latKm * lonKm
         );
 
 
@@ -871,23 +852,15 @@ export default async function handler(req, res) {
           ),
 
         center:{
-
           lat:
             Number(
-              (
-                sumLat /
-                cellPoints.length
-              ).toFixed(5)
+              centerLat.toFixed(5)
             ),
 
           lon:
             Number(
-              (
-                sumLon /
-                cellPoints.length
-              ).toFixed(5)
+              centerLon.toFixed(5)
             )
-
         },
 
         areaKm2:
@@ -896,7 +869,6 @@ export default async function handler(req, res) {
           ),
 
         bounds:{
-
           north:
             Number(
               maxLat.toFixed(5)
@@ -916,7 +888,6 @@ export default async function handler(req, res) {
             Number(
               minLon.toFixed(5)
             )
-
         }
 
       });
@@ -924,20 +895,12 @@ export default async function handler(req, res) {
     }
 
 
-    /*
-    Сначала самые сильные ячейки.
-    */
-
     cells.sort(
       (a,b) =>
         b.maxDbz -
         a.maxDbz
     );
 
-
-    /*
-    Перенумеровываем после сортировки.
-    */
 
     cells.forEach(
       (cell,index) => {
@@ -956,10 +919,9 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  NOWCAST — СПИСОК ВРЕМЁН
+  NOWCAST TIMES
   =========================================================
   */
-
 
   if(
     action === "nowcast-times"
@@ -980,68 +942,55 @@ export default async function handler(req, res) {
           {
             headers:{
               "User-Agent":
-                "CLOrad/1.0"
+                "Mozilla/5.0 CLOrad/1.0",
+              "Accept":
+                "application/xml,text/xml,*/*"
             }
           }
         );
 
 
+      const text =
+        await response.text();
+
+
       if(!response.ok){
 
-        throw new Error(
-          "Nowcast GetCapabilities HTTP " +
-          response.status
-        );
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_capabilities_http",
+
+          status:
+            response.status,
+
+          body:
+            text.slice(0,2000)
+
+        });
 
       }
-
-
-      const xml =
-        await response.text();
 
 
       const times =
         new Set();
 
 
-      const blocks =
-        xml.match(
-          /<(?:Dimension|Extent)[^>]*name=["']time["'][^>]*>[\s\S]*?<\/(?:Dimension|Extent)>/gi
-        ) || [];
+      /*
+      ISO timestamps.
+      */
 
-
-      for(
-        const block
-        of blocks
-      ){
-
-        const found =
-          block.match(
-            /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
-          ) || [];
-
-
-        for(
-          const time
-          of found
-        ){
-
-          times.add(time);
-
-        }
-
-      }
-
-
-      const all =
-        xml.match(
+      const matches =
+        text.match(
           /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
         ) || [];
 
 
       for(
         const time
-        of all
+        of matches
       ){
 
         times.add(time);
@@ -1049,7 +998,7 @@ export default async function handler(req, res) {
       }
 
 
-      let result =
+      const result =
         Array.from(times)
           .map(
             x =>
@@ -1072,50 +1021,24 @@ export default async function handler(req, res) {
           );
 
 
-      if(!result.length){
-
-        const now =
-          Date.now();
-
-
-        result = [];
-
-
-        for(
-          let i=143;
-          i>=0;
-          i--
-        ){
-
-          result.push(
-            new Date(
-              now -
-              i *
-              10 *
-              60 *
-              1000
-            ).toISOString()
-          );
-
-        }
-
-      }
-
-
       return res.status(200).json({
 
         ok:true,
 
         source:"nowcast",
 
-        times:result
+        count:
+          result.length,
+
+        times:
+          result
 
       });
 
     }catch(error){
 
       console.error(
-        "CLOrad times error:",
+        "CLOrad nowcast-times error:",
         error
       );
 
@@ -1125,7 +1048,7 @@ export default async function handler(req, res) {
         ok:false,
 
         error:
-          "nowcast_times_error",
+          "nowcast_times_exception",
 
         message:
           error?.message ||
@@ -1140,10 +1063,9 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  NOWCAST — REFLECTIVITY
+  NOWCAST REFLECTIVITY
   =========================================================
   */
-
 
   if(
     action === "nowcast"
@@ -1161,166 +1083,168 @@ export default async function handler(req, res) {
 
         ok:false,
 
-        error:"missing_time"
+        error:
+          "missing_time"
 
       });
 
     }
-
-
-    const vectorUrl =
-      "https://www.nowcast.ru/vector_wsgi" +
-      "?time=" +
-      encodeURIComponent(time) +
-      "&title=bufr_dbz1";
-
-
-    const response =
-      await fetch(
-        vectorUrl,
-        {
-          headers:{
-            "User-Agent":
-              "CLOrad/1.0"
-          }
-        }
-      );
-
-
-    if(!response.ok){
-
-      throw new Error(
-        "Nowcast vector HTTP " +
-        response.status
-      );
-
-    }
-
-
-    const text =
-      await response.text();
-
-
-    let data;
 
 
     try{
 
-      data =
-        JSON.parse(text);
+      const vectorUrl =
+        "https://www.nowcast.ru/vector_wsgi" +
+        "?time=" +
+        encodeURIComponent(time) +
+        "&title=bufr_dbz1";
+
+
+      const response =
+        await fetch(
+          vectorUrl,
+          {
+            headers:{
+              "User-Agent":
+                "Mozilla/5.0 CLOrad/1.0",
+              "Accept":
+                "application/json,text/plain,*/*"
+            }
+          }
+        );
+
+
+      const text =
+        await response.text();
+
+
+      if(!response.ok){
+
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_vector_http",
+
+          status:
+            response.status,
+
+          time,
+
+          url:
+            vectorUrl,
+
+          body:
+            text.slice(0,3000)
+
+        });
+
+      }
+
+
+      let data;
+
+
+      try{
+
+        data =
+          JSON.parse(text);
+
+      }catch(error){
+
+        return res.status(502).json({
+
+          ok:false,
+
+          error:
+            "nowcast_vector_invalid_json",
+
+          time,
+
+          contentType:
+            response.headers.get(
+              "content-type"
+            ),
+
+          body:
+            text.slice(0,3000)
+
+        });
+
+      }
+
+
+      const pixels =
+        extractRawPoints(data);
+
+
+      const maximum =
+        calculateMaximum(
+          pixels
+        );
+
+
+      const stats =
+        calculateStats(
+          pixels
+        );
+
+
+      const cells =
+        detectCells(
+          pixels
+        );
+
+
+      return res.status(200).json({
+
+        ok:true,
+
+        source:"nowcast",
+
+        time,
+
+        count:
+          pixels.length,
+
+        pixels,
+
+        max:
+          maximum,
+
+        stats,
+
+        cells,
+
+        data
+
+      });
 
     }catch(error){
 
-      return res.status(502).json({
+      console.error(
+        "CLOrad nowcast error:",
+        error
+      );
+
+
+      return res.status(500).json({
 
         ok:false,
 
         error:
-          "invalid_json",
+          "nowcast_exception",
 
-        raw:
-          text.slice(
-            0,
-            1000
-          )
+        time,
+
+        message:
+          error?.message ||
+          String(error)
 
       });
 
     }
-
-
-    /*
-    Получаем нормальные пиксели.
-    */
-
-    const pixels =
-      extractRawPoints(data);
-
-
-    /*
-    Максимальный dBZ.
-    */
-
-    const maximum =
-      calculateMaximum(
-        pixels
-      );
-
-
-    /*
-    Общая статистика.
-    */
-
-    const stats =
-      calculateStats(
-        pixels
-      );
-
-
-    /*
-    Грозовые ячейки.
-    */
-
-    const cells =
-      detectCells(
-        pixels
-      );
-
-
-    /*
-    Возвращаем и сырые данные,
-    и обработанные.
-    */
-
-    return res.status(200).json({
-
-      ok:true,
-
-      source:"nowcast",
-
-      time,
-
-      count:
-        pixels.length,
-
-
-      /*
-      Нормализованные радарные пиксели.
-      */
-
-      pixels,
-
-
-      /*
-      Максимальный dBZ.
-      */
-
-      max:
-        maximum,
-
-
-      /*
-      Статистика.
-      */
-
-      stats,
-
-
-      /*
-      Найденные ячейки.
-      */
-
-      cells,
-
-
-      /*
-      Оригинальный ответ Nowcast.
-      Оставляем для совместимости.
-      */
-
-      data
-
-    });
 
   }
 
@@ -1330,7 +1254,6 @@ export default async function handler(req, res) {
   STATUS
   =========================================================
   */
-
 
   if(
     action === "status"
@@ -1354,10 +1277,9 @@ export default async function handler(req, res) {
 
   /*
   =========================================================
-  UNKNOWN ACTION
+  UNKNOWN
   =========================================================
   */
-
 
   return res.status(400).json({
 
