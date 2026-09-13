@@ -4,474 +4,1857 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body,#map{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
-body{overflow:hidden;background:#edf0f2;color:#eef1f3}
-button{font:inherit;cursor:pointer}
-#map{position:fixed;inset:0;z-index:0}
-.leaflet-control-attribution{font-size:9px!important;background:#ffffffaa!important}
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+}
+
+:root{
+  --bg:#ffffff;
+  --panel:rgba(255,255,255,.96);
+  --panel2:rgba(248,249,250,.96);
+  --text:#17191c;
+  --muted:#7b8188;
+  --line:#e4e6e8;
+  --accent:#49d995;
+  --shadow:0 5px 20px rgba(0,0,0,.12);
+}
+
+body.dark{
+  --bg:#151719;
+  --panel:rgba(27,29,32,.96);
+  --panel2:rgba(32,34,37,.96);
+  --text:#f4f5f6;
+  --muted:#969ba1;
+  --line:#3b3e42;
+  --shadow:0 5px 20px rgba(0,0,0,.35);
+}
+
+button,
+input{
+  font:inherit;
+}
+
+button{
+  border:0;
+  outline:0;
+}
+
+#map{
+  position:fixed;
+  inset:0;
+  z-index:1;
+}
 
 /* =========================
    HEADER
 ========================= */
-.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151a;display:flex;align-items:center;padding:0 20px}
-.brand{display:flex;align-items:center;gap:10px}
-.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f5f6f7}
-.radarLogo{width:49px;height:49px;border:2px solid #51e29a;border-radius:50%;position:relative;overflow:hidden;background:#10181a;flex:none;box-shadow:0 0 10px #51e29a22}
-.radarLogo:before,.radarLogo:after{content:"";position:absolute;border:1px solid #51e29a99;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
-.radarLogo:before{width:36px;height:36px}
-.radarLogo:after{width:20px;height:20px}
-.radarLogo b{position:absolute;width:5px;height:5px;background:#51e29a;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
-.radarLogo i{position:absolute;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#51e29a88,transparent);clip-path:polygon(0 0,100% 0,0 100%);animation:scan 2.4s linear infinite;z-index:2}
-@keyframes scan{to{transform:rotate(360deg)}}
-.head{margin-left:auto;display:flex;gap:5px}
-.h{width:51px;height:51px;border:0;border-radius:9px;background:transparent;color:#c3c9cd;display:grid;place-items:center;position:relative}
-.h.active{background:#222b34;border:1px solid #35404a}
-.h svg{width:29px;height:29px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.bell:after{content:"";position:absolute;width:8px;height:8px;background:#ff5867;border-radius:50%;right:6px;top:7px}
+
+.header{
+  position:fixed;
+  z-index:1000;
+  top:0;
+  left:0;
+  right:0;
+  height:80px;
+  display:flex;
+  align-items:center;
+  padding:0 18px;
+  background:var(--panel);
+  border-bottom:1px solid var(--line);
+  box-shadow:0 2px 12px rgba(0,0,0,.07);
+}
+
+.logo{
+  display:flex;
+  align-items:center;
+  min-width:0;
+}
+
+.radarLogo{
+  position:relative;
+  width:44px;
+  height:44px;
+  flex:none;
+  border-radius:50%;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at center,
+      #54e7a1 0 2px,
+      transparent 2.5px),
+    radial-gradient(circle at center,
+      transparent 0 10px,
+      rgba(75,218,150,.48) 10.5px 11.5px,
+      transparent 12px),
+    radial-gradient(circle at center,
+      transparent 0 19px,
+      rgba(75,218,150,.4) 19.5px 20.5px,
+      transparent 21px),
+    radial-gradient(circle at center,
+      transparent 0 28px,
+      rgba(75,218,150,.32) 28.5px 29.5px,
+      transparent 30px);
+  background-color:#101716;
+  box-shadow:
+    inset 0 0 0 1px rgba(81,227,159,.48),
+    0 0 0 1px rgba(0,0,0,.08);
+}
+
+.radarLogo:before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:0;
+  bottom:0;
+  width:1px;
+  background:rgba(83,224,157,.3);
+  transform:translateX(-50%);
+}
+
+.radarLogo:after{
+  content:"";
+  position:absolute;
+  top:50%;
+  left:0;
+  right:0;
+  height:1px;
+  background:rgba(83,224,157,.3);
+  transform:translateY(-50%);
+}
+
+.radarLogo .sweep{
+  position:absolute;
+  inset:2px;
+  border-radius:50%;
+  background:
+    conic-gradient(
+      from -40deg,
+      transparent 0deg,
+      transparent 300deg,
+      rgba(72,220,146,0) 315deg,
+      rgba(72,220,146,.04) 328deg,
+      rgba(72,220,146,.18) 344deg,
+      rgba(72,220,146,.48) 355deg,
+      rgba(86,235,164,.9) 360deg
+    );
+  animation:radarSpin 2.8s linear infinite;
+  transform-origin:center;
+}
+
+.radarLogo .dot{
+  position:absolute;
+  z-index:3;
+  width:5px;
+  height:5px;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:#72f0b2;
+  box-shadow:0 0 7px rgba(89,237,164,.95);
+  animation:radarPulse 2.8s ease-out infinite;
+}
+
+@keyframes radarSpin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
+@keyframes radarPulse{
+  0%,100%{
+    box-shadow:0 0 5px rgba(89,237,164,.6);
+  }
+  45%{
+    box-shadow:0 0 11px rgba(89,237,164,1);
+  }
+}
+
+.brand{
+  margin-left:11px;
+  font-size:24px;
+  line-height:1;
+  font-weight:750;
+  letter-spacing:-.8px;
+  color:var(--text);
+}
+
+.brand b{
+  color:#49d995;
+  font-weight:750;
+}
+
+.headControls{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.h{
+  width:43px;
+  height:43px;
+  border-radius:13px;
+  background:transparent;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  font-size:21px;
+}
+
+.h:active{
+  background:var(--panel2);
+  transform:scale(.96);
+}
+
+.searchIcon{
+  position:relative;
+  width:18px;
+  height:18px;
+  border:2px solid currentColor;
+  border-radius:50%;
+}
+
+.searchIcon:after{
+  content:"";
+  position:absolute;
+  width:8px;
+  height:2px;
+  background:currentColor;
+  right:-6px;
+  bottom:-3px;
+  transform:rotate(45deg);
+  border-radius:2px;
+}
+
+/* hamburger */
+
+.burger{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.burger i{
+  display:block;
+  width:19px;
+  height:2px;
+  border-radius:3px;
+  background:currentColor;
+}
 
 /* =========================
-   NAV
+   TOP NAVIGATION
 ========================= */
-.nav{position:fixed;z-index:19;top:80px;left:0;right:0;height:85px;background:#273038;display:flex;overflow-x:auto;border-bottom:1px solid #424b52}
-.nav::-webkit-scrollbar{display:none}
-.n{min-width:88px;height:85px;border:0;background:none;color:#adb5bb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:17px;position:relative;white-space:nowrap}
-.n svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.n.active{color:#53e39b}
-.n.active:after{content:"";position:absolute;height:3px;background:#53e39b;bottom:0;left:8px;right:8px}
+
+.nav{
+  position:fixed;
+  z-index:999;
+  top:80px;
+  left:0;
+  right:0;
+  height:82px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:0 13px;
+  background:var(--panel);
+  border-bottom:1px solid var(--line);
+  box-shadow:0 3px 14px rgba(0,0,0,.06);
+
+  overflow-x:auto;
+  overflow-y:hidden;
+
+  /*
+    Главное:
+    верхнее меню можно двигать только по X.
+    Карта не получает вертикальный жест.
+  */
+  touch-action:pan-x;
+  overscroll-behavior-x:contain;
+  overscroll-behavior-y:none;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+  transition:
+    transform .24s ease,
+    opacity .24s ease;
+}
+
+.nav::-webkit-scrollbar{
+  display:none;
+}
+
+.nav.closed{
+  transform:translateY(-100%);
+  opacity:0;
+  pointer-events:none;
+}
+
+.n{
+  flex:0 0 auto;
+  min-width:68px;
+  height:60px;
+  padding:5px 10px;
+  border-radius:14px;
+  color:var(--muted);
+  background:transparent;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:5px;
+  cursor:pointer;
+  user-select:none;
+  touch-action:pan-x;
+}
+
+.n.active{
+  color:var(--text);
+  background:var(--panel2);
+}
+
+.n:active{
+  transform:scale(.97);
+}
+
+.nIcon{
+  height:23px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:21px;
+  line-height:1;
+}
+
+.nText{
+  font-size:11px;
+  white-space:nowrap;
+}
+
+.regionIcon{
+  width:21px;
+  height:17px;
+  border:2px solid currentColor;
+  border-radius:4px;
+  position:relative;
+}
+
+.regionIcon:before,
+.regionIcon:after{
+  content:"";
+  position:absolute;
+  background:currentColor;
+}
+
+.regionIcon:before{
+  width:2px;
+  height:21px;
+  left:8px;
+  top:-4px;
+  transform:rotate(30deg);
+}
+
+.regionIcon:after{
+  width:21px;
+  height:2px;
+  left:-2px;
+  top:7px;
+  transform:rotate(-19deg);
+}
 
 /* =========================
-   MAP TOOLS
+   MAP
 ========================= */
-.tools{position:fixed;z-index:8;left:17px;top:177px;display:flex;flex-direction:column;gap:7px}
-.tool{width:56px;height:56px;border-radius:11px;border:1px solid #3c4650;background:#192129ee;color:#e4e8eb;display:grid;place-items:center;box-shadow:0 3px 9px #0002}
-.tool svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.leaflet-control-attribution{
+  font-size:9px!important;
+  opacity:.7;
+}
+
+.leaflet-control-zoom{
+  margin-top:178px!important;
+  margin-left:14px!important;
+  border:0!important;
+  box-shadow:var(--shadow)!important;
+}
+
+.leaflet-control-zoom a{
+  width:43px!important;
+  height:43px!important;
+  line-height:40px!important;
+  font-size:25px!important;
+  color:var(--text)!important;
+  background:var(--panel)!important;
+  border:0!important;
+}
+
+.leaflet-control-zoom a:first-child{
+  border-radius:13px 13px 0 0;
+}
+
+.leaflet-control-zoom a:last-child{
+  border-radius:0 0 13px 13px;
+  border-top:1px solid var(--line)!important;
+}
 
 /* =========================
-   LAYERS
+   LEFT LAYERS
 ========================= */
-.layers{position:fixed;z-index:8;left:17px;top:50%;transform:translateY(-50%);width:154px;background:#182028ef;border:1px solid #3b4650;border-radius:10px;padding:5px 8px;box-shadow:0 4px 14px #0003;transition:left .25s,opacity .2s}
-.layers.hidden{left:-175px;opacity:0;pointer-events:none}
-.layer{height:56px;display:flex;align-items:center;gap:8px}
-.layer svg{width:27px;height:27px;fill:none;stroke:#50df98;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.layer:nth-child(2) svg{stroke:#50aaff}
-.layer:nth-child(3) svg{stroke:#ff777e}
-.layer span{font-size:16px;line-height:1;flex:1}
-.switch{width:54px;height:30px;border:0;border-radius:18px;background:#626a70;position:relative;padding:0;flex:none}
-.switch i{position:absolute;width:24px;height:24px;left:3px;top:3px;border-radius:50%;background:#f6f7f7;transition:.2s}
-.switch.on{background:#43d58d}
-.switch.on i{left:27px}
 
-/* =========================
-   LEGEND
-========================= */
-.legendTab{position:fixed;z-index:13;right:0;top:50%;transform:translateY(-50%);width:36px;height:78px;background:#172027f7;border:1px solid #414b53;border-right:0;border-radius:9px 0 0 9px;color:#cbd1d5;font-size:12px;writing-mode:vertical-rl;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px #0003}
-.legendTab.open{font-size:25px;writing-mode:horizontal-tb;color:#fff;width:42px;height:42px;border-radius:9px;right:225px;top:calc(50% - 225px);transform:none}
-.legend{position:fixed;z-index:12;right:-230px;top:50%;transform:translateY(-50%);width:225px;max-height:455px;background:#182028f7;border:1px solid #3d4851;border-radius:10px 0 0 10px;padding:11px;transition:right .28s;overflow:auto;box-shadow:0 5px 18px #0004}
-.legend.open{right:0}
-.legendTitle{font-size:16px;font-weight:700;margin:0 28px 7px 2px}
-.legendClose{position:absolute;right:9px;top:7px;width:28px;height:28px;border:0;background:none;color:#cdd3d7;font-size:23px;line-height:28px}
-.li{height:23px;display:flex;align-items:center;gap:8px;font-size:12px;color:#e4e7e9}
-.box{width:21px;height:18px;border-radius:2px;flex:none}
-.l1{background:#b9c1c7}.l2{background:#a9c7f4}.l3{background:#63eda5}.l4{background:#43cf89}.l5{background:#4db84e}.l6{background:#fff89c}.l7{background:#75a6ef}.l8{background:#5279ed}.l9{background:#504a9b}.l10{background:#ffc0a8}.l11{background:#fa82a0}.l12{background:#ff4d4d}.l13{background:#db9248}.l14{background:#ad7544}.l15{background:#924b48}.l16{background:#f2aaf0}.l17{background:#e85ae7}.l18{background:#ca3cc7}.l19{background:#777c91}
+.layers{
+  position:fixed;
+  z-index:900;
+  left:14px;
+  top:50%;
+  transform:translateY(-50%);
+  width:157px;
+  padding:7px;
+  border-radius:17px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+}
+
+.layer{
+  width:100%;
+  min-height:47px;
+  padding:7px 8px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:7px;
+  border-radius:11px;
+}
+
+.layer+ .layer{
+  margin-top:2px;
+}
+
+.layerName{
+  min-width:0;
+  color:var(--text);
+  font-size:13px;
+  line-height:1.1;
+  font-weight:600;
+  white-space:nowrap;
+}
+
+.layerName.rain{
+  font-size:12px;
+}
+
+.switch{
+  position:relative;
+  width:39px;
+  height:22px;
+  flex:none;
+}
+
+.switch input{
+  display:none;
+}
+
+.slider{
+  position:absolute;
+  inset:0;
+  background:#c8cdd1;
+  border-radius:30px;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.slider:before{
+  content:"";
+  position:absolute;
+  width:17px;
+  height:17px;
+  top:2.5px;
+  left:3px;
+  background:white;
+  border-radius:50%;
+  box-shadow:0 1px 3px rgba(0,0,0,.22);
+  transition:.2s;
+}
+
+.switch input:checked+.slider{
+  background:#49d995;
+}
+
+.switch input:checked+.slider:before{
+  transform:translateX(16px);
+}
 
 /* =========================
    LOCATION
 ========================= */
-.location{position:fixed;z-index:9;left:17px;bottom:257px;width:142px;height:57px;border:1px solid #3e4850;border-radius:9px;background:#182028ef;color:#dfe4e7;display:flex;align-items:center;justify-content:center;gap:7px;font-size:13px;line-height:17px;text-align:center;box-shadow:0 3px 10px #0003}
-.location svg{width:24px;height:24px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.location{
+  position:fixed;
+  z-index:900;
+  left:14px;
+  bottom:278px;
+  width:157px;
+  height:61px;
+  border-radius:17px;
+  background:var(--panel);
+  color:var(--text);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  cursor:pointer;
+  font-size:14px;
+  font-weight:650;
+}
+
+.location:active{
+  transform:scale(.98);
+}
+
+.locIcon{
+  width:24px;
+  height:24px;
+  position:relative;
+  border:2.5px solid currentColor;
+  border-radius:50%;
+}
+
+.locIcon:before,
+.locIcon:after{
+  content:"";
+  position:absolute;
+  background:currentColor;
+}
+
+.locIcon:before{
+  width:2px;
+  height:30px;
+  left:50%;
+  top:-5px;
+  transform:translateX(-50%);
+}
+
+.locIcon:after{
+  height:2px;
+  width:30px;
+  left:-5px;
+  top:50%;
+  transform:translateY(-50%);
+}
 
 /* =========================
-   DATA
+   LEGEND
 ========================= */
-.data{position:fixed;z-index:7;left:50%;transform:translateX(-50%);bottom:119px;width:min(555px,calc(100% - 34px));height:72px;background:#151b21ee;border:1px solid #303a43;border-radius:10px;display:grid;grid-template-columns:1.25fr 1fr 1fr;box-shadow:0 4px 14px #0003}
-.cell{padding:9px 15px;border-right:1px solid #303a43;display:flex;flex-direction:column;justify-content:center}
-.cell:last-child{border:0}
-.lab{font-size:10px;color:#858e95;letter-spacing:.5px}
-.val{font-size:16px;font-weight:700;margin-top:4px}
+
+.legendTab{
+  position:fixed;
+  z-index:905;
+  right:0;
+  top:50%;
+  transform:translateY(-50%);
+  width:37px;
+  height:94px;
+  border-radius:16px 0 0 16px;
+  background:var(--panel);
+  color:var(--text);
+  border:1px solid var(--line);
+  border-right:0;
+  box-shadow:var(--shadow);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.legendTab.hidden{
+  display:none;
+}
+
+.legendTab span{
+  writing-mode:vertical-rl;
+  transform:rotate(180deg);
+  font-size:11px;
+  font-weight:650;
+  letter-spacing:.2px;
+}
+
+.legend{
+  position:fixed;
+  z-index:910;
+  right:10px;
+  top:50%;
+  transform:translateY(-50%) translateX(120%);
+  width:207px;
+  max-height:430px;
+  overflow:hidden;
+  border-radius:17px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  opacity:0;
+  transition:
+    transform .25s ease,
+    opacity .2s ease;
+}
+
+.legend.open{
+  transform:translateY(-50%) translateX(0);
+  opacity:1;
+}
+
+.legendHead{
+  height:43px;
+  padding:0 11px 0 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:1px solid var(--line);
+}
+
+.legendTitle{
+  color:var(--text);
+  font-size:14px;
+  font-weight:700;
+}
+
+.legendClose{
+  width:29px;
+  height:29px;
+  border-radius:9px;
+  background:var(--panel2);
+  color:var(--text);
+  cursor:pointer;
+  font-size:20px;
+  line-height:27px;
+}
+
+.legendList{
+  padding:8px 9px 9px;
+  max-height:385px;
+  overflow-y:auto;
+}
+
+.legendRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:19px;
+  color:var(--text);
+  font-size:10.5px;
+}
+
+.legendColor{
+  width:22px;
+  height:13px;
+  border-radius:3px;
+  flex:none;
+}
+
+/* =========================
+   DATA PANEL
+========================= */
+
+.data{
+  position:fixed;
+  z-index:900;
+  left:50%;
+  bottom:125px;
+  transform:translateX(-50%);
+  width:min(555px,calc(100% - 34px));
+  height:64px;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  border-radius:17px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+
+.dataCell{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  color:var(--text);
+}
+
+.dataCell+.dataCell{
+  border-left:1px solid var(--line);
+}
+
+.dataValue{
+  font-size:16px;
+  font-weight:750;
+}
+
+.dataLabel{
+  color:var(--muted);
+  font-size:10px;
+}
 
 /* =========================
    TIMELINE
 ========================= */
-.timeline{position:fixed;z-index:12;left:9px;right:9px;bottom:8px;height:108px;background:#151b21f5;border:1px solid #303a43;border-radius:12px;padding:8px 14px;box-shadow:0 5px 18px #0004}
-.thead{text-align:center;font-size:14px;height:27px;line-height:24px}
-.trow{height:61px;display:flex;align-items:center;gap:12px}
-.play{width:44px;height:44px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none;box-shadow:0 2px 5px #0002}
-.play svg{width:25px;height:25px;fill:currentColor}
-.slider{flex:1;min-width:0}
-.slider input{width:100%;display:block;appearance:none;height:7px;background:#70787d;border-radius:8px;margin:0}
-.slider input::-webkit-slider-thumb{appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 1px 5px #0004}
-.times{display:flex;justify-content:space-between;color:#9da5aa;font-size:10px;margin-top:8px}
 
-/* =========================
-   SEARCH / MENU
-========================= */
-.popup{position:fixed;z-index:30;display:none;background:#182028f7;border:1px solid #3d4851;border-radius:9px;box-shadow:0 10px 30px #0008}
-.popup.open{display:block}
-.search{right:12px;top:88px;width:300px;padding:8px}
-.search input{width:100%;height:42px;border:0;border-radius:7px;background:#252e36;color:#fff;padding:0 12px;font-size:16px;outline:none}
-.menu{right:10px;top:85px;width:210px;padding:7px}
-.menu button{width:100%;padding:11px;border:0;border-radius:6px;background:none;color:#ddd;text-align:left;font-size:15px}
-
-/* =========================
-   LIGHT THEME
-========================= */
-body.light .header{background:#f5f6f7}
-body.light .name{color:#171b1e}
-body.light .h{color:#4f575d}
-body.light .h.active{background:#e1e5e8}
-body.light .nav{background:#f5f6f7;border-color:#d4d9dd}
-body.light .n{color:#687177}
-body.light .layers,body.light .tool,body.light .location,body.light .legend,body.light .legendTab{background:#f6f8f9ee;color:#252b2f;border-color:#c9d0d5}
-body.light .layer span{color:#252b2f}
-body.light .tool{color:#30383d}
-body.light .data,body.light .timeline{background:#f5f7f8ee;color:#22292d;border-color:#cbd2d6}
-body.light .lab,body.light .times{color:#70797f}
-body.light .timeline input{background:#a2a9ad}
-
-/* =========================
-   MOBILE
-========================= */
-@media(max-width:600px){
-.header{height:80px;padding:0 17px}
-.name{font-size:29px}
-.head{gap:0}
-.h{width:46px}
-.nav{top:80px;height:85px}
-.n{min-width:88px}
-.tools{left:17px;top:177px}
-.layers{left:17px}
-.location{left:17px;bottom:252px}
-.data{bottom:120px}
-.timeline{bottom:8px}
+.timeline{
+  position:fixed;
+  z-index:920;
+  left:9px;
+  right:9px;
+  bottom:8px;
+  height:104px;
+  padding:11px 13px 10px;
+  border-radius:19px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
 }
-@media(max-width:430px){
-.name{font-size:27px}
-.radarLogo{width:46px;height:46px}
-.h:nth-child(2){display:grid}
-.layers{width:150px}
-.location{width:139px}
-.data{width:calc(100% - 34px)}
-.legend{width:220px}
-.legendTab.open{right:220px}
+
+.timelineTop{
+  height:31px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.timeText{
+  color:var(--text);
+  font-size:13px;
+  font-weight:700;
+}
+
+.play{
+  width:37px;
+  height:37px;
+  border-radius:11px;
+  background:#49d995;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 3px 9px rgba(73,217,149,.3);
+}
+
+.play:active{
+  transform:scale(.94);
+}
+
+.playIcon{
+  width:0;
+  height:0;
+  border-top:7px solid transparent;
+  border-bottom:7px solid transparent;
+  border-left:10px solid white;
+  margin-left:2px;
+}
+
+.play.pause .playIcon{
+  width:11px;
+  height:14px;
+  border:0;
+  margin:0;
+  position:relative;
+}
+
+.play.pause .playIcon:before,
+.play.pause .playIcon:after{
+  content:"";
+  position:absolute;
+  top:0;
+  width:4px;
+  height:14px;
+  border-radius:1px;
+  background:white;
+}
+
+.play.pause .playIcon:before{
+  left:0;
+}
+
+.play.pause .playIcon:after{
+  right:0;
+}
+
+.rangeWrap{
+  position:relative;
+  height:43px;
+  display:flex;
+  align-items:center;
+}
+
+.range{
+  width:100%;
+  appearance:none;
+  height:4px;
+  border-radius:5px;
+  background:#d6dadd;
+  outline:0;
+}
+
+body.dark .range{
+  background:#484c50;
+}
+
+.range::-webkit-slider-thumb{
+  appearance:none;
+  width:19px;
+  height:19px;
+  border-radius:50%;
+  background:#49d995;
+  border:3px solid var(--panel);
+  box-shadow:0 1px 5px rgba(0,0,0,.25);
+}
+
+.range::-moz-range-thumb{
+  width:15px;
+  height:15px;
+  border-radius:50%;
+  background:#49d995;
+  border:3px solid var(--panel);
+}
+
+/* =========================
+   SEARCH
+========================= */
+
+.search{
+  position:fixed;
+  z-index:1100;
+  top:72px;
+  right:12px;
+  width:min(340px,calc(100% - 24px));
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:9px;
+  transform:translateY(-10px);
+  opacity:0;
+  pointer-events:none;
+  transition:.2s;
+}
+
+.search.open{
+  transform:translateY(0);
+  opacity:1;
+  pointer-events:auto;
+}
+
+.searchInput{
+  width:100%;
+  height:43px;
+  padding:0 13px;
+  border-radius:11px;
+  border:1px solid var(--line);
+  outline:0;
+  background:var(--panel2);
+  color:var(--text);
+  font-size:14px;
+}
+
+.results{
+  max-height:250px;
+  overflow-y:auto;
+  margin-top:5px;
+}
+
+.result{
+  width:100%;
+  text-align:left;
+  background:transparent;
+  color:var(--text);
+  padding:10px 9px;
+  border-radius:9px;
+  cursor:pointer;
+  font-size:13px;
+}
+
+.result:active,
+.result:hover{
+  background:var(--panel2);
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media(max-width:500px){
+
+  .header{
+    height:76px;
+    padding:0 13px;
+  }
+
+  .radarLogo{
+    width:40px;
+    height:40px;
+  }
+
+  .brand{
+    font-size:22px;
+    margin-left:9px;
+  }
+
+  .h{
+    width:40px;
+    height:40px;
+  }
+
+  .nav{
+    top:76px;
+    height:77px;
+    padding:0 9px;
+  }
+
+  .n{
+    min-width:64px;
+    height:57px;
+  }
+
+  .leaflet-control-zoom{
+    margin-top:169px!important;
+    margin-left:10px!important;
+  }
+
+  .leaflet-control-zoom a{
+    width:40px!important;
+    height:40px!important;
+    line-height:37px!important;
+  }
+
+  .layers{
+    left:10px;
+    width:151px;
+  }
+
+  .location{
+    left:10px;
+    width:151px;
+    bottom:269px;
+  }
+
+  .legend{
+    right:7px;
+    width:201px;
+  }
+
+  .data{
+    bottom:123px;
+    height:61px;
+  }
+
+  .timeline{
+    left:7px;
+    right:7px;
+    bottom:6px;
+  }
+}
+
+@media(max-height:750px){
+
+  .location{
+    bottom:250px;
+  }
+
+  .data{
+    bottom:112px;
+  }
+
+  .timeline{
+    height:96px;
+  }
 }
 </style>
 </head>
 
 <body>
+
 <div id="map"></div>
 
 <!-- =========================
      HEADER
 ========================= -->
+
 <header class="header">
-<div class="brand">
-<div class="radarLogo"><i></i><b></b></div>
-<div class="name">CLOrad</div>
-</div>
-<div class="head">
-<button class="h active" id="searchBtn" aria-label="Поиск">
-<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg>
-</button>
-<button class="h" id="themeBtn" aria-label="Тема">
-<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg>
-</button>
-<button class="h bell" id="bell" aria-label="Уведомления">
-<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
-</button>
-<button class="h" id="menuBtn" aria-label="Меню">
-<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-</button>
-</div>
+
+  <div class="logo">
+
+    <div class="radarLogo">
+      <div class="sweep"></div>
+      <div class="dot"></div>
+    </div>
+
+    <div class="brand">
+      CL<span>O</span>rad
+    </div>
+
+  </div>
+
+  <div class="headControls">
+
+    <button class="h" id="searchBtn" aria-label="Поиск">
+      <span class="searchIcon"></span>
+    </button>
+
+    <button class="h" id="themeBtn" aria-label="Тема">
+      ☼
+    </button>
+
+    <button class="h" id="burgerBtn" aria-label="Меню">
+      <span class="burger">
+        <i></i>
+        <i></i>
+        <i></i>
+      </span>
+    </button>
+
+  </div>
+
 </header>
 
-<div class="popup search" id="search">
-<input id="searchInput" placeholder="Поиск города...">
-</div>
-
-<div class="popup menu" id="menu">
-<button>Карта</button><button>Регионы</button><button>3D</button>
-<button>Предупреждения</button><button>Архив</button><button>Аналитика</button>
-</div>
 
 <!-- =========================
-     NAV
+     TOP NAVIGATION
 ========================= -->
-<nav class="nav">
-<button class="n active"><svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>Карта</button>
-<button class="n"><svg viewBox="0 0 70 45"><path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/></svg>Регионы</button>
-<button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5 8-5zM4 8v9l8 4 8-4V8M12 13v8"/></svg>3D</button>
-<button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/></svg>Предупр.</button>
-<button class="n"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>Архив</button>
-<button class="n"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg>Аналитика</button>
-<button class="n" id="layersNav"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Слои</button>
+
+<nav class="nav" id="nav">
+
+  <button class="n active">
+    <span class="nIcon">◉</span>
+    <span class="nText">Радар</span>
+  </button>
+
+  <button class="n">
+    <span class="nIcon">☁</span>
+    <span class="nText">Спутник</span>
+  </button>
+
+  <button class="n">
+    <span class="nIcon">↗</span>
+    <span class="nText">Ветер</span>
+  </button>
+
+  <button class="n">
+    <span class="nIcon">°</span>
+    <span class="nText">Температура</span>
+  </button>
+
+  <button class="n">
+    <span class="nIcon">♧</span>
+    <span class="nText">Давление</span>
+  </button>
+
+  <button class="n">
+    <span class="nIcon">
+      <span class="regionIcon"></span>
+    </span>
+    <span class="nText">Регионы</span>
+  </button>
+
+  <button class="n" id="layersNav">
+    <span class="nIcon">☷</span>
+    <span class="nText">Слои</span>
+  </button>
+
 </nav>
 
+
 <!-- =========================
-     MAP TOOLS
+     SEARCH
 ========================= -->
-<div class="tools">
-<button class="tool" id="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-<button class="tool" id="minus"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+
+<div class="search" id="search">
+
+  <input
+    class="searchInput"
+    id="searchInput"
+    placeholder="Найти город..."
+    autocomplete="off"
+  >
+
+  <div class="results" id="results"></div>
+
 </div>
+
 
 <!-- =========================
      LAYERS
 ========================= -->
-<div class="layers" id="layers">
-<div class="layer">
-<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/></svg>
-<span>Радар</span><button class="switch on"><i></i></button>
-</div>
-<div class="layer">
-<svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg>
-<span>Осадки</span><button class="switch on"><i></i></button>
-</div>
-<div class="layer">
-<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7z"/></svg>
-<span>Гроза</span><button class="switch on"><i></i></button>
-</div>
-</div>
 
-<!-- =========================
-     LEGEND
-========================= -->
-<button class="legendTab" id="legendTab">Легенда</button>
+<section class="layers" id="layers">
 
-<div class="legend" id="legend">
-<button class="legendClose" id="legendClose">×</button>
-<div class="legendTitle">Условные обозначения</div>
-<div class="li"><i class="box l1"></i>обл. сред. яруса</div>
-<div class="li"><i class="box l2"></i>сл. образования</div>
-<div class="li"><i class="box l3"></i>осадки слабые</div>
-<div class="li"><i class="box l4"></i>осадки умеренные</div>
-<div class="li"><i class="box l5"></i>осадки сильные</div>
-<div class="li"><i class="box l6"></i>кучевая обл</div>
-<div class="li"><i class="box l7"></i>ливень слабый</div>
-<div class="li"><i class="box l8"></i>ливень умеренный</div>
-<div class="li"><i class="box l9"></i>ливень сильный</div>
-<div class="li"><i class="box l10"></i>гроза (R)</div>
-<div class="li"><i class="box l11"></i>гроза R)</div>
-<div class="li"><i class="box l12"></i>гроза R</div>
-<div class="li"><i class="box l13"></i>град слабый</div>
-<div class="li"><i class="box l14"></i>град умеренный</div>
-<div class="li"><i class="box l15"></i>град сильный</div>
-<div class="li"><i class="box l16"></i>шквал слабый</div>
-<div class="li"><i class="box l17"></i>шквал умеренный</div>
-<div class="li"><i class="box l18"></i>шквал сильный</div>
-<div class="li"><i class="box l19"></i>смерч</div>
-</div>
+  <div class="layer">
+
+    <span class="layerName rain">
+      Осадки
+    </span>
+
+    <label class="switch">
+      <input type="checkbox" id="rainToggle">
+      <span class="slider"></span>
+    </label>
+
+  </div>
+
+  <div class="layer">
+
+    <span class="layerName">
+      Спутник
+    </span>
+
+    <label class="switch">
+      <input type="checkbox" id="satToggle">
+      <span class="slider"></span>
+    </label>
+
+  </div>
+
+  <div class="layer">
+
+    <span class="layerName">
+      Ветер
+    </span>
+
+    <label class="switch">
+      <input type="checkbox" id="windToggle">
+      <span class="slider"></span>
+    </label>
+
+  </div>
+
+</section>
+
 
 <!-- =========================
      LOCATION
 ========================= -->
-<button class="location" id="location">
-<svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12A7 7 0 0 0 5 9c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
-<span>Моё<br>местоположение</span>
+
+<button class="location" id="locationBtn">
+
+  <span class="locIcon"></span>
+  <span>Моё местоположение</span>
+
 </button>
+
+
+<!-- =========================
+     LEGEND TAB
+========================= -->
+
+<button class="legendTab" id="legendTab">
+
+  <span>Легенда</span>
+
+</button>
+
+
+<!-- =========================
+     LEGEND
+========================= -->
+
+<section class="legend" id="legend">
+
+  <div class="legendHead">
+
+    <span class="legendTitle">
+      Легенда
+    </span>
+
+    <button class="legendClose" id="legendClose">
+      ×
+    </button>
+
+  </div>
+
+  <div class="legendList">
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#b9c1c7"></span>
+      <span>обл. сред. яруса</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#a9c7f4"></span>
+      <span>сл. образования</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#63eda5"></span>
+      <span>осадки слабые</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#43cf89"></span>
+      <span>осадки умеренные</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#4db84e"></span>
+      <span>осадки сильные</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#fff89c"></span>
+      <span>кучевая обл</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#75a6ef"></span>
+      <span>ливень слабый</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#5279ed"></span>
+      <span>ливень умеренный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#504a9b"></span>
+      <span>ливень сильный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#ffc0a8"></span>
+      <span>гроза (R)</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#fa82a0"></span>
+      <span>гроза R)</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#ff4d4d"></span>
+      <span>гроза R</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#db9248"></span>
+      <span>град слабый</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#ad7544"></span>
+      <span>град умеренный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#924b48"></span>
+      <span>град сильный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#f2aaf0"></span>
+      <span>шквал слабый</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#e85ae7"></span>
+      <span>шквал умеренный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#ca3cc7"></span>
+      <span>шквал сильный</span>
+    </div>
+
+    <div class="legendRow">
+      <span class="legendColor" style="background:#777c91"></span>
+      <span>смерч</span>
+    </div>
+
+  </div>
+
+</section>
+
 
 <!-- =========================
      DATA
 ========================= -->
-<div class="data">
-<div class="cell"><div class="lab">ИНТЕНСИВНОСТЬ:</div><div class="val">Нет данных</div></div>
-<div class="cell"><div class="lab">ГРОЗА</div><div class="val">—</div></div>
-<div class="cell"><div class="lab">СКОРОСТЬ:</div><div class="val">—</div></div>
-</div>
+
+<section class="data">
+
+  <div class="dataCell">
+    <div class="dataValue">—</div>
+    <div class="dataLabel">Отражаемость</div>
+  </div>
+
+  <div class="dataCell">
+    <div class="dataValue">—</div>
+    <div class="dataLabel">Скорость</div>
+  </div>
+
+  <div class="dataCell">
+    <div class="dataValue">—</div>
+    <div class="dataLabel">Направление</div>
+  </div>
+
+</section>
+
 
 <!-- =========================
      TIMELINE
 ========================= -->
-<div class="timeline">
-<div class="thead">СЕЙЧАС 17:20, 13 СЕНТЯБРЯ</div>
-<div class="trow">
-<button class="play" id="play"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
-<div class="slider">
-<input id="range" type="range" min="0" max="100" value="70">
-<div class="times"><span>06:00</span><span>08:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span>17:20</span><span>18:00</span><span>20:00</span><span>22:00</span></div>
-</div>
-</div>
-</div>
+
+<section class="timeline">
+
+  <div class="timelineTop">
+
+    <span class="timeText" id="timeText">
+      Сейчас
+    </span>
+
+    <button class="play" id="playBtn">
+
+      <span class="playIcon"></span>
+
+    </button>
+
+  </div>
+
+  <div class="rangeWrap">
+
+    <input
+      class="range"
+      id="timeRange"
+      type="range"
+      min="0"
+      max="12"
+      value="12"
+    >
+
+  </div>
+
+</section>
+
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
 /* =========================
    MAP
 ========================= */
-const map=L.map("map",{zoomControl:false}).setView([55.75,37.62],5);
-const light="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const dark="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-let tiles=L.tileLayer(light,{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+
+const map=L.map("map",{
+  zoomControl:true,
+  attributionControl:true,
+  minZoom:3,
+  maxZoom:18,
+  zoomSnap:.25,
+  zoomDelta:.5
+}).setView([55.75,37.62],5);
+
+let lightTiles=L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {
+    maxZoom:19,
+    attribution:"© OpenStreetMap"
+  }
+).addTo(map);
+
+let darkTiles=L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {
+    maxZoom:20,
+    attribution:"© OpenStreetMap © CARTO"
+  }
+);
+
 
 /* =========================
    HELPERS
 ========================= */
+
 const $=id=>document.getElementById(id);
-function msg(t){
-let x=document.createElement("div");
-x.textContent=t;
-x.style="position:fixed;z-index:100;left:50%;bottom:125px;transform:translateX(-50%);background:#202930;color:#fff;padding:9px 14px;border-radius:8px;border:1px solid #3d4850;white-space:nowrap";
-document.body.append(x);
-setTimeout(()=>x.remove(),1300)
-}
 
-/* =========================
-   ZOOM
-========================= */
-$("plus").onclick=()=>map.zoomIn();
-$("minus").onclick=()=>map.zoomOut();
-
-/* =========================
-   LOCATION
-========================= */
-$("location").onclick=()=>{
-if(!navigator.geolocation)return msg("Геолокация недоступна");
-navigator.geolocation.getCurrentPosition(p=>{
-map.setView([p.coords.latitude,p.coords.longitude],9);
-msg("Местоположение найдено");
-},()=>msg("Не удалось определить местоположение"));
-};
-
-/* =========================
-   LAYERS
-========================= */
-document.querySelectorAll(".switch").forEach(x=>x.onclick=e=>{
-e.stopPropagation();
-x.classList.toggle("on");
-});
-
-/* =========================
-   LAYER PANEL
-========================= */
-$("layersNav").onclick=()=>{
-$("layers").classList.toggle("hidden");
-$("layersNav").classList.toggle("active");
-};
-
-/* =========================
-   HORIZONTAL DRAG
-========================= */
-let drag=false,startX=0,startLeft=17;
-$("layers").addEventListener("pointerdown",e=>{
-if(e.target.closest(".switch"))return;
-drag=true;
-startX=e.clientX;
-startLeft=parseFloat(getComputedStyle($("layers")).left);
-$("layers").setPointerCapture(e.pointerId);
-});
-$("layers").addEventListener("pointermove",e=>{
-if(!drag)return;
-let x=startLeft+e.clientX-startX;
-x=Math.max(5,Math.min(window.innerWidth-155,x));
-$("layers").style.left=x+"px";
-});
-$("layers").addEventListener("pointerup",()=>drag=false);
-$("layers").addEventListener("pointercancel",()=>drag=false);
-
-/* =========================
-   LEGEND
-========================= */
-function legendToggle(open){
-$("legend").classList.toggle("open",open);
-$("legendTab").classList.toggle("open",open);
-$("legendTab").textContent=open?"×":"Легенда";
-}
-$("legendTab").onclick=()=>legendToggle(!$("legend").classList.contains("open"));
-$("legendClose").onclick=()=>legendToggle(false);
 
 /* =========================
    NAVIGATION
 ========================= */
-document.querySelectorAll(".n:not(#layersNav)").forEach(x=>x.onclick=()=>{
-document.querySelectorAll(".n").forEach(n=>n.classList.remove("active"));
-x.classList.add("active");
-msg(x.textContent);
+
+const nav=$("nav");
+const burger=$("burgerBtn");
+
+burger.addEventListener("click",e=>{
+  e.stopPropagation();
+  nav.classList.toggle("closed");
 });
+
+
+/*
+  Не даём событиям верхнего меню
+  уходить в Leaflet и двигать карту.
+*/
+
+["pointerdown","pointermove","pointerup","touchstart","touchmove","touchend"]
+.forEach(type=>{
+  nav.addEventListener(type,e=>{
+    e.stopPropagation();
+  },{
+    passive:false
+  });
+});
+
+
+/*
+  Горизонтальное перетаскивание меню.
+*/
+
+let navDragging=false;
+let navStartX=0;
+let navStartScroll=0;
+
+nav.addEventListener("pointerdown",e=>{
+
+  navDragging=true;
+  navStartX=e.clientX;
+  navStartScroll=nav.scrollLeft;
+
+  nav.setPointerCapture?.(e.pointerId);
+
+});
+
+nav.addEventListener("pointermove",e=>{
+
+  if(!navDragging)return;
+
+  const dx=e.clientX-navStartX;
+
+  nav.scrollLeft=navStartScroll-dx;
+
+});
+
+nav.addEventListener("pointerup",()=>{
+  navDragging=false;
+});
+
+nav.addEventListener("pointercancel",()=>{
+  navDragging=false;
+});
+
+
+/* =========================
+   NAV BUTTONS
+========================= */
+
+document.querySelectorAll(".n").forEach(btn=>{
+
+  btn.addEventListener("click",e=>{
+
+    if(btn.id==="layersNav"){
+      $("layers").classList.toggle("hidden");
+      return;
+    }
+
+    document.querySelectorAll(".n").forEach(x=>{
+      x.classList.remove("active");
+    });
+
+    btn.classList.add("active");
+
+  });
+
+});
+
+
+/* =========================
+   LAYERS
+========================= */
+
+const layerPanel=$("layers");
+
+const style=document.createElement("style");
+
+style.textContent=`
+.layers.hidden{
+  display:none;
+}
+`;
+
+document.head.appendChild(style);
+
+
+/*
+  Включаем/выключаемые слои пока
+  не добавляют данные на карту.
+*/
+
+$("rainToggle").addEventListener("change",()=>{
+  // зарезервировано под радар
+});
+
+$("satToggle").addEventListener("change",()=>{
+  // зарезервировано под спутник
+});
+
+$("windToggle").addEventListener("change",()=>{
+  // зарезервировано под ветер
+});
+
+
+/* =========================
+   LEGEND
+========================= */
+
+const legend=$("legend");
+const legendTab=$("legendTab");
+const legendClose=$("legendClose");
+
+function openLegend(){
+
+  legend.classList.add("open");
+  legendTab.classList.add("hidden");
+
+}
+
+function closeLegend(){
+
+  legend.classList.remove("open");
+  legendTab.classList.remove("hidden");
+
+}
+
+legendTab.addEventListener("click",openLegend);
+
+legendClose.addEventListener("click",e=>{
+  e.stopPropagation();
+  closeLegend();
+});
+
 
 /* =========================
    SEARCH
 ========================= */
-const cities={
-"москва":[55.75,37.62],"уфа":[54.74,55.97],"казань":[55.79,49.12],
-"самара":[53.20,50.10],"нижний новгород":[56.33,44.01],
-"санкт-петербург":[59.93,30.31],"екатеринбург":[56.84,60.61],
-"омск":[54.99,73.37],"новосибирск":[55.03,82.92],
-"челябинск":[55.16,61.40],"пермь":[58.01,56.25],
-"воронеж":[51.67,39.18],"ростов":[47.23,39.70]
-};
-$("searchBtn").onclick=()=>{
-$("search").classList.toggle("open");
-$("menu").classList.remove("open");
-if($("search").classList.contains("open"))setTimeout(()=>$("searchInput").focus(),50);
-};
-$("searchInput").onkeydown=e=>{
-if(e.key!="Enter")return;
-let q=e.target.value.toLowerCase().trim();
-let k=Object.keys(cities).find(x=>x.includes(q));
-if(k){
-map.setView(cities[k],9);
-$("search").classList.remove("open");
-msg(k[0].toUpperCase()+k.slice(1));
-}else msg("Город не найден");
-};
 
-/* =========================
-   MENU
-========================= */
-$("menuBtn").onclick=()=>{
-$("menu").classList.toggle("open");
-$("search").classList.remove("open");
-};
-document.querySelectorAll(".menu button").forEach(x=>x.onclick=()=>{
-msg(x.textContent);
-$("menu").classList.remove("open");
+const search=$("search");
+const searchInput=$("searchInput");
+const results=$("results");
+
+const cities=[
+  ["Москва",55.7558,37.6173],
+  ["Уфа",54.7388,55.9721],
+  ["Казань",55.7879,49.1233],
+  ["Самара",53.1959,50.1002],
+  ["Нижний Новгород",56.3269,44.0059],
+  ["Санкт-Петербург",59.9343,30.3351],
+  ["Екатеринбург",56.8389,60.6057],
+  ["Омск",54.9885,73.3242],
+  ["Новосибирск",55.0084,82.9357],
+  ["Челябинск",55.1644,61.4368],
+  ["Пермь",58.0105,56.2502],
+  ["Воронеж",51.6608,39.2003],
+  ["Ростов-на-Дону",47.2357,39.7015],
+  ["Краснодар",45.0355,38.9753],
+  ["Сочи",43.5855,39.7231],
+  ["Волгоград",48.7080,44.5133],
+  ["Саратов",51.5336,46.0343],
+  ["Оренбург",51.7682,55.0969],
+  ["Тюмень",57.1530,65.5343],
+  ["Ижевск",56.8527,53.2115]
+];
+
+$("searchBtn").addEventListener("click",e=>{
+
+  e.stopPropagation();
+
+  search.classList.toggle("open");
+
+  if(search.classList.contains("open")){
+    setTimeout(()=>{
+      searchInput.focus();
+    },100);
+  }
+
 });
+
+searchInput.addEventListener("input",()=>{
+
+  const q=searchInput.value
+    .trim()
+    .toLowerCase();
+
+  results.innerHTML="";
+
+  if(!q)return;
+
+  cities
+    .filter(c=>c[0].toLowerCase().includes(q))
+    .slice(0,8)
+    .forEach(c=>{
+
+      const btn=document.createElement("button");
+
+      btn.className="result";
+      btn.textContent=c[0];
+
+      btn.addEventListener("click",()=>{
+
+        map.flyTo(
+          [c[1],c[2]],
+          10,
+          {
+            duration:.8
+          }
+        );
+
+        search.classList.remove("open");
+        searchInput.value="";
+        results.innerHTML="";
+
+      });
+
+      results.appendChild(btn);
+
+    });
+
+});
+
+
+document.addEventListener("click",e=>{
+
+  if(
+    !search.contains(e.target) &&
+    !$("searchBtn").contains(e.target)
+  ){
+    search.classList.remove("open");
+  }
+
+});
+
 
 /* =========================
    THEME
 ========================= */
-let darkMode=false;
-$("themeBtn").onclick=()=>{
-darkMode=!darkMode;
-document.body.classList.toggle("light",!darkMode);
-map.removeLayer(tiles);
-tiles=L.tileLayer(darkMode?dark:light,{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
-msg(darkMode?"Тёмная тема":"Светлая тема");
-};
+
+let dark=false;
+
+$("themeBtn").addEventListener("click",()=>{
+
+  dark=!dark;
+
+  document.body.classList.toggle("dark",dark);
+
+  if(dark){
+
+    map.removeLayer(lightTiles);
+    darkTiles.addTo(map);
+
+    $("themeBtn").textContent="☾";
+
+  }else{
+
+    map.removeLayer(darkTiles);
+    lightTiles.addTo(map);
+
+    $("themeBtn").textContent="☼";
+
+  }
+
+});
+
 
 /* =========================
-   NOTIFICATIONS
+   LOCATION
 ========================= */
-$("bell").onclick=()=>msg("Новых уведомлений нет");
+
+$("locationBtn").addEventListener("click",()=>{
+
+  if(!navigator.geolocation){
+
+    alert("Геолокация недоступна.");
+
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+
+    pos=>{
+
+      const lat=pos.coords.latitude;
+      const lon=pos.coords.longitude;
+
+      map.flyTo(
+        [lat,lon],
+        11,
+        {
+          duration:.8
+        }
+      );
+
+      L.circleMarker(
+        [lat,lon],
+        {
+          radius:8,
+          weight:3,
+          fillOpacity:.25
+        }
+      ).addTo(map);
+
+    },
+
+    ()=>{
+      alert("Не удалось определить местоположение.");
+    },
+
+    {
+      enableHighAccuracy:true,
+      timeout:10000
+    }
+
+  );
+
+});
+
+
+/* =========================
+   TIMELINE
+========================= */
+
+const range=$("timeRange");
+const timeText=$("timeText");
+const playBtn=$("playBtn");
+
+function updateTime(){
+
+  const v=Number(range.value);
+
+  if(v===12){
+
+    timeText.textContent="Сейчас";
+
+    return;
+  }
+
+  const minutes=(12-v)*10;
+
+  if(minutes<60){
+
+    timeText.textContent=
+      `${minutes} мин назад`;
+
+  }else{
+
+    const h=Math.floor(minutes/60);
+    const m=minutes%60;
+
+    timeText.textContent=
+      `${h} ч ${m ? m+" мин " : ""}назад`;
+
+  }
+
+}
+
+range.addEventListener("input",updateTime);
+
 
 /* =========================
    PLAY
 ========================= */
+
+let playing=false;
 let timer=null;
-$("play").onclick=()=>{
-if(timer){
-clearInterval(timer);
-timer=null;
-$("play").querySelector("svg").innerHTML='<path d="M7 4l13 8-13 8z"/>';
-return;
-}
-$("play").querySelector("svg").innerHTML='<path d="M7 5v14M17 5v14"/>';
-timer=setInterval(()=>{
-let r=$("range");
-r.value=+r.value>=100?0:+r.value+1;
-},180);
-};
+
+playBtn.addEventListener("click",()=>{
+
+  playing=!playing;
+
+  playBtn.classList.toggle("pause",playing);
+
+  if(playing){
+
+    timer=setInterval(()=>{
+
+      let v=Number(range.value);
+
+      v--;
+
+      if(v<0){
+        v=12;
+      }
+
+      range.value=v;
+
+      updateTime();
+
+    },700);
+
+  }else{
+
+    clearInterval(timer);
+    timer=null;
+
+  }
+
+});
+
 
 /* =========================
-   CLOSE POPUPS
+   MAP INTERACTION
 ========================= */
-document.addEventListener("click",e=>{
-if(!e.target.closest(".search")&&!e.target.closest("#searchBtn"))$("search").classList.remove("open");
-if(!e.target.closest(".menu")&&!e.target.closest("#menuBtn"))$("menu").classList.remove("open");
+
+map.on("click",e=>{
+
+  /*
+    Сейчас карта намеренно не содержит
+    метеоданных.
+  */
+
 });
+
+
+/* =========================
+   PREVENT MAP DRAG FROM UI
+========================= */
+
+[
+  ".header",
+  ".nav",
+  ".layers",
+  ".location",
+  ".legend",
+  ".legendTab",
+  ".data",
+  ".timeline",
+  ".search"
+].forEach(selector=>{
+
+  const el=document.querySelector(selector);
+
+  if(!el)return;
+
+  L.DomEvent.disableClickPropagation(el);
+  L.DomEvent.disableScrollPropagation(el);
+
+});
+
+
+/* =========================
+   INITIAL STATE
+========================= */
+
+updateTime();
+
 </script>
+
 </body>
 </html>
