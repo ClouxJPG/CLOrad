@@ -8,65 +8,131 @@
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body,#map{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-body{overflow:hidden;color:#e8ebee;background:#171c21}
-#map{position:fixed;z-index:0}
-.leaflet-control-attribution{font-size:9px!important;background:#fff9!important}
+body{overflow:hidden;background:#edf0f2;color:#e9edf0}
+#map{position:fixed;inset:0;z-index:0}
+.leaflet-control-attribution{font-size:9px!important;background:#ffffffaa!important}
 
-.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151b;display:flex;align-items:center;padding:0 18px}
-.brand{display:flex;align-items:center;gap:10px}
-.logo{width:51px;height:51px;border:2px solid #4ce39a;border-radius:50%;position:relative;overflow:hidden;background:#11191b}
-.logo:before,.logo:after{content:"";position:absolute;border:1px solid #4ce39a88;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
-.logo:before{width:36px;height:36px}.logo:after{width:20px;height:20px}
-.logo b{position:absolute;width:5px;height:5px;border-radius:50%;background:#50e29a;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
-.logo i{position:absolute;z-index:2;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#50e39a99,#50e39a00);clip-path:polygon(0 0,100% 0,0 100%);animation:r 2.5s linear infinite}
-@keyframes r{to{transform:rotate(360deg)}}
-.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f5f6f7}
-.head{margin-left:auto;display:flex;gap:6px}
-.h{width:51px;height:51px;border:0;background:transparent;color:#bdc3c8;border-radius:9px;display:grid;place-items:center;position:relative}
-.h:first-child{background:#202932;border:1px solid #303b45}
-.h svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.h.bell:after{content:"";position:absolute;width:8px;height:8px;background:#ff5966;border-radius:50%;right:5px;top:6px}
+/* =========================
+   HEADER
+========================= */
+.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151a;display:flex;align-items:center;padding:0 18px}
+.brand{display:flex;align-items:center;gap:9px}
+.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f7f8f9}
+.radarLogo{width:48px;height:48px;border:2px solid #51e29a;border-radius:50%;position:relative;overflow:hidden;background:#10181a;flex:none}
+.radarLogo:before,.radarLogo:after{content:"";position:absolute;border:1px solid #51e29a99;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
+.radarLogo:before{width:34px;height:34px}.radarLogo:after{width:19px;height:19px}
+.radarLogo b{position:absolute;width:5px;height:5px;background:#51e29a;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
+.radarLogo i{position:absolute;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#51e29a99,transparent);clip-path:polygon(0 0,100% 0,0 100%);animation:scan 2.4s linear infinite;z-index:2}
+@keyframes scan{to{transform:rotate(360deg)}}
+.head{margin-left:auto;display:flex;gap:5px}
+.h{width:51px;height:51px;border:0;border-radius:9px;background:transparent;color:#c3c9cd;display:grid;place-items:center;position:relative}
+.h.active{background:#222b34;border:1px solid #35404a}
+.h svg{width:29px;height:29px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bell:after{content:"";position:absolute;width:8px;height:8px;background:#ff5867;border-radius:50%;right:6px;top:7px}
 
-.nav{position:fixed;z-index:19;top:80px;left:0;right:0;height:85px;background:#273038;display:flex;overflow:hidden;border-bottom:1px solid #414a52}
-.n{min-width:88px;height:85px;background:0;color:#aeb5bb;border:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;font-size:17px;white-space:nowrap;position:relative}
+/* =========================
+   NAV
+========================= */
+.nav{position:fixed;z-index:19;top:80px;left:0;right:0;height:85px;background:#273038;display:flex;overflow-x:auto;border-bottom:1px solid #424b52}
+.nav::-webkit-scrollbar{display:none}
+.n{min-width:88px;height:85px;border:0;background:none;color:#adb5bb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:17px;position:relative;white-space:nowrap}
 .n svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.n.on{color:#55e3a0}.n.on:after{content:"";height:3px;background:#55e3a0;position:absolute;bottom:0;left:7px;right:7px}
+.n.active{color:#53e39b}.n.active:after{content:"";position:absolute;height:3px;background:#53e39b;bottom:0;left:8px;right:8px}
 
+/* =========================
+   MAP TOOLS
+========================= */
 .tools{position:fixed;z-index:8;left:14px;top:177px;display:flex;flex-direction:column;gap:8px}
-.tool{width:55px;height:55px;background:#182028eF;color:#e1e5e8;border:1px solid #3c4650;border-radius:11px;display:grid;place-items:center}
-.tool svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.tool{width:55px;height:55px;border-radius:11px;border:1px solid #3c4650;background:#192129eF;color:#e4e8eb;display:grid;place-items:center}
+.tool svg{width:31px;height:31px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-.layers{position:fixed;z-index:8;left:14px;top:50%;transform:translateY(-50%);width:160px;background:#182028ed;border:1px solid #3b4650;border-radius:9px;padding:5px 10px}
-.row{height:60px;display:flex;align-items:center;gap:8px}
-.row svg{width:29px;height:29px;fill:none;stroke:#53e19a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.row:nth-child(2) svg{stroke:#4ba9ff}.row:nth-child(3) svg{stroke:#ff7179}.row:nth-child(4) svg{stroke:#bdc4c8}
-.row span{font-size:17px;flex:1}.sw{width:57px;height:32px;border-radius:18px;background:#596168;position:relative;flex:none}.sw i{position:absolute;width:25px;height:25px;border-radius:50%;background:#f5f6f6;top:3px;left:4px;transition:.2s}.sw.on{background:#43d58d}.sw.on i{left:28px}
+/* =========================
+   LAYERS
+========================= */
+.layers{position:fixed;z-index:8;left:14px;top:50%;transform:translateY(-50%);width:160px;background:#182028ee;border:1px solid #3b4650;border-radius:10px;padding:4px 9px}
+.layer{height:60px;display:flex;align-items:center;gap:8px}
+.layer svg{width:29px;height:29px;fill:none;stroke:#50df98;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.layer:nth-child(2) svg{stroke:#50aaff}.layer:nth-child(3) svg{stroke:#ff777e}
+.layer span{font-size:17px;flex:1}
+.switch{width:57px;height:32px;border:0;border-radius:18px;background:#626a70;position:relative;padding:0;flex:none}
+.switch i{position:absolute;width:25px;height:25px;left:4px;top:3px;border-radius:50%;background:#f5f6f6;transition:.2s}
+.switch.on{background:#43d58d}.switch.on i{left:28px}
 
-.data{position:fixed;z-index:7;left:70px;right:70px;bottom:116px;height:72px;background:#141a20ed;border:1px solid #303943;border-radius:10px;display:grid;grid-template-columns:1.25fr 1fr 1fr}
-.cell{padding:10px 16px;border-right:1px solid #303943}.cell:last-child{border:0}.lab{font-size:11px;color:#838c94;letter-spacing:.6px}.val{font-size:17px;font-weight:700;margin-top:5px}
+/* =========================
+   LEGEND
+========================= */
+.legendTab{position:fixed;z-index:10;right:0;top:285px;width:39px;height:86px;background:#172027f5;border:1px solid #414b53;border-right:0;border-radius:9px 0 0 9px;color:#fff;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;font-size:13px;letter-spacing:.5px}
+.legend{position:fixed;z-index:11;right:-245px;top:205px;width:230px;max-height:520px;background:#182028f5;border:1px solid #3d4851;border-radius:10px 0 0 10px;padding:12px;transition:.3s;overflow:auto}
+.legend.open{right:0}
+.legendTitle{font-size:18px;font-weight:700;margin-bottom:8px}
+.li{height:26px;display:flex;align-items:center;gap:9px;font-size:13px;color:#e4e7e9}
+.box{width:23px;height:20px;border-radius:2px;flex:none}
+.l1{background:#b9c1c7}.l2{background:#a9c7f4}.l3{background:#63eda5}.l4{background:#43cf89}.l5{background:#4db84e}.l6{background:#fff89c}.l7{background:#75a6ef}.l8{background:#5279ed}.l9{background:#504a9b}.l10{background:#ffc0a8}.l11{background:#fa82a0}.l12{background:#ff4d4d}.l13{background:#db9248}.l14{background:#ad7544}.l15{background:#924b48}.l16{background:#f2aaf0}.l17{background:#e85ae7}.l18{background:#ca3cc7}.l19{background:#777c91}
 
-.alert{position:fixed;z-index:9;left:70px;right:70px;bottom:188px;min-height:82px;background:#59636cf0;border:1px solid #68737c;border-radius:12px;padding:10px 13px;display:flex;align-items:center;font-size:18px}
-.alert b{font-weight:700}.warn{font-size:25px;margin-right:8px}.close{margin-left:auto;background:none;color:#dce0e3;font-size:28px}
+/* =========================
+   LOCATION
+========================= */
+.location{position:fixed;z-index:9;left:14px;bottom:185px;width:146px;height:64px;border:1px solid #3e4850;border-radius:9px;background:#182028eF;color:#dfe4e7;display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px}
+.location svg{width:25px;height:25px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:8px;height:108px;background:#141a20f5;border:1px solid #303a44;border-radius:11px;padding:7px 13px}
-.thead{text-align:center;font-size:14px;height:28px}
-.trow{display:flex;align-items:center;gap:8px;height:65px}
-.tb{width:42px;height:42px;flex:none;border:0;background:#f1f3f4;color:#172027;border-radius:50%;display:grid;place-items:center}.tb.dark{background:#202932;color:#e1e5e8;border-radius:9px}.tb svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.slider{flex:1}.slider input{width:100%;appearance:none;height:7px;border-radius:5px;background:#70777c}.slider input::-webkit-slider-thumb{appearance:none;width:31px;height:31px;background:white;border-radius:50%}.times{display:flex;justify-content:space-between;font-size:10px;color:#9ca4aa;margin-top:7px}
+/* =========================
+   DATA
+========================= */
+.data{position:fixed;z-index:7;left:70px;right:70px;bottom:116px;height:73px;background:#151b21ed;border:1px solid #303a43;border-radius:10px;display:grid;grid-template-columns:1.3fr 1fr 1fr}
+.cell{padding:9px 16px;border-right:1px solid #303a43}.cell:last-child{border:0}
+.lab{font-size:11px;color:#858e95;letter-spacing:.5px}.val{font-size:17px;font-weight:700;margin-top:5px}
 
-.popup{position:fixed;z-index:30;display:none;background:#182028f5;border:1px solid #3b4650;border-radius:10px;box-shadow:0 10px 30px #0008}.popup.open{display:block}
-.search{right:12px;top:88px;width:300px;padding:8px}.search input{width:100%;height:42px;background:#252e37;border:0;border-radius:7px;color:#fff;padding:0 12px;font-size:16px}
-.menu{right:10px;top:85px;width:210px;padding:7px}.menu button{width:100%;background:none;color:#ddd;text-align:left;border:0;padding:11px;border-radius:6px}
-.toast{position:fixed;z-index:100;left:50%;bottom:125px;transform:translate(-50%,20px);opacity:0;background:#222b33;color:#fff;border:1px solid #3c4750;border-radius:9px;padding:9px 13px;transition:.2s}.toast.show{opacity:1;transform:translate(-50%,0)}
+/* =========================
+   ALERT
+========================= */
+.alert{position:fixed;z-index:9;left:70px;right:70px;bottom:190px;min-height:80px;background:#59646df2;border:1px solid #6b757d;border-radius:12px;padding:10px 14px;display:flex;align-items:center;font-size:18px}
+.alertIcon{width:26px;height:26px;margin-right:9px;flex:none}
+.alertIcon svg{width:100%;height:100%;fill:#ffd447}
+.close{margin-left:auto;border:0;background:none;color:#dce1e4;font-size:28px}
 
+/* =========================
+   TIMELINE
+========================= */
+.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:8px;height:108px;background:#151b21f5;border:1px solid #303a43;border-radius:11px;padding:7px 13px}
+.thead{text-align:center;font-size:14px;height:27px}
+.trow{height:65px;display:flex;align-items:center;gap:9px}
+.play{width:43px;height:43px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none}
+.play svg{width:26px;height:26px;fill:currentColor}
+.slider{flex:1}.slider input{width:100%;appearance:none;height:7px;background:#6e767b;border-radius:5px}
+.slider input::-webkit-slider-thumb{appearance:none;width:31px;height:31px;border-radius:50%;background:#fff}
+.times{display:flex;justify-content:space-between;color:#9da5aa;font-size:10px;margin-top:7px}
+
+/* =========================
+   SEARCH / MENU
+========================= */
+.popup{position:fixed;z-index:30;display:none;background:#182028f5;border:1px solid #3d4851;border-radius:9px;box-shadow:0 10px 30px #0008}
+.popup.open{display:block}
+.search{right:12px;top:88px;width:300px;padding:8px}.search input{width:100%;height:42px;border:0;border-radius:7px;background:#252e36;color:#fff;padding:0 12px;font-size:16px}
+.menu{right:10px;top:85px;width:210px;padding:7px}.menu button{width:100%;padding:11px;border:0;border-radius:6px;background:none;color:#ddd;text-align:left;font-size:15px}
+
+/* =========================
+   LIGHT THEME
+========================= */
+body.light .header{background:#f4f5f6}.light .name{color:#171b1e}.light .h{color:#4f575d}.light .h.active{background:#e1e5e8}
+body.light .nav{background:#f5f6f7;border-color:#d4d9dd}.light .n{color:#687177}
+body.light .layers,.light .tool,.light .location,.light .legend,.light .legendTab{background:#f6f8f9eF;color:#252b2f;border-color:#c9d0d5}
+body.light .layer span{color:#252b2f}.light .tool{color:#30383d}.light .legend{color:#252b2f}
+body.light .data,.light .timeline{background:#f5f7f8ee;color:#22292d;border-color:#cbd2d6}
+body.light .lab,.light .times{color:#70797f}
+body.light .timeline input{background:#a2a9ad}
+
+/* =========================
+   RESPONSIVE
+========================= */
 @media(max-width:600px){
-.header{height:80px}.name{font-size:30px}.logo{width:48px;height:48px}.head{gap:0}.h{width:45px}
-.nav{top:80px}.n{min-width:89px}
-.layers{width:160px}.data,.alert{left:70px;right:70px}
+.name{font-size:29px}.head{gap:0}.h{width:45px}
+.nav{top:80px}.layers{left:13px}.legend{top:205px}
+.data,.alert{left:70px;right:17px}
 }
 @media(max-width:430px){
-.name{font-size:28px}.h:first-child{width:49px}.h:nth-child(2){display:none}
-.layers{left:13px}.data{left:17px;right:17px}.alert{left:17px;right:17px}
+.name{font-size:27px}.radarLogo{width:45px;height:45px}
+.h:nth-child(2){display:none}.data{left:17px}.alert{left:17px}
+.location{bottom:185px}
 }
 </style>
 </head>
@@ -74,93 +140,238 @@ body{overflow:hidden;color:#e8ebee;background:#171c21}
 
 <div id="map"></div>
 
+<!-- =========================
+     HEADER
+========================= -->
 <header class="header">
 <div class="brand">
-<div class="logo"><i></i><b></b></div>
+<div class="radarLogo"><i></i><b></b></div>
 <div class="name">CLOrad</div>
 </div>
 <div class="head">
-<button class="h" id="searchBtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg></button>
-<button class="h"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg></button>
+<button class="h active" id="searchBtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg></button>
+<button class="h" id="themeBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg></button>
 <button class="h bell" id="bell"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
 <button class="h" id="menuBtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
 </div>
 </header>
 
 <div class="popup search" id="search"><input id="searchInput" placeholder="Поиск города..."></div>
-<div class="popup menu" id="menu"><button>Карта</button><button>Регионы</button><button>3D</button><button>Предупреждения</button><button>Архив</button><button>Аналитика</button><button>Слои</button></div>
 
+<div class="popup menu" id="menu">
+<button>Карта</button><button>Регионы</button><button>3D</button>
+<button>Предупреждения</button><button>Архив</button><button>Аналитика</button><button>Слои</button>
+</div>
+
+<!-- =========================
+     NAVIGATION
+========================= -->
 <nav class="nav">
-<button class="n on"><svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>Карта</button>
-<button class="n"><svg viewBox="0 0 64 40"><path d="M4 17l7-5 4-6 8 2 4-4 7 3 5-1 5 5 8 1 7 6-5 5-8-1-5 5-7-2-7 3-7-5-7 1-5-4z"/></svg>Регионы</button>
+<button class="n active"><svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>Карта</button>
+<button class="n"><svg viewBox="0 0 70 45"><path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/></svg>Регионы</button>
 <button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5 8-5zM4 8v9l8 4 8-4V8M12 13v8"/></svg>3D</button>
-<button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 9v5M12 17.5h.01"/></svg>Предупрежд.</button>
+<button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/></svg>Предупр.</button>
 <button class="n"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>Архив</button>
 <button class="n"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg>Аналитика</button>
 <button class="n"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Слои</button>
 </nav>
 
+<!-- =========================
+     MAP CONTROLS
+========================= -->
 <div class="tools">
 <button class="tool" id="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
 <button class="tool" id="minus"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
-<button class="tool" id="locate"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg></button>
 </div>
 
+<!-- =========================
+     LAYERS
+========================= -->
 <div class="layers">
-<div class="row"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/></svg><span>Радар</span><button class="sw on"><i></i></button></div>
-<div class="row"><svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg><span>Осадки</span><button class="sw on"><i></i></button></div>
-<div class="row"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7z"/></svg><span>Гроза</span><button class="sw on"><i></i></button></div>
-<div class="row"><svg viewBox="0 0 24 24"><path d="M5 17h13a4 4 0 0 0 0-8 6 6 0 0 0-11-1A4 4 0 0 0 5 17z"/></svg><span>Облачность</span><button class="sw"><i></i></button></div>
+<div class="layer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/></svg><span>Радар</span><button class="switch on"><i></i></button></div>
+<div class="layer"><svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg><span>Осадки</span><button class="switch on"><i></i></button></div>
+<div class="layer"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7z"/></svg><span>Гроза</span><button class="switch on"><i></i></button></div>
 </div>
 
-<div class="alert" id="alert"><span class="warn">⚠️</span><span><b>ШТОРМ:</b> Активных предупреждений пока нет</span><button class="close">×</button></div>
+<!-- =========================
+     LEGEND
+========================= -->
+<button class="legendTab" id="legendTab">Легенда</button>
+<div class="legend" id="legend">
+<div class="legendTitle">Условные обозначения</div>
+<div class="li"><i class="box l1"></i>обл. сред. яруса</div>
+<div class="li"><i class="box l2"></i>сл. образования</div>
+<div class="li"><i class="box l3"></i>осадки слабые</div>
+<div class="li"><i class="box l4"></i>осадки умеренные</div>
+<div class="li"><i class="box l5"></i>осадки сильные</div>
+<div class="li"><i class="box l6"></i>кучевая обл</div>
+<div class="li"><i class="box l7"></i>ливень слабый</div>
+<div class="li"><i class="box l8"></i>ливень умеренный</div>
+<div class="li"><i class="box l9"></i>ливень сильный</div>
+<div class="li"><i class="box l10"></i>гроза (R)</div>
+<div class="li"><i class="box l11"></i>гроза R)</div>
+<div class="li"><i class="box l12"></i>гроза R</div>
+<div class="li"><i class="box l13"></i>град слабый</div>
+<div class="li"><i class="box l14"></i>град умеренный</div>
+<div class="li"><i class="box l15"></i>град сильный</div>
+<div class="li"><i class="box l16"></i>шквал слабый</div>
+<div class="li"><i class="box l17"></i>шквал умеренный</div>
+<div class="li"><i class="box l18"></i>шквал сильный</div>
+<div class="li"><i class="box l19"></i>смерч</div>
+</div>
 
+<!-- =========================
+     LOCATION
+========================= -->
+<button class="location" id="location"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12A7 7 0 0 0 5 9c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>Моё<br>местоположение</button>
+
+<!-- =========================
+     ALERT
+========================= -->
+<div class="alert" id="alert">
+<span class="alertIcon"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 8v6M12 18h.01" stroke="#333" stroke-width="2"/></svg></span>
+<span><b>ШТОРМ:</b> Активных предупреждений пока нет</span>
+<button class="close" id="close">×</button>
+</div>
+
+<!-- =========================
+     DATA
+========================= -->
 <div class="data">
 <div class="cell"><div class="lab">ИНТЕНСИВНОСТЬ:</div><div class="val">Нет данных</div></div>
 <div class="cell"><div class="lab">ГРОЗА</div><div class="val">—</div></div>
 <div class="cell"><div class="lab">СКОРОСТЬ:</div><div class="val">—</div></div>
 </div>
 
+<!-- =========================
+     TIMELINE
+========================= -->
 <div class="timeline">
 <div class="thead">СЕЙЧАС 17:20, 13 СЕНТЯБРЯ</div>
 <div class="trow">
-<button class="tb" id="play"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>
-<button class="tb dark" id="pause"><svg viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"/></svg></button>
-<button class="tb dark" id="prev"><svg viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6M6 6v12"/></svg></button>
-<div class="slider"><input id="range" type="range" min="0" max="100" value="70"><div class="times"><span>06:00</span><span>08:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span>17:20</span><span>18:00</span><span>20:00</span><span>22:00</span></div></div>
-<button class="tb dark" id="next"><svg viewBox="0 0 24 24"><path d="M6 6l8 6-8 6M18 6v12"/></svg></button>
+<button class="play" id="play"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+<div class="slider">
+<input id="range" type="range" min="0" max="100" value="70">
+<div class="times"><span>06:00</span><span>08:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span>17:20</span><span>18:00</span><span>20:00</span><span>22:00</span></div>
 </div>
 </div>
-
-<div class="toast" id="toast"></div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+/* =========================
+   MAP
+========================= */
 const map=L.map("map",{zoomControl:false}).setView([55.75,37.62],5);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
-const $=x=>document.getElementById(x),toast=x=>{let t=$("toast");t.textContent=x;t.classList.add("show");clearTimeout(window.t);window.t=setTimeout(()=>t.classList.remove("show"),1300)};
+const light="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const dark="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+let tiles=L.tileLayer(light,{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
 
+/* =========================
+   HELPERS
+========================= */
+const $=id=>document.getElementById(id);
+function msg(t){let x=document.createElement("div");x.textContent=t;x.style="position:fixed;z-index:100;left:50%;bottom:125px;transform:translateX(-50%);background:#202930;color:#fff;padding:9px 14px;border-radius:8px;border:1px solid #3d4850";document.body.append(x);setTimeout(()=>x.remove(),1300)}
+
+/* =========================
+   MAP BUTTONS
+========================= */
 $("plus").onclick=()=>map.zoomIn();
 $("minus").onclick=()=>map.zoomOut();
-$("locate").onclick=()=>navigator.geolocation?.getCurrentPosition(p=>(map.setView([p.coords.latitude,p.coords.longitude],9),toast("Местоположение найдено")),()=>toast("Местоположение недоступно"));
 
-document.querySelectorAll(".sw").forEach(x=>x.onclick=()=>{x.classList.toggle("on");toast(x.parentElement.querySelector("span").textContent)});
-document.querySelectorAll(".n").forEach(x=>x.onclick=()=>{document.querySelectorAll(".n").forEach(y=>y.classList.remove("on"));x.classList.add("on");toast(x.textContent)});
-$("searchBtn").onclick=()=>{$("search").classList.toggle("open");$("menu").classList.remove("open")};
-$("menuBtn").onclick=()=>{$("menu").classList.toggle("open");$("search").classList.remove("open")};
+/* =========================
+   LOCATION
+========================= */
+$("location").onclick=()=>{
+if(!navigator.geolocation)return msg("Геолокация недоступна");
+navigator.geolocation.getCurrentPosition(p=>{
+map.setView([p.coords.latitude,p.coords.longitude],9);
+msg("Местоположение найдено");
+},()=>msg("Не удалось определить местоположение"));
+};
+
+/* =========================
+   LAYERS
+========================= */
+document.querySelectorAll(".switch").forEach(x=>x.onclick=()=>{
+x.classList.toggle("on");
+msg(x.parentElement.querySelector("span").textContent);
+});
+
+/* =========================
+   NAVIGATION
+========================= */
+document.querySelectorAll(".n").forEach(x=>x.onclick=()=>{
+document.querySelectorAll(".n").forEach(n=>n.classList.remove("active"));
+x.classList.add("active");
+msg(x.textContent);
+});
+
+/* =========================
+   LEGEND
+========================= */
+$("legendTab").onclick=()=>$("legend").classList.toggle("open");
+
+/* =========================
+   SEARCH
+========================= */
+const cities={
+"москва":[55.75,37.62],"уфа":[54.74,55.97],"казань":[55.79,49.12],
+"самара":[53.20,50.10],"нижний новгород":[56.33,44.01],
+"санкт-петербург":[59.93,30.31],"екатеринбург":[56.84,60.61],
+"омск":[54.99,73.37],"новосибирск":[55.03,82.92],
+"челябинск":[55.16,61.40],"пермь":[58.01,56.25],
+"ростов":[47.23,39.70],"воронеж":[51.67,39.18]
+};
+$("searchBtn").onclick=()=>{
+$("search").classList.toggle("open");$("menu").classList.remove("open");
+if($("search").classList.contains("open"))setTimeout(()=>$("searchInput").focus(),50);
+};
+$("searchInput").onkeydown=e=>{
+if(e.key!="Enter")return;
+let q=e.target.value.toLowerCase().trim(),k=Object.keys(cities).find(x=>x.includes(q));
+if(k){map.setView(cities[k],9);$("search").classList.remove("open");msg(k[0].toUpperCase()+k.slice(1))}
+else msg("Город не найден");
+};
+
+/* =========================
+   MENU
+========================= */
+$("menuBtn").onclick=()=>{
+$("menu").classList.toggle("open");$("search").classList.remove("open");
+};
+document.querySelectorAll(".menu button").forEach(x=>x.onclick=()=>{
+msg(x.textContent);$("menu").classList.remove("open");
+});
+
+/* =========================
+   THEME
+========================= */
+let darkMode=true;
+$("themeBtn").onclick=()=>{
+darkMode=!darkMode;
+document.body.classList.toggle("light",!darkMode);
+map.removeLayer(tiles);
+tiles=L.tileLayer(darkMode?dark:light,{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+msg(darkMode?"Тёмная тема":"Светлая тема");
+};
+
+/* =========================
+   ALERT
+========================= */
 $("bell").onclick=()=>$("alert").style.display="flex";
-document.querySelector(".close").onclick=()=>$("alert").style.display="none";
+$("close").onclick=()=>$("alert").style.display="none";
 
-const cities={москва:[55.75,37.62],уфа:[54.74,55.97],казань:[55.79,49.12],самара:[53.20,50.10],нижний:[56.33,44.01],екатеринбург:[56.84,60.61],омск:[55,73.37],новосибирск:[55.03,82.92]};
-$("searchInput").onkeydown=e=>{if(e.key=="Enter"){let q=e.target.value.toLowerCase(),k=Object.keys(cities).find(x=>x.startsWith(q));k?(map.setView(cities[k],8),$("search").classList.remove("open"),toast(k[0].toUpperCase()+k.slice(1))):toast("Город не найден")}};
-
-document.querySelectorAll(".menu button").forEach(x=>x.onclick=()=>{toast(x.textContent);$("menu").classList.remove("open")});
-
-let timer;
-$("play").onclick=()=>{if(timer)return;timer=setInterval(()=>{let r=$("range");r.value=+r.value>=100?0:+r.value+1},350);toast("Воспроизведение")};
-$("pause").onclick=()=>{clearInterval(timer);timer=null;toast("Пауза")};
-$("prev").onclick=()=>{let r=$("range");r.value=Math.max(0,+r.value-5)};
-$("next").onclick=()=>{let r=$("range");r.value=Math.min(100,+r.value+5)};
+/* =========================
+   PLAY
+========================= */
+let timer=null;
+$("play").onclick=()=>{
+if(timer){clearInterval(timer);timer=null;return}
+timer=setInterval(()=>{
+let r=$("range");r.value=+r.value>=100?0:+r.value+1;
+},180);
+};
 </script>
 </body>
 </html>
