@@ -1,96 +1,116 @@
 /* =========================================================
    CLOrad — Lightning
-   Источник: Blitzortung.org
+   Blitzortung.org
+   Актуальный WebSocket-протокол
    ========================================================= */
 
 (() => {
 
   "use strict";
 
-  const SERVERS = [1, 5, 6, 7].map(
-    n => `wss://ws${n}.blitzortung.org:3000/`
-  );
 
-  const LIFETIME = 15 * 60 * 1000;
+  /* =======================================================
+     НАСТРОЙКИ
+     ======================================================= */
+
+  const SERVERS = [
+    "wss://ws7.blitzortung.org/",
+    "wss://ws1.blitzortung.org/",
+    "wss://ws5.blitzortung.org/",
+    "wss://ws6.blitzortung.org/"
+  ];
+
+  const STRIKE_LIFETIME = 15 * 60 * 1000;
+
   const UPDATE_INTERVAL = 3000;
+
   const RECONNECT_DELAY = 5000;
 
-  let layer = null;
+
+  /* =======================================================
+     СОСТОЯНИЕ
+     ======================================================= */
+
   let socket = null;
+
+  let lightningLayer = null;
+
   let reconnectTimer = null;
 
   let enabled = false;
+
+  let currentServer = 0;
 
   const strikes = [];
 
 
   /* =======================================================
-     Получение карты
+     MAP
      ======================================================= */
 
-  function getMap(){
+  const map = window.map;
 
-    if(
-      typeof window.map !== "undefined" &&
-      window.map
-    ){
-      return window.map;
-    }
+
+  if (!map) {
 
     console.error(
-      "[CLOrad Lightning] map не найден."
+      "[CLOrad Lightning] window.map не найден."
     );
 
-    return null;
-  }
-
-
-  /* =======================================================
-     Создание слоя
-     ======================================================= */
-
-  function createLayer(){
-
-    if(layer){
-      return;
-    }
-
-    const map = getMap();
-
-    if(!map){
-      return;
-    }
-
-    layer = L.layerGroup();
+    return;
 
   }
 
 
   /* =======================================================
-     Цвет удара
+     SWITCH
      ======================================================= */
 
-  function strikeColor(age){
+  const switchElement =
+    document.getElementById(
+      "lightningSwitch"
+    );
 
-    if(age < 10_000){
+
+  if (!switchElement) {
+
+    console.error(
+      "[CLOrad Lightning] lightningSwitch не найден."
+    );
+
+    return;
+
+  }
+
+
+  /* =======================================================
+     LAYER
+     ======================================================= */
+
+  lightningLayer =
+    L.layerGroup();
+
+
+  /* =======================================================
+     ЦВЕТ МОЛНИИ ПО ВОЗРАСТУ
+     ======================================================= */
+
+  function strikeColor(age) {
+
+    if (age < 10_000)
       return "#ffffff";
-    }
 
-    if(age < 60_000){
+    if (age < 60_000)
       return "#ffff00";
-    }
 
-    if(age < 180_000){
+    if (age < 180_000)
       return "#ffa500";
-    }
 
-    if(age < 300_000){
+    if (age < 300_000)
       return "#ff4500";
-    }
 
-    if(age < 600_000){
+    if (age < 600_000)
       return "#ff0000";
-    }
 
     return "#8b0000";
 
@@ -98,35 +118,130 @@
 
 
   /* =======================================================
-     Добавление удара
+     LZW DECODER
+     
+     Blitzortung сейчас передаёт
+     сжатые сообщения.
      ======================================================= */
 
-  function addStrike(data){
+  function decodeLZW(input) {
 
-    if(!enabled){
-      return;
+    if (
+      typeof input !== "string" ||
+      !input.length
+    ) {
+
+      return "";
+
     }
 
-    const map = getMap();
 
-    if(!map){
-      return;
+    let dictionary = {};
+
+    let data =
+      input.split("");
+
+
+    let current =
+      data[0];
+
+    let result =
+      [current];
+
+
+    let code =
+      256;
+
+
+    let previous =
+      current;
+
+
+    for (
+      let i = 1;
+      i < data.length;
+      i++
+    ) {
+
+      const charCode =
+        data[i].charCodeAt(0);
+
+
+      let entry;
+
+
+      if (
+        charCode < 256
+      ) {
+
+        entry =
+          data[i];
+
+      } else {
+
+        entry =
+          dictionary[charCode];
+
+        if (!entry) {
+
+          entry =
+            previous +
+            current.charAt(0);
+
+        }
+
+      }
+
+
+      result.push(entry);
+
+
+      current =
+        entry.charAt(0);
+
+
+      dictionary[code++] =
+        previous + current;
+
+
+      previous =
+        entry;
+
     }
 
-    if(
+
+    return result.join("");
+
+  }
+
+
+  /* =======================================================
+     ДОБАВЛЕНИЕ УДАРА
+     ======================================================= */
+
+  function addStrike(data) {
+
+    if (!enabled)
+      return;
+
+
+    if (
+      !data ||
       typeof data.lat !== "number" ||
       typeof data.lon !== "number" ||
       typeof data.time !== "number"
-    ){
+    ) {
+
       return;
+
     }
+
 
     const timeMs =
-      Math.floor(data.time / 1e6);
+      Math.floor(
+        data.time / 1e6
+      );
 
-    if(!Number.isFinite(timeMs)){
-      return;
-    }
 
     const lat =
       data.lat;
@@ -134,133 +249,296 @@
     const lon =
       data.lon;
 
-    const latlng =
-      [lat,lon];
 
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      !Number.isFinite(timeMs)
+    ) {
 
-    /*
-       Не рисуем мировые удары,
-       которые далеко за пределами
-       текущего экрана.
-    */
-
-    if(
-      !map
-        .getBounds()
-        .pad(0.5)
-        .contains(latlng)
-    ){
       return;
+
     }
 
 
-    /*
-       Защита от дублей.
-    */
+    /* =====================================================
+       НЕ РИСУЕМ МОЛНИИ, КОТОРЫЕ СИЛЬНО ДАЛЬШЕ ЭКРАНА
+       ===================================================== */
+
+    const bounds =
+      map
+        .getBounds()
+        .pad(0.5);
+
+
+    if (
+      !bounds.contains(
+        [lat, lon]
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    /* =====================================================
+       ЗАЩИТА ОТ ДУБЛИКАТОВ
+       ===================================================== */
 
     const duplicate =
       strikes.some(
         strike =>
-          Math.abs(strike.lat - lat) < 0.0001 &&
-          Math.abs(strike.lon - lon) < 0.0001 &&
-          Math.abs(strike.time - timeMs) < 1000
+
+          Math.abs(
+            strike.lat - lat
+          ) < 0.0001 &&
+
+          Math.abs(
+            strike.lon - lon
+          ) < 0.0001 &&
+
+          Math.abs(
+            strike.time - timeMs
+          ) < 1000
       );
 
-    if(duplicate){
-      return;
-    }
 
+    if (duplicate)
+      return;
+
+
+    /* =====================================================
+       MARKER
+       ===================================================== */
 
     const marker =
       L.circleMarker(
-        latlng,
+        [lat, lon],
         {
-          radius:5.5,
-          color:"#ffffff",
-          weight:1,
-          opacity:1,
-          fillColor:strikeColor(0),
-          fillOpacity:0.95
+
+          radius: 6,
+
+          color: "#ffffff",
+
+          weight: 1,
+
+          opacity: 1,
+
+          fillColor:
+            strikeColor(0),
+
+          fillOpacity: 1
+
         }
       );
 
 
-    marker.bindPopup(() => {
+    /* =====================================================
+       POPUP
+       ===================================================== */
 
-      const ageSec =
-        Math.max(
-          0,
-          Math.round(
-            (Date.now() - timeMs) / 1000
-          )
-        );
+    marker.bindPopup(
+      () => {
 
-      const ageText =
-        ageSec < 60
-          ? `${ageSec} сек назад`
-          : `${Math.round(ageSec / 60)} мин назад`;
-
-
-      return `
-        <div style="min-width:180px">
-          <b>⚡ Удар молнии</b><br>
-          Время: ${new Date(timeMs).toLocaleTimeString()}<br>
-          (${ageText})<br>
-          Координаты: ${lat.toFixed(3)}, ${lon.toFixed(3)}
-        </div>
-      `;
-
-    });
+        const ageSec =
+          Math.max(
+            0,
+            Math.round(
+              (
+                Date.now() -
+                timeMs
+              ) / 1000
+            )
+          );
 
 
-    marker.addTo(layer);
+        const ageText =
+          ageSec < 60
+
+            ? `${ageSec} сек назад`
+
+            : `${Math.round(
+                ageSec / 60
+              )} мин назад`;
+
+
+        return `
+
+          <div
+            style="
+              min-width:190px;
+              line-height:1.5;
+            "
+          >
+
+            <b>
+              ⚡ Удар молнии
+            </b>
+
+            <br>
+
+            Время:
+            ${new Date(
+              timeMs
+            ).toLocaleTimeString()}
+
+            <br>
+
+            ${ageText}
+
+            <br>
+
+            Координаты:
+
+            <br>
+
+            ${lat.toFixed(3)},
+            ${lon.toFixed(3)}
+
+          </div>
+
+        `;
+
+      }
+    );
+
+
+    lightningLayer.addLayer(
+      marker
+    );
 
 
     strikes.push({
+
       marker,
-      time:timeMs,
+
+      time: timeMs,
+
       lat,
+
       lon
+
     });
 
   }
 
 
   /* =======================================================
-     Очистка старых ударов
+     ОБРАБОТКА ВХОДЯЩЕГО ПАКЕТА
      ======================================================= */
 
-  function updateStrikes(){
+  function processMessage(raw) {
+
+    if (!enabled)
+      return;
+
+
+    try {
+
+      /*
+       * Иногда сообщение может
+       * уже быть обычным JSON.
+       */
+
+      if (
+        typeof raw === "string" &&
+        raw.trim().startsWith("{")
+      ) {
+
+        const data =
+          JSON.parse(raw);
+
+        addStrike(data);
+
+        return;
+
+      }
+
+
+      /*
+       * Основной современный формат:
+       * LZW-сжатая строка.
+       */
+
+      const decoded =
+        decodeLZW(raw);
+
+
+      if (
+        !decoded ||
+        !decoded.trim().startsWith("{")
+      ) {
+
+        return;
+
+      }
+
+
+      const data =
+        JSON.parse(
+          decoded
+        );
+
+
+      addStrike(data);
+
+
+    } catch (error) {
+
+      console.warn(
+        "[CLOrad Lightning] Не удалось обработать пакет:",
+        error
+      );
+
+    }
+
+  }
+
+
+  /* =======================================================
+     ОЧИСТКА СТАРЫХ МОЛНИЙ
+     ======================================================= */
+
+  function updateStrikes() {
 
     const now =
       Date.now();
 
 
-    for(
-      let i = strikes.length - 1;
+    for (
+      let i =
+        strikes.length - 1;
+
       i >= 0;
+
       i--
-    ){
+    ) {
 
       const strike =
         strikes[i];
 
+
       const age =
-        now - strike.time;
+        now -
+        strike.time;
 
 
-      if(
-        age > LIFETIME
-      ){
+      if (
+        age >
+        STRIKE_LIFETIME
+      ) {
 
-        layer.removeLayer(
+        lightningLayer.removeLayer(
           strike.marker
         );
+
 
         strikes.splice(
           i,
           1
         );
+
 
         continue;
 
@@ -270,12 +548,16 @@
       strike.marker.setStyle({
 
         fillColor:
-          strikeColor(age),
+          strikeColor(
+            age
+          ),
 
         fillOpacity:
           Math.max(
             0.12,
-            0.95 - age / LIFETIME
+            1 -
+            age /
+            STRIKE_LIFETIME
           )
 
       });
@@ -286,14 +568,12 @@
 
 
   /* =======================================================
-     Очистить все удары
+     ОЧИСТИТЬ СЛОЙ
      ======================================================= */
 
-  function clearStrikes(){
+  function clearStrikes() {
 
-    if(layer){
-      layer.clearLayers();
-    }
+    lightningLayer.clearLayers();
 
     strikes.length = 0;
 
@@ -301,167 +581,13 @@
 
 
   /* =======================================================
-     Подключение
+     ПЕРЕПОДКЛЮЧЕНИЕ
      ======================================================= */
 
-  function connect(){
+  function scheduleReconnect() {
 
-    if(!enabled){
+    if (!enabled)
       return;
-    }
-
-
-    if(
-      socket &&
-      (
-        socket.readyState === WebSocket.OPEN ||
-        socket.readyState === WebSocket.CONNECTING
-      )
-    ){
-      return;
-    }
-
-
-    const url =
-      SERVERS[
-        Math.floor(
-          Math.random() * SERVERS.length
-        )
-      ];
-
-
-    console.log(
-      "[CLOrad Lightning] Подключение:",
-      url
-    );
-
-
-    try{
-
-      socket =
-        new WebSocket(url);
-
-    }catch(error){
-
-      console.error(
-        "[CLOrad Lightning] WebSocket:",
-        error
-      );
-
-      scheduleReconnect();
-
-      return;
-
-    }
-
-
-    socket.onopen = () => {
-
-      console.log(
-        "[CLOrad Lightning] Подключено."
-      );
-
-
-      try{
-
-        socket.send(
-          JSON.stringify({
-            time:0
-          })
-        );
-
-      }catch(error){
-
-        console.error(
-          "[CLOrad Lightning] Handshake:",
-          error
-        );
-
-      }
-
-    };
-
-
-    socket.onmessage =
-      event => {
-
-        if(!enabled){
-          return;
-        }
-
-
-        try{
-
-          const data =
-            JSON.parse(
-              event.data
-            );
-
-
-          if(
-            data &&
-            typeof data.lat === "number" &&
-            typeof data.lon === "number"
-          ){
-
-            addStrike(data);
-
-          }
-
-        }catch{
-
-          // Битый пакет игнорируем.
-
-        }
-
-      };
-
-
-    socket.onerror =
-      error => {
-
-        console.warn(
-          "[CLOrad Lightning] Ошибка WebSocket.",
-          error
-        );
-
-
-        try{
-          socket.close();
-        }catch{}
-
-      };
-
-
-    socket.onclose =
-      () => {
-
-        console.log(
-          "[CLOrad Lightning] Соединение закрыто."
-        );
-
-
-        socket = null;
-
-
-        if(enabled){
-          scheduleReconnect();
-        }
-
-      };
-
-  }
-
-
-  /* =======================================================
-     Переподключение
-     ======================================================= */
-
-  function scheduleReconnect(){
-
-    if(!enabled){
-      return;
-    }
 
 
     clearTimeout(
@@ -473,13 +599,11 @@
       setTimeout(
         () => {
 
-          reconnectTimer = null;
-
-          if(enabled){
+          if (enabled)
             connect();
-          }
 
         },
+
         RECONNECT_DELAY
       );
 
@@ -487,88 +611,279 @@
 
 
   /* =======================================================
-     Отключение
+     CONNECT
      ======================================================= */
 
-  function disconnect(){
+  function connect() {
 
-    clearTimeout(
-      reconnectTimer
-    );
-
-    reconnectTimer = null;
+    if (!enabled)
+      return;
 
 
-    if(socket){
+    if (
+      socket &&
+      (
+        socket.readyState ===
+          WebSocket.OPEN ||
 
-      try{
+        socket.readyState ===
+          WebSocket.CONNECTING
+      )
+    ) {
 
-        socket.onopen = null;
-        socket.onmessage = null;
-        socket.onerror = null;
-        socket.onclose = null;
-
-        socket.close();
-
-      }catch{}
-
-      socket = null;
+      return;
 
     }
+
+
+    const url =
+      SERVERS[
+        currentServer %
+        SERVERS.length
+      ];
+
+
+    currentServer++;
+
+
+    console.log(
+      "[CLOrad Lightning] Подключение:",
+      url
+    );
+
+
+    try {
+
+      socket =
+        new WebSocket(
+          url
+        );
+
+    } catch (error) {
+
+      console.error(
+        "[CLOrad Lightning] Ошибка WebSocket:",
+        error
+      );
+
+
+      scheduleReconnect();
+
+      return;
+
+    }
+
+
+    /* =====================================================
+       OPEN
+       ===================================================== */
+
+    socket.onopen =
+      () => {
+
+        console.log(
+          "[CLOrad Lightning] WebSocket подключён."
+        );
+
+
+        /*
+         * Современный Blitzortung feed:
+         * worldwide lightning stream.
+         */
+
+        try {
+
+          socket.send(
+            JSON.stringify({
+              a: 111
+            })
+          );
+
+
+          console.log(
+            "[CLOrad Lightning] Подписка на поток отправлена."
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            "[CLOrad Lightning] Ошибка подписки:",
+            error
+          );
+
+        }
+
+      };
+
+
+    /* =====================================================
+       MESSAGE
+       ===================================================== */
+
+    socket.onmessage =
+      event => {
+
+        if (!enabled)
+          return;
+
+
+        if (
+          typeof event.data !== "string"
+        ) {
+
+          return;
+
+        }
+
+
+        processMessage(
+          event.data
+        );
+
+      };
+
+
+    /* =====================================================
+       ERROR
+       ===================================================== */
+
+    socket.onerror =
+      error => {
+
+        console.warn(
+          "[CLOrad Lightning] WebSocket ошибка.",
+          error
+        );
+
+
+        try {
+
+          socket.close();
+
+        } catch {}
+
+      };
+
+
+    /* =====================================================
+       CLOSE
+       ===================================================== */
+
+    socket.onclose =
+      () => {
+
+        console.log(
+          "[CLOrad Lightning] WebSocket закрыт."
+        );
+
+
+        socket =
+          null;
+
+
+        if (enabled) {
+
+          scheduleReconnect();
+
+        }
+
+      };
 
   }
 
 
   /* =======================================================
-     Включение
+     DISCONNECT
      ======================================================= */
 
-  function enable(){
+  function disconnect() {
 
-    const map =
-      getMap();
+    clearTimeout(
+      reconnectTimer
+    );
 
-    if(!map){
+
+    reconnectTimer =
+      null;
+
+
+    if (!socket)
       return;
+
+
+    try {
+
+      socket.onopen =
+        null;
+
+      socket.onmessage =
+        null;
+
+      socket.onerror =
+        null;
+
+      socket.onclose =
+        null;
+
+
+      socket.close();
+
+    } catch {}
+
+
+    socket =
+      null;
+
+  }
+
+
+  /* =======================================================
+     ENABLE
+     ======================================================= */
+
+  function enable() {
+
+    enabled =
+      true;
+
+
+    if (
+      !map.hasLayer(
+        lightningLayer
+      )
+    ) {
+
+      lightningLayer.addTo(
+        map
+      );
+
     }
 
 
-    createLayer();
-
-    if(!layer){
-      return;
-    }
-
-
-    enabled = true;
-
-
-    if(
-      !map.hasLayer(layer)
-    ){
-
-      layer.addTo(map);
-
-    }
+    switchElement.classList.add(
+      "on"
+    );
 
 
     connect();
 
 
     console.log(
-      "[CLOrad Lightning] Включено."
+      "[CLOrad Lightning] Слой включён."
     );
 
   }
 
 
   /* =======================================================
-     Выключение
+     DISABLE
      ======================================================= */
 
-  function disable(){
+  function disable() {
 
-    enabled = false;
+    enabled =
+      false;
 
 
     disconnect();
@@ -577,47 +892,99 @@
     clearStrikes();
 
 
-    const map =
-      getMap();
-
-
-    if(
-      map &&
-      layer &&
-      map.hasLayer(layer)
-    ){
+    if (
+      map.hasLayer(
+        lightningLayer
+      )
+    ) {
 
       map.removeLayer(
-        layer
+        lightningLayer
       );
 
     }
 
 
+    switchElement.classList.remove(
+      "on"
+    );
+
+
     console.log(
-      "[CLOrad Lightning] Выключено."
+      "[CLOrad Lightning] Слой выключен."
     );
 
   }
 
 
   /* =======================================================
-     Управление
+     SWITCH
      ======================================================= */
 
-  function setEnabled(state){
+  switchElement.onclick =
+    event => {
 
-    if(state){
-      enable();
-    }else{
-      disable();
-    }
+      event.stopPropagation();
 
-  }
+
+      if (enabled) {
+
+        disable();
+
+      } else {
+
+        enable();
+
+      }
+
+    };
 
 
   /* =======================================================
-     Обновление каждые 3 секунды
+     PUBLIC API
+     ======================================================= */
+
+  window.CLOradLightning = {
+
+    enable,
+
+    disable,
+
+    toggle() {
+
+      if (enabled)
+        disable();
+      else
+        enable();
+
+    },
+
+    setEnabled(state) {
+
+      if (state)
+        enable();
+      else
+        disable();
+
+    },
+
+    isEnabled() {
+
+      return enabled;
+
+    },
+
+    clear() {
+
+      clearStrikes();
+
+    }
+
+  };
+
+
+  /* =======================================================
+     ОБНОВЛЕНИЕ
      ======================================================= */
 
   setInterval(
@@ -627,42 +994,18 @@
 
 
   /* =======================================================
-     API для index.html
+     АВТОЗАПУСК
+     
+     Теперь молнии начинают поступать
+     сразу после загрузки страницы.
      ======================================================= */
 
-  window.CLOradLightning = {
-
-    enable,
-
-    disable,
-
-    setEnabled,
-
-    toggle(){
-
-      setEnabled(
-        !enabled
-      );
-
-    },
-
-    isEnabled(){
-
-      return enabled;
-
-    },
-
-    clear(){
-
-      clearStrikes();
-
-    }
-
-  };
+  enable();
 
 
   console.log(
-    "[CLOrad Lightning] Модуль загружен."
+    "[CLOrad Lightning] Модуль загружен и запущен."
   );
+
 
 })();
