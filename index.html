@@ -5,24 +5,27 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body,#map{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-body{overflow:hidden;background:#edf0f2;color:#e9edf0}
+html,body,#map{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body{overflow:hidden;background:#edf0f2;color:#eef1f3}
+button{font:inherit;cursor:pointer}
 #map{position:fixed;inset:0;z-index:0}
 .leaflet-control-attribution{font-size:9px!important;background:#ffffffaa!important}
 
 /* =========================
    HEADER
 ========================= */
-.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151a;display:flex;align-items:center;padding:0 18px}
-.brand{display:flex;align-items:center;gap:9px}
-.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f7f8f9}
-.radarLogo{width:48px;height:48px;border:2px solid #51e29a;border-radius:50%;position:relative;overflow:hidden;background:#10181a;flex:none}
+.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151a;display:flex;align-items:center;padding:0 20px}
+.brand{display:flex;align-items:center;gap:10px}
+.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f5f6f7}
+.radarLogo{width:49px;height:49px;border:2px solid #51e29a;border-radius:50%;position:relative;overflow:hidden;background:#10181a;flex:none;box-shadow:0 0 10px #51e29a22}
 .radarLogo:before,.radarLogo:after{content:"";position:absolute;border:1px solid #51e29a99;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
-.radarLogo:before{width:34px;height:34px}.radarLogo:after{width:19px;height:19px}
+.radarLogo:before{width:36px;height:36px}
+.radarLogo:after{width:20px;height:20px}
 .radarLogo b{position:absolute;width:5px;height:5px;background:#51e29a;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
-.radarLogo i{position:absolute;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#51e29a99,transparent);clip-path:polygon(0 0,100% 0,0 100%);animation:scan 2.4s linear infinite;z-index:2}
+.radarLogo i{position:absolute;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#51e29a88,transparent);clip-path:polygon(0 0,100% 0,0 100%);animation:scan 2.4s linear infinite;z-index:2}
 @keyframes scan{to{transform:rotate(360deg)}}
 .head{margin-left:auto;display:flex;gap:5px}
 .h{width:51px;height:51px;border:0;border-radius:9px;background:transparent;color:#c3c9cd;display:grid;place-items:center;position:relative}
@@ -37,107 +40,128 @@ body{overflow:hidden;background:#edf0f2;color:#e9edf0}
 .nav::-webkit-scrollbar{display:none}
 .n{min-width:88px;height:85px;border:0;background:none;color:#adb5bb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:17px;position:relative;white-space:nowrap}
 .n svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.n.active{color:#53e39b}.n.active:after{content:"";position:absolute;height:3px;background:#53e39b;bottom:0;left:8px;right:8px}
+.n.active{color:#53e39b}
+.n.active:after{content:"";position:absolute;height:3px;background:#53e39b;bottom:0;left:8px;right:8px}
 
 /* =========================
    MAP TOOLS
 ========================= */
-.tools{position:fixed;z-index:8;left:14px;top:177px;display:flex;flex-direction:column;gap:8px}
-.tool{width:55px;height:55px;border-radius:11px;border:1px solid #3c4650;background:#192129eF;color:#e4e8eb;display:grid;place-items:center}
-.tool svg{width:31px;height:31px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tools{position:fixed;z-index:8;left:17px;top:177px;display:flex;flex-direction:column;gap:7px}
+.tool{width:56px;height:56px;border-radius:11px;border:1px solid #3c4650;background:#192129ee;color:#e4e8eb;display:grid;place-items:center;box-shadow:0 3px 9px #0002}
+.tool svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* =========================
    LAYERS
 ========================= */
-.layers{position:fixed;z-index:8;left:14px;top:50%;transform:translateY(-50%);width:160px;background:#182028ee;border:1px solid #3b4650;border-radius:10px;padding:4px 9px}
-.layer{height:60px;display:flex;align-items:center;gap:8px}
-.layer svg{width:29px;height:29px;fill:none;stroke:#50df98;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.layer:nth-child(2) svg{stroke:#50aaff}.layer:nth-child(3) svg{stroke:#ff777e}
-.layer span{font-size:17px;flex:1}
-.switch{width:57px;height:32px;border:0;border-radius:18px;background:#626a70;position:relative;padding:0;flex:none}
-.switch i{position:absolute;width:25px;height:25px;left:4px;top:3px;border-radius:50%;background:#f5f6f6;transition:.2s}
-.switch.on{background:#43d58d}.switch.on i{left:28px}
+.layers{position:fixed;z-index:8;left:17px;top:50%;transform:translateY(-50%);width:154px;background:#182028ef;border:1px solid #3b4650;border-radius:10px;padding:5px 8px;box-shadow:0 4px 14px #0003;transition:left .25s,opacity .2s}
+.layers.hidden{left:-175px;opacity:0;pointer-events:none}
+.layer{height:56px;display:flex;align-items:center;gap:8px}
+.layer svg{width:27px;height:27px;fill:none;stroke:#50df98;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.layer:nth-child(2) svg{stroke:#50aaff}
+.layer:nth-child(3) svg{stroke:#ff777e}
+.layer span{font-size:16px;line-height:1;flex:1}
+.switch{width:54px;height:30px;border:0;border-radius:18px;background:#626a70;position:relative;padding:0;flex:none}
+.switch i{position:absolute;width:24px;height:24px;left:3px;top:3px;border-radius:50%;background:#f6f7f7;transition:.2s}
+.switch.on{background:#43d58d}
+.switch.on i{left:27px}
 
 /* =========================
    LEGEND
 ========================= */
-.legendTab{position:fixed;z-index:10;right:0;top:285px;width:39px;height:86px;background:#172027f5;border:1px solid #414b53;border-right:0;border-radius:9px 0 0 9px;color:#fff;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;font-size:13px;letter-spacing:.5px}
-.legend{position:fixed;z-index:11;right:-245px;top:205px;width:230px;max-height:520px;background:#182028f5;border:1px solid #3d4851;border-radius:10px 0 0 10px;padding:12px;transition:.3s;overflow:auto}
+.legendTab{position:fixed;z-index:13;right:0;top:50%;transform:translateY(-50%);width:36px;height:78px;background:#172027f7;border:1px solid #414b53;border-right:0;border-radius:9px 0 0 9px;color:#cbd1d5;font-size:12px;writing-mode:vertical-rl;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px #0003}
+.legendTab.open{font-size:25px;writing-mode:horizontal-tb;color:#fff;width:42px;height:42px;border-radius:9px;right:225px;top:calc(50% - 225px);transform:none}
+.legend{position:fixed;z-index:12;right:-230px;top:50%;transform:translateY(-50%);width:225px;max-height:455px;background:#182028f7;border:1px solid #3d4851;border-radius:10px 0 0 10px;padding:11px;transition:right .28s;overflow:auto;box-shadow:0 5px 18px #0004}
 .legend.open{right:0}
-.legendTitle{font-size:18px;font-weight:700;margin-bottom:8px}
-.li{height:26px;display:flex;align-items:center;gap:9px;font-size:13px;color:#e4e7e9}
-.box{width:23px;height:20px;border-radius:2px;flex:none}
+.legendTitle{font-size:16px;font-weight:700;margin:0 28px 7px 2px}
+.legendClose{position:absolute;right:9px;top:7px;width:28px;height:28px;border:0;background:none;color:#cdd3d7;font-size:23px;line-height:28px}
+.li{height:23px;display:flex;align-items:center;gap:8px;font-size:12px;color:#e4e7e9}
+.box{width:21px;height:18px;border-radius:2px;flex:none}
 .l1{background:#b9c1c7}.l2{background:#a9c7f4}.l3{background:#63eda5}.l4{background:#43cf89}.l5{background:#4db84e}.l6{background:#fff89c}.l7{background:#75a6ef}.l8{background:#5279ed}.l9{background:#504a9b}.l10{background:#ffc0a8}.l11{background:#fa82a0}.l12{background:#ff4d4d}.l13{background:#db9248}.l14{background:#ad7544}.l15{background:#924b48}.l16{background:#f2aaf0}.l17{background:#e85ae7}.l18{background:#ca3cc7}.l19{background:#777c91}
 
 /* =========================
    LOCATION
 ========================= */
-.location{position:fixed;z-index:9;left:14px;bottom:185px;width:146px;height:64px;border:1px solid #3e4850;border-radius:9px;background:#182028eF;color:#dfe4e7;display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px}
-.location svg{width:25px;height:25px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.location{position:fixed;z-index:9;left:17px;bottom:257px;width:142px;height:57px;border:1px solid #3e4850;border-radius:9px;background:#182028ef;color:#dfe4e7;display:flex;align-items:center;justify-content:center;gap:7px;font-size:13px;line-height:17px;text-align:center;box-shadow:0 3px 10px #0003}
+.location svg{width:24px;height:24px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* =========================
    DATA
 ========================= */
-.data{position:fixed;z-index:7;left:70px;right:70px;bottom:116px;height:73px;background:#151b21ed;border:1px solid #303a43;border-radius:10px;display:grid;grid-template-columns:1.3fr 1fr 1fr}
-.cell{padding:9px 16px;border-right:1px solid #303a43}.cell:last-child{border:0}
-.lab{font-size:11px;color:#858e95;letter-spacing:.5px}.val{font-size:17px;font-weight:700;margin-top:5px}
-
-/* =========================
-   ALERT
-========================= */
-.alert{position:fixed;z-index:9;left:70px;right:70px;bottom:190px;min-height:80px;background:#59646df2;border:1px solid #6b757d;border-radius:12px;padding:10px 14px;display:flex;align-items:center;font-size:18px}
-.alertIcon{width:26px;height:26px;margin-right:9px;flex:none}
-.alertIcon svg{width:100%;height:100%;fill:#ffd447}
-.close{margin-left:auto;border:0;background:none;color:#dce1e4;font-size:28px}
+.data{position:fixed;z-index:7;left:50%;transform:translateX(-50%);bottom:119px;width:min(555px,calc(100% - 34px));height:72px;background:#151b21ee;border:1px solid #303a43;border-radius:10px;display:grid;grid-template-columns:1.25fr 1fr 1fr;box-shadow:0 4px 14px #0003}
+.cell{padding:9px 15px;border-right:1px solid #303a43;display:flex;flex-direction:column;justify-content:center}
+.cell:last-child{border:0}
+.lab{font-size:10px;color:#858e95;letter-spacing:.5px}
+.val{font-size:16px;font-weight:700;margin-top:4px}
 
 /* =========================
    TIMELINE
 ========================= */
-.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:8px;height:108px;background:#151b21f5;border:1px solid #303a43;border-radius:11px;padding:7px 13px}
-.thead{text-align:center;font-size:14px;height:27px}
-.trow{height:65px;display:flex;align-items:center;gap:9px}
-.play{width:43px;height:43px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none}
-.play svg{width:26px;height:26px;fill:currentColor}
-.slider{flex:1}.slider input{width:100%;appearance:none;height:7px;background:#6e767b;border-radius:5px}
-.slider input::-webkit-slider-thumb{appearance:none;width:31px;height:31px;border-radius:50%;background:#fff}
-.times{display:flex;justify-content:space-between;color:#9da5aa;font-size:10px;margin-top:7px}
+.timeline{position:fixed;z-index:12;left:9px;right:9px;bottom:8px;height:108px;background:#151b21f5;border:1px solid #303a43;border-radius:12px;padding:8px 14px;box-shadow:0 5px 18px #0004}
+.thead{text-align:center;font-size:14px;height:27px;line-height:24px}
+.trow{height:61px;display:flex;align-items:center;gap:12px}
+.play{width:44px;height:44px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none;box-shadow:0 2px 5px #0002}
+.play svg{width:25px;height:25px;fill:currentColor}
+.slider{flex:1;min-width:0}
+.slider input{width:100%;display:block;appearance:none;height:7px;background:#70787d;border-radius:8px;margin:0}
+.slider input::-webkit-slider-thumb{appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 1px 5px #0004}
+.times{display:flex;justify-content:space-between;color:#9da5aa;font-size:10px;margin-top:8px}
 
 /* =========================
    SEARCH / MENU
 ========================= */
-.popup{position:fixed;z-index:30;display:none;background:#182028f5;border:1px solid #3d4851;border-radius:9px;box-shadow:0 10px 30px #0008}
+.popup{position:fixed;z-index:30;display:none;background:#182028f7;border:1px solid #3d4851;border-radius:9px;box-shadow:0 10px 30px #0008}
 .popup.open{display:block}
-.search{right:12px;top:88px;width:300px;padding:8px}.search input{width:100%;height:42px;border:0;border-radius:7px;background:#252e36;color:#fff;padding:0 12px;font-size:16px}
-.menu{right:10px;top:85px;width:210px;padding:7px}.menu button{width:100%;padding:11px;border:0;border-radius:6px;background:none;color:#ddd;text-align:left;font-size:15px}
+.search{right:12px;top:88px;width:300px;padding:8px}
+.search input{width:100%;height:42px;border:0;border-radius:7px;background:#252e36;color:#fff;padding:0 12px;font-size:16px;outline:none}
+.menu{right:10px;top:85px;width:210px;padding:7px}
+.menu button{width:100%;padding:11px;border:0;border-radius:6px;background:none;color:#ddd;text-align:left;font-size:15px}
 
 /* =========================
    LIGHT THEME
 ========================= */
-body.light .header{background:#f4f5f6}.light .name{color:#171b1e}.light .h{color:#4f575d}.light .h.active{background:#e1e5e8}
-body.light .nav{background:#f5f6f7;border-color:#d4d9dd}.light .n{color:#687177}
-body.light .layers,.light .tool,.light .location,.light .legend,.light .legendTab{background:#f6f8f9eF;color:#252b2f;border-color:#c9d0d5}
-body.light .layer span{color:#252b2f}.light .tool{color:#30383d}.light .legend{color:#252b2f}
-body.light .data,.light .timeline{background:#f5f7f8ee;color:#22292d;border-color:#cbd2d6}
-body.light .lab,.light .times{color:#70797f}
+body.light .header{background:#f5f6f7}
+body.light .name{color:#171b1e}
+body.light .h{color:#4f575d}
+body.light .h.active{background:#e1e5e8}
+body.light .nav{background:#f5f6f7;border-color:#d4d9dd}
+body.light .n{color:#687177}
+body.light .layers,body.light .tool,body.light .location,body.light .legend,body.light .legendTab{background:#f6f8f9ee;color:#252b2f;border-color:#c9d0d5}
+body.light .layer span{color:#252b2f}
+body.light .tool{color:#30383d}
+body.light .data,body.light .timeline{background:#f5f7f8ee;color:#22292d;border-color:#cbd2d6}
+body.light .lab,body.light .times{color:#70797f}
 body.light .timeline input{background:#a2a9ad}
 
 /* =========================
-   RESPONSIVE
+   MOBILE
 ========================= */
 @media(max-width:600px){
-.name{font-size:29px}.head{gap:0}.h{width:45px}
-.nav{top:80px}.layers{left:13px}.legend{top:205px}
-.data,.alert{left:70px;right:17px}
+.header{height:80px;padding:0 17px}
+.name{font-size:29px}
+.head{gap:0}
+.h{width:46px}
+.nav{top:80px;height:85px}
+.n{min-width:88px}
+.tools{left:17px;top:177px}
+.layers{left:17px}
+.location{left:17px;bottom:252px}
+.data{bottom:120px}
+.timeline{bottom:8px}
 }
 @media(max-width:430px){
-.name{font-size:27px}.radarLogo{width:45px;height:45px}
-.h:nth-child(2){display:none}.data{left:17px}.alert{left:17px}
-.location{bottom:185px}
+.name{font-size:27px}
+.radarLogo{width:46px;height:46px}
+.h:nth-child(2){display:grid}
+.layers{width:150px}
+.location{width:139px}
+.data{width:calc(100% - 34px)}
+.legend{width:220px}
+.legendTab.open{right:220px}
 }
 </style>
 </head>
-<body>
 
+<body>
 <div id="map"></div>
 
 <!-- =========================
@@ -149,22 +173,32 @@ body.light .timeline input{background:#a2a9ad}
 <div class="name">CLOrad</div>
 </div>
 <div class="head">
-<button class="h active" id="searchBtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg></button>
-<button class="h" id="themeBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg></button>
-<button class="h bell" id="bell"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
-<button class="h" id="menuBtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+<button class="h active" id="searchBtn" aria-label="Поиск">
+<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg>
+</button>
+<button class="h" id="themeBtn" aria-label="Тема">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg>
+</button>
+<button class="h bell" id="bell" aria-label="Уведомления">
+<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+</button>
+<button class="h" id="menuBtn" aria-label="Меню">
+<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
 </div>
 </header>
 
-<div class="popup search" id="search"><input id="searchInput" placeholder="Поиск города..."></div>
+<div class="popup search" id="search">
+<input id="searchInput" placeholder="Поиск города...">
+</div>
 
 <div class="popup menu" id="menu">
 <button>Карта</button><button>Регионы</button><button>3D</button>
-<button>Предупреждения</button><button>Архив</button><button>Аналитика</button><button>Слои</button>
+<button>Предупреждения</button><button>Архив</button><button>Аналитика</button>
 </div>
 
 <!-- =========================
-     NAVIGATION
+     NAV
 ========================= -->
 <nav class="nav">
 <button class="n active"><svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>Карта</button>
@@ -173,11 +207,11 @@ body.light .timeline input{background:#a2a9ad}
 <button class="n"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/></svg>Предупр.</button>
 <button class="n"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>Архив</button>
 <button class="n"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg>Аналитика</button>
-<button class="n"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Слои</button>
+<button class="n" id="layersNav"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Слои</button>
 </nav>
 
 <!-- =========================
-     MAP CONTROLS
+     MAP TOOLS
 ========================= -->
 <div class="tools">
 <button class="tool" id="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -187,17 +221,28 @@ body.light .timeline input{background:#a2a9ad}
 <!-- =========================
      LAYERS
 ========================= -->
-<div class="layers">
-<div class="layer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/></svg><span>Радар</span><button class="switch on"><i></i></button></div>
-<div class="layer"><svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg><span>Осадки</span><button class="switch on"><i></i></button></div>
-<div class="layer"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7z"/></svg><span>Гроза</span><button class="switch on"><i></i></button></div>
+<div class="layers" id="layers">
+<div class="layer">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/></svg>
+<span>Радар</span><button class="switch on"><i></i></button>
+</div>
+<div class="layer">
+<svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg>
+<span>Осадки</span><button class="switch on"><i></i></button>
+</div>
+<div class="layer">
+<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7z"/></svg>
+<span>Гроза</span><button class="switch on"><i></i></button>
+</div>
 </div>
 
 <!-- =========================
      LEGEND
 ========================= -->
 <button class="legendTab" id="legendTab">Легенда</button>
+
 <div class="legend" id="legend">
+<button class="legendClose" id="legendClose">×</button>
 <div class="legendTitle">Условные обозначения</div>
 <div class="li"><i class="box l1"></i>обл. сред. яруса</div>
 <div class="li"><i class="box l2"></i>сл. образования</div>
@@ -223,16 +268,10 @@ body.light .timeline input{background:#a2a9ad}
 <!-- =========================
      LOCATION
 ========================= -->
-<button class="location" id="location"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12A7 7 0 0 0 5 9c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>Моё<br>местоположение</button>
-
-<!-- =========================
-     ALERT
-========================= -->
-<div class="alert" id="alert">
-<span class="alertIcon"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 8v6M12 18h.01" stroke="#333" stroke-width="2"/></svg></span>
-<span><b>ШТОРМ:</b> Активных предупреждений пока нет</span>
-<button class="close" id="close">×</button>
-</div>
+<button class="location" id="location">
+<svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12A7 7 0 0 0 5 9c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+<span>Моё<br>местоположение</span>
+</button>
 
 <!-- =========================
      DATA
@@ -271,10 +310,16 @@ let tiles=L.tileLayer(light,{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(m
    HELPERS
 ========================= */
 const $=id=>document.getElementById(id);
-function msg(t){let x=document.createElement("div");x.textContent=t;x.style="position:fixed;z-index:100;left:50%;bottom:125px;transform:translateX(-50%);background:#202930;color:#fff;padding:9px 14px;border-radius:8px;border:1px solid #3d4850";document.body.append(x);setTimeout(()=>x.remove(),1300)}
+function msg(t){
+let x=document.createElement("div");
+x.textContent=t;
+x.style="position:fixed;z-index:100;left:50%;bottom:125px;transform:translateX(-50%);background:#202930;color:#fff;padding:9px 14px;border-radius:8px;border:1px solid #3d4850;white-space:nowrap";
+document.body.append(x);
+setTimeout(()=>x.remove(),1300)
+}
 
 /* =========================
-   MAP BUTTONS
+   ZOOM
 ========================= */
 $("plus").onclick=()=>map.zoomIn();
 $("minus").onclick=()=>map.zoomOut();
@@ -293,24 +338,58 @@ msg("Местоположение найдено");
 /* =========================
    LAYERS
 ========================= */
-document.querySelectorAll(".switch").forEach(x=>x.onclick=()=>{
+document.querySelectorAll(".switch").forEach(x=>x.onclick=e=>{
+e.stopPropagation();
 x.classList.toggle("on");
-msg(x.parentElement.querySelector("span").textContent);
 });
 
 /* =========================
-   NAVIGATION
+   LAYER PANEL
 ========================= */
-document.querySelectorAll(".n").forEach(x=>x.onclick=()=>{
-document.querySelectorAll(".n").forEach(n=>n.classList.remove("active"));
-x.classList.add("active");
-msg(x.textContent);
+$("layersNav").onclick=()=>{
+$("layers").classList.toggle("hidden");
+$("layersNav").classList.toggle("active");
+};
+
+/* =========================
+   HORIZONTAL DRAG
+========================= */
+let drag=false,startX=0,startLeft=17;
+$("layers").addEventListener("pointerdown",e=>{
+if(e.target.closest(".switch"))return;
+drag=true;
+startX=e.clientX;
+startLeft=parseFloat(getComputedStyle($("layers")).left);
+$("layers").setPointerCapture(e.pointerId);
 });
+$("layers").addEventListener("pointermove",e=>{
+if(!drag)return;
+let x=startLeft+e.clientX-startX;
+x=Math.max(5,Math.min(window.innerWidth-155,x));
+$("layers").style.left=x+"px";
+});
+$("layers").addEventListener("pointerup",()=>drag=false);
+$("layers").addEventListener("pointercancel",()=>drag=false);
 
 /* =========================
    LEGEND
 ========================= */
-$("legendTab").onclick=()=>$("legend").classList.toggle("open");
+function legendToggle(open){
+$("legend").classList.toggle("open",open);
+$("legendTab").classList.toggle("open",open);
+$("legendTab").textContent=open?"×":"Легенда";
+}
+$("legendTab").onclick=()=>legendToggle(!$("legend").classList.contains("open"));
+$("legendClose").onclick=()=>legendToggle(false);
+
+/* =========================
+   NAVIGATION
+========================= */
+document.querySelectorAll(".n:not(#layersNav)").forEach(x=>x.onclick=()=>{
+document.querySelectorAll(".n").forEach(n=>n.classList.remove("active"));
+x.classList.add("active");
+msg(x.textContent);
+});
 
 /* =========================
    SEARCH
@@ -321,33 +400,40 @@ const cities={
 "санкт-петербург":[59.93,30.31],"екатеринбург":[56.84,60.61],
 "омск":[54.99,73.37],"новосибирск":[55.03,82.92],
 "челябинск":[55.16,61.40],"пермь":[58.01,56.25],
-"ростов":[47.23,39.70],"воронеж":[51.67,39.18]
+"воронеж":[51.67,39.18],"ростов":[47.23,39.70]
 };
 $("searchBtn").onclick=()=>{
-$("search").classList.toggle("open");$("menu").classList.remove("open");
+$("search").classList.toggle("open");
+$("menu").classList.remove("open");
 if($("search").classList.contains("open"))setTimeout(()=>$("searchInput").focus(),50);
 };
 $("searchInput").onkeydown=e=>{
 if(e.key!="Enter")return;
-let q=e.target.value.toLowerCase().trim(),k=Object.keys(cities).find(x=>x.includes(q));
-if(k){map.setView(cities[k],9);$("search").classList.remove("open");msg(k[0].toUpperCase()+k.slice(1))}
-else msg("Город не найден");
+let q=e.target.value.toLowerCase().trim();
+let k=Object.keys(cities).find(x=>x.includes(q));
+if(k){
+map.setView(cities[k],9);
+$("search").classList.remove("open");
+msg(k[0].toUpperCase()+k.slice(1));
+}else msg("Город не найден");
 };
 
 /* =========================
    MENU
 ========================= */
 $("menuBtn").onclick=()=>{
-$("menu").classList.toggle("open");$("search").classList.remove("open");
+$("menu").classList.toggle("open");
+$("search").classList.remove("open");
 };
 document.querySelectorAll(".menu button").forEach(x=>x.onclick=()=>{
-msg(x.textContent);$("menu").classList.remove("open");
+msg(x.textContent);
+$("menu").classList.remove("open");
 });
 
 /* =========================
    THEME
 ========================= */
-let darkMode=true;
+let darkMode=false;
 $("themeBtn").onclick=()=>{
 darkMode=!darkMode;
 document.body.classList.toggle("light",!darkMode);
@@ -357,21 +443,35 @@ msg(darkMode?"Тёмная тема":"Светлая тема");
 };
 
 /* =========================
-   ALERT
+   NOTIFICATIONS
 ========================= */
-$("bell").onclick=()=>$("alert").style.display="flex";
-$("close").onclick=()=>$("alert").style.display="none";
+$("bell").onclick=()=>msg("Новых уведомлений нет");
 
 /* =========================
    PLAY
 ========================= */
 let timer=null;
 $("play").onclick=()=>{
-if(timer){clearInterval(timer);timer=null;return}
+if(timer){
+clearInterval(timer);
+timer=null;
+$("play").querySelector("svg").innerHTML='<path d="M7 4l13 8-13 8z"/>';
+return;
+}
+$("play").querySelector("svg").innerHTML='<path d="M7 5v14M17 5v14"/>';
 timer=setInterval(()=>{
-let r=$("range");r.value=+r.value>=100?0:+r.value+1;
+let r=$("range");
+r.value=+r.value>=100?0:+r.value+1;
 },180);
 };
+
+/* =========================
+   CLOSE POPUPS
+========================= */
+document.addEventListener("click",e=>{
+if(!e.target.closest(".search")&&!e.target.closest("#searchBtn"))$("search").classList.remove("open");
+if(!e.target.closest(".menu")&&!e.target.closest("#menuBtn"))$("menu").classList.remove("open");
+});
 </script>
 </body>
 </html>
