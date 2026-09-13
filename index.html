@@ -3,52 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-
 <title>CLOrad</title>
-
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   crossorigin=""
 >
-
 <style>
 *{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent
 }
-
 html,body,#map{
   margin:0;
   width:100%;
   height:100%;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
 }
-
 body{
   overflow:hidden;
   background:#edf0f2;
   color:#eef1f3
 }
-
 button{
   font:inherit;
   cursor:pointer
 }
-
 #map{
   position:fixed;
   inset:0;
   z-index:0
 }
-
 .leaflet-control-attribution{
   font-size:9px!important;
   background:#ffffffaa!important
 }
-
 /* HEADER */
-
 .header{
   position:fixed;
   z-index:20;
@@ -61,20 +51,17 @@ button{
   align-items:center;
   padding:0 20px
 }
-
 .brand{
   display:flex;
   align-items:center;
   gap:10px
 }
-
 .name{
   font-size:34px;
   font-weight:800;
   letter-spacing:-2px;
   color:#f5f6f7
 }
-
 .radarLogo{
   width:49px;
   height:49px;
@@ -88,7 +75,6 @@ button{
   place-items:center;
   box-shadow:0 0 10px #51e29a22
 }
-
 .radarLogo svg{
   width:43px;
   height:43px;
@@ -98,18 +84,15 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .radarLogo .radarDot{
   fill:#51e29a;
   stroke:none
 }
-
 .head{
   margin-left:auto;
   display:flex;
   gap:5px
 }
-
 .h{
   width:51px;
   height:51px;
@@ -121,12 +104,10 @@ button{
   place-items:center;
   position:relative
 }
-
 .h.active{
   background:#222b34;
   border:1px solid #35404a
 }
-
 .h svg{
   width:29px;
   height:29px;
@@ -136,14 +117,11 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .settingsIcon{
   width:29px;
   height:29px
 }
-
 /* NAV */
-
 .nav{
   position:fixed;
   z-index:19;
@@ -162,17 +140,14 @@ button{
   -webkit-overflow-scrolling:touch;
   transition:transform .25s ease,opacity .2s ease
 }
-
 .nav::-webkit-scrollbar{
   display:none
 }
-
 .nav.closed{
   transform:translateY(-100%);
   opacity:0;
   pointer-events:none
 }
-
 .n{
   min-width:88px;
   height:85px;
@@ -190,7 +165,6 @@ button{
   flex:none;
   touch-action:pan-x
 }
-
 .n svg{
   width:30px;
   height:30px;
@@ -200,11 +174,9 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .n.active{
   color:#53e39b
 }
-
 .n.active:after{
   content:"";
   position:absolute;
@@ -214,9 +186,7 @@ button{
   left:8px;
   right:8px
 }
-
 /* MAP TOOLS */
-
 .tools{
   position:fixed;
   z-index:8;
@@ -226,7 +196,6 @@ button{
   flex-direction:column;
   gap:7px
 }
-
 .tool{
   width:56px;
   height:56px;
@@ -238,7 +207,6 @@ button{
   place-items:center;
   box-shadow:0 3px 9px #0002
 }
-
 .tool svg{
   width:30px;
   height:30px;
@@ -248,16 +216,13 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .geoTool svg{
   width:35px;
   height:35px;
   fill:currentColor;
   stroke:none
 }
-
 /* LAYERS */
-
 .layers{
   position:fixed;
   z-index:8;
@@ -272,13 +237,11 @@ button{
   box-shadow:0 4px 14px #0003;
   transition:left .25s,opacity .2s
 }
-
 .layers.hidden{
   left:-210px;
   opacity:0;
   pointer-events:none
 }
-
 .layer{
   height:56px;
   display:grid;
@@ -286,7 +249,6 @@ button{
   align-items:center;
   gap:7px
 }
-
 .layer svg{
   width:27px;
   height:27px;
@@ -297,15 +259,12 @@ button{
   stroke-linejoin:round;
   flex:none
 }
-
 .layer:nth-child(2) svg{
   stroke:#50aaff
 }
-
 .layer:nth-child(3) svg{
   stroke:#ff777e
 }
-
 .layer span{
   font-size:13px;
   line-height:15px;
@@ -313,7 +272,6 @@ button{
   overflow-wrap:break-word;
   word-break:normal
 }
-
 .switch{
   width:46px;
   height:26px;
@@ -324,7 +282,6 @@ button{
   padding:0;
   flex:none
 }
-
 .switch i{
   position:absolute;
   width:20px;
@@ -335,17 +292,13 @@ button{
   background:#f6f7f7;
   transition:.2s
 }
-
 .switch.on{
   background:#43d58d
 }
-
 .switch.on i{
   left:23px
 }
-
 /* LEGEND */
-
 .legendTab{
   position:fixed;
   z-index:13;
@@ -366,11 +319,9 @@ button{
   justify-content:center;
   box-shadow:0 3px 12px #0003
 }
-
 .legendTab.hidden{
   display:none
 }
-
 .legend{
   position:fixed;
   z-index:12;
@@ -387,17 +338,14 @@ button{
   overflow:auto;
   box-shadow:0 5px 18px #0004
 }
-
 .legend.open{
   right:0
 }
-
 .legendTitle{
   font-size:16px;
   font-weight:700;
   margin:0 28px 7px 2px
 }
-
 .legendClose{
   position:absolute;
   right:9px;
@@ -410,7 +358,6 @@ button{
   font-size:23px;
   line-height:28px
 }
-
 .li{
   height:23px;
   display:flex;
@@ -419,14 +366,12 @@ button{
   font-size:12px;
   color:#e4e7e9
 }
-
 .box{
   width:21px;
   height:18px;
   border-radius:2px;
   flex:none
 }
-
 .l1{background:#b9c1c7}
 .l2{background:#a9c7f4}
 .l3{background:#63eda5}
@@ -446,9 +391,7 @@ button{
 .l17{background:#e85ae7}
 .l18{background:#ca3cc7}
 .l19{background:#777c91}
-
 /* DATA */
-
 .data{
   position:fixed;
   z-index:7;
@@ -464,7 +407,6 @@ button{
   grid-template-columns:1.25fr 1fr 1fr;
   box-shadow:0 4px 14px #0003
 }
-
 .cell{
   padding:9px 15px;
   border-right:1px solid #303a43;
@@ -472,25 +414,20 @@ button{
   flex-direction:column;
   justify-content:center
 }
-
 .cell:last-child{
   border:0
 }
-
 .lab{
   font-size:10px;
   color:#858e95;
   letter-spacing:.5px
 }
-
 .val{
   font-size:16px;
   font-weight:700;
   margin-top:4px
 }
-
 /* TIMELINE */
-
 .timeline{
   position:fixed;
   z-index:12;
@@ -504,21 +441,18 @@ button{
   padding:8px 14px;
   box-shadow:0 5px 18px #0004
 }
-
 .thead{
   text-align:center;
   font-size:14px;
   height:27px;
   line-height:24px
 }
-
 .trow{
   height:61px;
   display:flex;
   align-items:center;
   gap:12px
 }
-
 .play{
   width:44px;
   height:44px;
@@ -532,18 +466,15 @@ button{
   box-shadow:0 2px 5px #0002;
   transform:translateY(-4px)
 }
-
 .play svg{
   width:25px;
   height:25px;
   fill:currentColor
 }
-
 .slider{
   flex:1;
   min-width:0
 }
-
 .slider input{
   width:100%;
   display:block;
@@ -553,7 +484,6 @@ button{
   border-radius:8px;
   margin:0
 }
-
 .slider input::-webkit-slider-thumb{
   appearance:none;
   width:30px;
@@ -562,7 +492,6 @@ button{
   background:#fff;
   box-shadow:0 1px 5px #0004
 }
-
 .times{
   display:flex;
   justify-content:space-between;
@@ -570,9 +499,7 @@ button{
   font-size:10px;
   margin-top:8px
 }
-
 /* SEARCH */
-
 .popup{
   position:fixed;
   z-index:30;
@@ -582,18 +509,15 @@ button{
   border-radius:9px;
   box-shadow:0 10px 30px #0008
 }
-
 .popup.open{
   display:block
 }
-
 .search{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
-
 .search input{
   width:100%;
   height:42px;
@@ -605,29 +529,24 @@ button{
   font-size:16px;
   outline:none
 }
-
 /* SETTINGS */
-
 .settings{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
-
 .settingsTitle{
   font-size:17px;
   font-weight:700;
   padding:7px 7px 10px
 }
-
 .setting{
   border:1px solid #3d4851;
   border-radius:8px;
   overflow:hidden;
   background:#202930
 }
-
 .settingHead{
   width:100%;
   height:48px;
@@ -641,37 +560,30 @@ button{
   font-size:15px;
   text-align:left
 }
-
 .settingArrow{
   font-size:21px;
   transition:transform .2s
 }
-
 .setting.open .settingArrow{
   transform:rotate(90deg)
 }
-
 .settingBody{
   display:none;
   padding:0 12px 12px
 }
-
 .setting.open .settingBody{
   display:block
 }
-
 .framesInfo{
   font-size:11px;
   color:#8f999f;
   margin-bottom:8px
 }
-
 .frameControls{
   display:flex;
   align-items:center;
   gap:7px
 }
-
 .frameBtn{
   width:42px;
   height:38px;
@@ -683,7 +595,6 @@ button{
   display:grid;
   place-items:center
 }
-
 .frameInput{
   flex:1;
   min-width:0;
@@ -697,7 +608,6 @@ button{
   font-size:15px;
   outline:none
 }
-
 .loadingFrames{
   margin-top:9px;
   height:3px;
@@ -706,11 +616,9 @@ button{
   overflow:hidden;
   display:none
 }
-
 .loadingFrames.show{
   display:block
 }
-
 .loadingFrames i{
   display:block;
   width:35%;
@@ -718,39 +626,30 @@ button{
   background:#51e29a;
   animation:loadingMove 1s infinite ease-in-out
 }
-
 @keyframes loadingMove{
   0%{transform:translateX(-120%)}
   100%{transform:translateX(350%)}
 }
-
 /* LIGHT */
-
 body.light .header{
   background:#f5f6f7
 }
-
 body.light .name{
   color:#171b1e
 }
-
 body.light .h{
   color:#4f575d
 }
-
 body.light .h.active{
   background:#e1e5e8
 }
-
 body.light .nav{
   background:#f5f6f7;
   border-color:#d4d9dd
 }
-
 body.light .n{
   color:#687177
 }
-
 body.light .layers,
 body.light .tool,
 body.light .legend,
@@ -759,129 +658,100 @@ body.light .legendTab{
   color:#252b2f;
   border-color:#c9d0d5
 }
-
 body.light .layer span{
   color:#252b2f
 }
-
 body.light .tool{
   color:#30383d
 }
-
 body.light .data,
 body.light .timeline{
   background:#f5f7f8ee;
   color:#22292d;
   border-color:#cbd2d6
 }
-
 body.light .lab,
 body.light .times{
   color:#70797f
 }
-
 body.light .timeline input{
   background:#a2a9ad
 }
-
 body.light .settings{
   background:#f6f8f9;
   color:#20272b;
   border-color:#c9d0d5
 }
-
 body.light .setting{
   background:#edf1f3;
   border-color:#c9d0d5
 }
-
 body.light .settingHead{
   color:#20272b
 }
-
 body.light .frameBtn,
 body.light .frameInput{
   background:#fff;
   color:#20272b;
   border-color:#c5cdd2
 }
-
 /* MOBILE */
-
 @media(max-width:600px){
-
   .header{
     height:80px;
     padding:0 17px
   }
-
   .name{
     font-size:29px
   }
-
   .head{
     gap:0
   }
-
   .h{
     width:46px
   }
-
   .nav{
     top:80px;
     height:85px
   }
-
   .n{
     min-width:88px
   }
-
   .tools{
     left:17px;
     top:177px
   }
-
   .layers{
     left:17px;
     width:190px
   }
-
   .data{
     bottom:120px
   }
-
   .timeline{
     bottom:8px
   }
 }
-
 @media(max-width:430px){
-
   .name{
     font-size:27px
   }
-
   .radarLogo{
     width:46px;
     height:46px
   }
-
   .h:nth-child(2){
     display:grid
   }
-
   .layers{
     width:190px
   }
-
   .data{
     width:calc(100% - 34px)
   }
-
   .legend{
     width:220px
   }
-
   .settings{
     right:8px;
     width:calc(100% - 16px)
@@ -889,15 +759,10 @@ body.light .frameInput{
 }
 </style>
 </head>
-
 <body>
-
 <div id="map"></div>
-
 <header class="header">
-
   <div class="brand">
-
     <div class="radarLogo" aria-hidden="true">
       <svg viewBox="0 0 48 48">
         <circle cx="24" cy="24" r="20"/>
@@ -909,71 +774,52 @@ body.light .frameInput{
         <circle class="radarDot" cx="16" cy="31" r="1.8"/>
       </svg>
     </div>
-
     <div class="name">CLOrad</div>
-
   </div>
-
   <div class="head">
-
     <button class="h active" id="searchBtn" aria-label="Поиск">
       <svg viewBox="0 0 24 24">
         <circle cx="10.5" cy="10.5" r="6.5"/>
         <path d="M16 16l5 5"/>
       </svg>
     </button>
-
     <button class="h" id="themeBtn" aria-label="Тема">
       <svg viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4"/>
         <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/>
       </svg>
     </button>
-
     <button class="h" id="settingsBtn" aria-label="Настройки">
       <svg class="settingsIcon" viewBox="0 0 24 24">
         <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
         <path d="M19.4 15.1a1.8 1.8 0 0 0 .35 1.98l.05.05a1.8 1.8 0 1 1-2.55 2.55l-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V21a1.8 1.8 0 1 1-3.6 0v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05A1.8 1.8 0 1 1 4.84 17.1l.05-.05a1.8 1.8 0 0 0 .35-1.98A1.8 1.8 0 0 0 3.6 14H3.5a1.8 1.8 0 1 1 0-3.6h.1a1.8 1.8 0 0 0 1.64-1.1 1.8 1.8 0 0 0-.35-1.98l-.05-.05a1.8 1.8 0 1 1 2.55-2.55l.05.05a1.8 1.8 0 0 0 1.98.35A1.8 1.8 0 0 0 10.5 3.5V3.4a1.8 1.8 0 1 1 3.6 0v.1a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 1.98-.35l.05-.05a1.8 1.8 0 1 1 2.55 2.55l-.05.05a1.8 1.8 0 0 0-.35 1.98A1.8 1.8 0 0 0 21 10.4h.1a1.8 1.8 0 1 1 0 3.6H21a1.8 1.8 0 0 0-1.6 1.1Z"/>
       </svg>
     </button>
-
     <button class="h" id="menuBtn" aria-label="Меню">
       <svg viewBox="0 0 24 24">
         <path d="M4 6h16M4 12h16M4 18h16"/>
       </svg>
     </button>
-
   </div>
-
 </header>
-
 <div class="popup search" id="search">
   <input id="searchInput" placeholder="Поиск города...">
 </div>
-
 <div class="popup settings" id="settings">
-
   <div class="settingsTitle">
     Настройки
   </div>
-
   <div class="setting" id="framesSetting">
-
     <button class="settingHead" id="framesHead">
       <span>Кол. кадров</span>
       <span class="settingArrow">›</span>
     </button>
-
     <div class="settingBody">
-
       <div class="framesInfo" id="framesInfo">
         Радар пока не подключён
       </div>
-
       <div class="frameControls">
-
         <button class="frameBtn" id="frameMinus">−</button>
-
         <input
           class="frameInput"
           id="frameInput"
@@ -982,23 +828,15 @@ body.light .frameInput{
           value="24"
           inputmode="numeric"
         >
-
         <button class="frameBtn" id="framePlus">+</button>
-
       </div>
-
       <div class="loadingFrames" id="loadingFrames">
         <i></i>
       </div>
-
     </div>
-
   </div>
-
 </div>
-
 <nav class="nav" id="nav">
-
   <button class="n active">
     <svg viewBox="0 0 24 24">
       <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
@@ -1007,28 +845,24 @@ body.light .frameInput{
     </svg>
     Карта
   </button>
-
   <button class="n">
     <svg viewBox="0 0 70 45">
       <path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/>
     </svg>
     Регионы
   </button>
-
   <button class="n">
     <svg viewBox="0 0 24 24">
       <path d="M12 3l8 5-8 5-8-5 8-5zM4 8v9l8 4 8-4V8M12 13v8"/>
     </svg>
     3D
   </button>
-
   <button class="n">
     <svg viewBox="0 0 24 24">
       <path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/>
     </svg>
     Предупр.
   </button>
-
   <button class="n">
     <svg viewBox="0 0 24 24">
       <rect x="3" y="5" width="18" height="16" rx="2"/>
@@ -1036,47 +870,37 @@ body.light .frameInput{
     </svg>
     Архив
   </button>
-
   <button class="n">
     <svg viewBox="0 0 24 24">
       <path d="M5 20V11M12 20V6M19 20V3"/>
     </svg>
     Аналитика
   </button>
-
   <button class="n active" id="layersNav">
     <svg viewBox="0 0 24 24">
       <path d="M4 7h16M4 12h16M4 17h16"/>
     </svg>
     Слои
   </button>
-
 </nav>
-
 <div class="tools">
-
   <button class="tool" id="plus" aria-label="Увеличить">
     <svg viewBox="0 0 24 24">
       <path d="M12 5v14M5 12h14"/>
     </svg>
   </button>
-
   <button class="tool" id="minus" aria-label="Уменьшить">
     <svg viewBox="0 0 24 24">
       <path d="M5 12h14"/>
     </svg>
   </button>
-
   <button class="tool geoTool" id="geo" aria-label="Моё местоположение">
     <svg viewBox="0 0 24 24">
       <path d="M20.2 3.8 4.1 10.7c-.72.31-.67 1.35.08 1.57l6.05 1.76 1.76 6.05c.22.75 1.26.8 1.57.08l6.91-16.1c.29-.67-.27-1.23-.94-.94Z"/>
     </svg>
   </button>
-
 </div>
-
 <div class="layers" id="layers">
-
   <div class="layer">
     <svg viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="7"/>
@@ -1086,7 +910,6 @@ body.light .frameInput{
     <span>Опасные явления</span>
     <button class="switch on" id="oyaSwitch"><i></i></button>
   </div>
-
   <div class="layer">
     <svg viewBox="0 0 24 24">
       <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/>
@@ -1095,7 +918,6 @@ body.light .frameInput{
     <span>Отражаемость</span>
     <button class="switch" id="reflectivitySwitch"><i></i></button>
   </div>
-
   <div class="layer">
     <svg viewBox="0 0 24 24">
       <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
@@ -1103,21 +925,15 @@ body.light .frameInput{
     <span>Молнии</span>
     <button class="switch on" id="lightningSwitch"><i></i></button>
   </div>
-
 </div>
-
 <button class="legendTab" id="legendTab">
   Легенда
 </button>
-
 <div class="legend" id="legend">
-
   <button class="legendClose" id="legendClose">×</button>
-
   <div class="legendTitle">
     Условные обозначения
   </div>
-
   <div class="li"><i class="box l1"></i>обл. сред. яруса</div>
   <div class="li"><i class="box l2"></i>сл. образования</div>
   <div class="li"><i class="box l3"></i>осадки слабые</div>
@@ -1137,44 +953,32 @@ body.light .frameInput{
   <div class="li"><i class="box l17"></i>шквал умеренный</div>
   <div class="li"><i class="box l18"></i>шквал сильный</div>
   <div class="li"><i class="box l19"></i>смерч</div>
-
 </div>
-
 <div class="data">
-
   <div class="cell">
     <div class="lab">ИНТЕНСИВНОСТЬ:</div>
     <div class="val" id="intensityValue">Нет данных</div>
   </div>
-
   <div class="cell">
     <div class="lab">ГРОЗА</div>
     <div class="val">—</div>
   </div>
-
   <div class="cell">
     <div class="lab">СКОРОСТЬ:</div>
     <div class="val">—</div>
   </div>
-
 </div>
-
 <div class="timeline">
-
   <div class="thead" id="timeLabel">
     Радар не подключён
   </div>
-
   <div class="trow">
-
     <button class="play" id="play">
       <svg viewBox="0 0 24 24">
         <path d="M7 4l13 8-13 8z"/>
       </svg>
     </button>
-
     <div class="slider">
-
       <input
         id="range"
         type="range"
@@ -1183,23 +987,15 @@ body.light .frameInput{
         step="1"
         value="0"
       >
-
       <div class="times" id="times"></div>
-
     </div>
-
   </div>
-
 </div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
-
 /* =========================
    MAP
 ========================= */
-
 const map = L.map("map",{
   zoomControl:false,
   attributionControl:true,
@@ -1214,7 +1010,11 @@ const map = L.map("map",{
   [55.75,37.62],
   5
 );
-
+/*
+   ВАЖНО:
+   Передаём карту внешним JS-файлам.
+*/
+window.map = map;
 L.tileLayer(
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   {
@@ -1226,23 +1026,15 @@ L.tileLayer(
     keepBuffer:2
   }
 ).addTo(map);
-
-
 /* =========================
    HELPERS
 ========================= */
-
 const $ =
   id => document.getElementById(id);
-
-
 function msg(text){
-
   const x =
     document.createElement("div");
-
   x.textContent = text;
-
   x.style =
     "position:fixed;" +
     "z-index:100;" +
@@ -1255,38 +1047,26 @@ function msg(text){
     "border-radius:8px;" +
     "border:1px solid #3d4850;" +
     "white-space:nowrap";
-
   document.body.appendChild(x);
-
   setTimeout(
     () => x.remove(),
     1300
   );
 }
-
-
 /* =========================
    MAP CONTROLS
 ========================= */
-
 $("plus").onclick = () =>
   map.zoomIn();
-
 $("minus").onclick = () =>
   map.zoomOut();
-
-
 $("geo").onclick = () => {
-
   if(!navigator.geolocation){
     msg("Геолокация недоступна");
     return;
   }
-
   navigator.geolocation.getCurrentPosition(
-
     position => {
-
       map.setView(
         [
           position.coords.latitude,
@@ -1294,209 +1074,130 @@ $("geo").onclick = () => {
         ],
         9
       );
-
       msg("Местоположение найдено");
-
     },
-
     () => {
       msg("Не удалось определить местоположение");
     },
-
     {
       enableHighAccuracy:true,
       timeout:10000,
       maximumAge:60000
     }
-
   );
-
 };
-
-
 /* =========================
    LAYERS
 ========================= */
-
 const layers =
   $("layers");
-
 const oyaSwitch =
   $("oyaSwitch");
-
 const reflectivitySwitch =
   $("reflectivitySwitch");
-
 const lightningSwitch =
   $("lightningSwitch");
-
-
 $("layersNav").onclick = () => {
-
   layers.classList.toggle(
     "hidden"
   );
-
 };
-
-
 oyaSwitch.onclick = event => {
-
   event.stopPropagation();
-
   oyaSwitch.classList.toggle(
     "on"
   );
-
 };
-
-
 reflectivitySwitch.onclick = event => {
-
   event.stopPropagation();
-
   reflectivitySwitch.classList.toggle(
     "on"
   );
-
   msg(
     reflectivitySwitch.classList.contains("on")
       ? "Отражаемость"
       : "Отражаемость выключена"
   );
-
 };
-
-
-/* =========================
-   LIGHTNING
-========================= */
-
-lightningSwitch.onclick = event => {
-
-  event.stopPropagation();
-
-  lightningSwitch.classList.toggle("on");
-
-  if (
-    window.CLOradLightning
-  ) {
-
-    window.CLOradLightning.setEnabled(
-      lightningSwitch.classList.contains("on")
-    );
-
-  }
-
-};
-
-
+/*
+   ПЕРЕКЛЮЧАТЕЛЬ МОЛНИЙ
+   Управляется lightning.js.
+   Здесь специально НЕ назначаем onclick,
+   чтобы два обработчика не конфликтовали.
+*/
 /* =========================
    LEGEND
 ========================= */
-
 $("legendTab").onclick = () => {
-
   $("legend").classList.add(
     "open"
   );
-
   $("legendTab").classList.add(
     "hidden"
   );
-
 };
-
-
 $("legendClose").onclick = () => {
-
   $("legend").classList.remove(
     "open"
   );
-
   $("legendTab").classList.remove(
     "hidden"
   );
-
 };
-
-
 /* =========================
    NAV
 ========================= */
-
 const nav =
   $("nav");
-
 let dragging = false;
 let dragStartX = 0;
 let dragScroll = 0;
-
-
 nav.addEventListener(
   "pointerdown",
   event => {
-
     dragging = true;
-
     dragStartX =
       event.clientX;
-
     dragScroll =
       nav.scrollLeft;
-
     nav.setPointerCapture?.(
       event.pointerId
     );
-
   }
 );
-
-
 nav.addEventListener(
   "pointermove",
   event => {
-
     if(!dragging){
       return;
     }
-
     nav.scrollLeft =
       dragScroll -
       (
         event.clientX -
         dragStartX
       );
-
   }
 );
-
-
 nav.addEventListener(
   "pointerup",
   () => {
     dragging = false;
   }
 );
-
-
 nav.addEventListener(
   "pointercancel",
   () => {
     dragging = false;
   }
 );
-
-
 document
   .querySelectorAll(
     ".n:not(#layersNav)"
   )
   .forEach(
     button => {
-
       button.onclick = () => {
-
         document
           .querySelectorAll(
             ".n:not(#layersNav)"
@@ -1507,27 +1208,19 @@ document
                 "active"
               )
           );
-
         button.classList.add(
           "active"
         );
-
         msg(
           button.textContent.trim()
         );
-
       };
-
     }
   );
-
-
 /* =========================
    SEARCH
 ========================= */
-
 const cities = {
-
   "москва":[55.75,37.62],
   "уфа":[54.74,55.97],
   "казань":[55.79,49.12],
@@ -1541,272 +1234,183 @@ const cities = {
   "пермь":[58.01,56.25],
   "воронеж":[51.67,39.18],
   "ростов":[47.23,39.70]
-
 };
-
-
 $("searchBtn").onclick = () => {
-
   $("search").classList.toggle(
     "open"
   );
-
   $("settings").classList.remove(
     "open"
   );
-
   if(
     $("search").classList.contains(
       "open"
     )
   ){
-
     setTimeout(
       () =>
         $("searchInput").focus(),
       50
     );
-
   }
-
 };
-
-
 $("searchInput").onkeydown = event => {
-
   if(
     event.key !== "Enter"
   ){
     return;
   }
-
   const query =
     event.target.value
       .toLowerCase()
       .trim();
-
   const city =
     Object.keys(cities)
       .find(
         name =>
           name.includes(query)
       );
-
   if(!city){
-
     msg(
       "Город не найден"
     );
-
     return;
-
   }
-
   map.setView(
     cities[city],
     9
   );
-
   $("search").classList.remove(
     "open"
   );
-
   msg(
     city.charAt(0).toUpperCase() +
     city.slice(1)
   );
-
 };
-
-
 /* =========================
    SETTINGS
 ========================= */
-
 $("settingsBtn").onclick = () => {
-
   $("settings").classList.toggle(
     "open"
   );
-
   $("search").classList.remove(
     "open"
   );
-
 };
-
-
 $("framesHead").onclick = () => {
-
   $("framesSetting").classList.toggle(
     "open"
   );
-
 };
-
-
 let frameCount = 24;
-
-
 $("frameMinus").onclick = () => {
-
   frameCount =
     Math.max(
       1,
       frameCount - 1
     );
-
   $("frameInput").value =
     frameCount;
-
 };
-
-
 $("framePlus").onclick = () => {
-
   frameCount++;
-
   $("frameInput").value =
     frameCount;
-
 };
-
-
 $("frameInput").onchange = () => {
-
   let value =
     parseInt(
       $("frameInput").value,
       10
     );
-
   if(
     !Number.isFinite(value) ||
     value < 1
   ){
     value = 1;
   }
-
   frameCount = value;
-
   $("frameInput").value =
     value;
-
 };
-
-
 /* =========================
    MENU
 ========================= */
-
 $("menuBtn").onclick = () => {
-
   nav.classList.toggle(
     "closed"
   );
-
   $("search").classList.remove(
     "open"
   );
-
   $("settings").classList.remove(
     "open"
   );
-
 };
-
-
 /* =========================
    THEME
 ========================= */
-
 let darkMode = true;
-
-
 $("themeBtn").onclick = () => {
-
   darkMode =
     !darkMode;
-
   document.body.classList.toggle(
     "light",
     !darkMode
   );
-
   msg(
     darkMode
       ? "Тёмная тема"
       : "Светлая тема"
   );
-
 };
-
-
 /* =========================
    PLAY BUTTON
 ========================= */
-
 $("play").onclick = () => {
-
   msg(
     "Радар пока не подключён"
   );
-
 };
-
-
 /* =========================
    CLOSE POPUPS
 ========================= */
-
 document.addEventListener(
   "click",
   event => {
-
     if(
       !event.target.closest(".search") &&
       !event.target.closest("#searchBtn")
     ){
-
       $("search").classList.remove(
         "open"
       );
-
     }
-
     if(
       !event.target.closest(".settings") &&
       !event.target.closest("#settingsBtn")
     ){
-
       $("settings").classList.remove(
         "open"
       );
-
     }
-
   }
 );
-
-
 /* =========================
    INITIALIZE
 ========================= */
-
 setTimeout(
   () => map.invalidateSize(),
   100
 );
-
 setTimeout(
   () => map.invalidateSize(),
   700
 );
-
 </script>
-
 <!-- CLOrad Lightning -->
 <script src="lightning.js"></script>
-
 </body>
 </html>
