@@ -49,6 +49,8 @@ button{
 
 /* =====================================================
    RADAR CANVAS
+   Оставлен для совместимости с интерфейсом.
+   Отражаемость теперь рисуется WMS-слоем.
 ===================================================== */
 
 #radarCanvas{
@@ -1209,10 +1211,31 @@ body.light .frameInput{
 
 </div>
 
+<!-- =====================================================
+     LEAFLET
+===================================================== -->
+
 <script>
 
 let map=null;
 let tiles=null;
+let reflectivityWms=null;
+
+/*
+  Реальный Nowcast WMS.
+
+  Это тот же механизм, который используется
+  оригинальным demo Nowcast.
+
+  Точный слой отражаемости:
+  bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1
+*/
+
+const NOWCAST_WMS=
+  "https://www.nowcast.ru/baltrad_wsgi";
+
+const NOWCAST_LAYER=
+  "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
 
 const light=
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -1248,10 +1271,75 @@ function initMap(){
 
     tiles.addTo(map);
 
+    /*
+      ================================================
+      NOWCAST WMS
+      ================================================
+    */
+
+    reflectivityWms=
+      L.tileLayer.wms(
+        NOWCAST_WMS,
+        {
+          layers:NOWCAST_LAYER,
+
+          format:"image/png",
+
+          transparent:true,
+
+          version:"1.1.1",
+
+          opacity:0.86,
+
+          updateWhenZooming:false,
+
+          updateWhenIdle:true,
+
+          keepBuffer:2,
+
+          crossOrigin:true
+        }
+      );
+
+    /*
+      В начале отражаемость выключена,
+      потому что по интерфейсу ОЯ включены.
+    */
+
+    reflectivityWms.setOpacity(0);
+
+    /*
+      Важный момент:
+      WMS — это отдельный слой Leaflet.
+      Поэтому при зуме он получает новые изображения
+      с новым BBOX и новым разрешением.
+    */
+
     map.on(
-      "move zoom resize",
+      "zoomstart",
       ()=>{
-        redrawRadar();
+        if(reflectivityWms){
+          reflectivityWms.setOpacity(
+            reflectivitySwitch &&
+            reflectivitySwitch.classList.contains("on")
+              ? 0.86
+              : 0
+          );
+        }
+      }
+    );
+
+    map.on(
+      "zoomend",
+      ()=>{
+        if(reflectivityWms){
+          reflectivityWms.setOpacity(
+            reflectivitySwitch &&
+            reflectivitySwitch.classList.contains("on")
+              ? 0.86
+              : 0
+          );
+        }
       }
     );
 
@@ -1278,6 +1366,7 @@ function initMap(){
 
     map=null;
     tiles=null;
+    reflectivityWms=null;
   }
 }
 
@@ -1368,6 +1457,8 @@ function msg(t){
 
 /* =====================================================
    RADAR CANVAS
+   Старый canvas больше НЕ рисует отражаемость.
+   WMS отвечает за отображение.
 ===================================================== */
 
 const radarCanvas=
@@ -1376,7 +1467,7 @@ const radarCanvas=
 const radarCtx=
   radarCanvas.getContext("2d");
 
-let radarVisible=true;
+let radarVisible=false;
 
 function resizeRadarCanvas(){
 
@@ -1411,7 +1502,12 @@ function resizeRadarCanvas(){
     0
   );
 
-  redrawRadar();
+  radarCtx.clearRect(
+    0,
+    0,
+    window.innerWidth,
+    window.innerHeight
+  );
 }
 
 window.addEventListener(
@@ -1422,69 +1518,35 @@ window.addEventListener(
 resizeRadarCanvas();
 
 /* =====================================================
-   DBZ COLORS
-===================================================== */
-
-function dbzColor(v){
-
-  if(!Number.isFinite(v)){
-    return null;
-  }
-
-  if(v<5){
-    return null;
-  }
-
-  if(v<10) return "#00b7ff";
-  if(v<15) return "#0087ff";
-  if(v<20) return "#00e5ff";
-  if(v<25) return "#00ff66";
-  if(v<30) return "#00c853";
-  if(v<35) return "#a8e600";
-  if(v<40) return "#ffe600";
-  if(v<45) return "#ffb300";
-  if(v<50) return "#ff6d00";
-  if(v<55) return "#ff2d2d";
-  if(v<60) return "#d50000";
-
-  return "#8e24aa";
-}
-
-/* =====================================================
-   NOWCAST DATA
+   NOWCAST TIME
 ===================================================== */
 
 let allNowcastTimes=[];
 
 let radarFrames=[];
 
-let radarData=
-  new Map();
-
 let frameCount=24;
 
 let currentFrame=0;
-
-let loadingRadar=false;
 
 let radarPlaying=false;
 
 let radarPlayTimer=null;
 
 /*
-  Дополнительный кэш обработанных данных.
-  Здесь сохраняются:
-  pixels
-  max
-  stats
-  cells
+  true — времена реально получены
+  через WMS GetCapabilities.
 */
-let radarProcessed=
-  new Map();
 
-/* =====================================================
-   10-MINUTE GRID
-===================================================== */
+let verifiedNowcastTimes=false;
+
+/*
+  Если GetCapabilities недоступен из-за CORS,
+  создаём сетку последних 10-минутных времён.
+
+  Это fallback.
+  Сам WMS всё равно остаётся реальным.
+*/
 
 function snapTo10Minutes(value){
 
@@ -1552,716 +1614,183 @@ function normalizeNowcastTimes(times){
 }
 
 /* =====================================================
-   DATA NORMALIZER
+   WMS GETCAPABILITIES PARSER
 ===================================================== */
 
-function extractRadarPoints(raw){
-
-  /*
-    НОВЫЙ ФОРМАТ BACKEND:
-
-    {
-      ok:true,
-      data:[...],
-      pixels:[
-        {
-          lat,
-          lon,
-          dbz,
-          direction
-        }
-      ],
-      max:{
-        dbz,
-        lat,
-        lon,
-        direction
-      },
-      stats:{...},
-      cells:[...]
-    }
-  */
+function extractTimesFromCapabilities(text){
 
   if(
-    raw &&
-    Array.isArray(raw.pixels)
+    typeof text!=="string" ||
+    !text
   ){
 
-    const result=[];
-
-    for(
-      const point of raw.pixels
-    ){
-
-      if(
-        !point ||
-        typeof point!=="object"
-      ){
-        continue;
-      }
-
-      const lat=
-        Number(
-          point.lat
-        );
-
-      const lon=
-        Number(
-          point.lon
-        );
-
-      const value=
-        Number(
-          point.dbz ??
-          point.value
-        );
-
-      if(
-        !Number.isFinite(lat) ||
-        !Number.isFinite(lon) ||
-        !Number.isFinite(value)
-      ){
-
-        continue;
-
-      }
-
-      if(
-        Math.abs(lat)>90 ||
-        Math.abs(lon)>180
-      ){
-
-        continue;
-
-      }
-
-      if(value<=0){
-        continue;
-      }
-
-      result.push({
-        lat,
-        lon,
-        value,
-        direction:
-          Number.isFinite(
-            Number(point.direction)
-          )
-            ? Number(point.direction)
-            : null
-      });
-
-    }
-
-    return result;
-
-  }
-
-  /*
-    СТАРЫЙ ФОРМАТ.
-    Оставляем совместимость.
-  */
-
-  let source=raw;
-
-  if(
-    raw &&
-    Array.isArray(raw.data)
-  ){
-
-    source=raw.data;
-
-  }
-
-  if(
-    raw &&
-    raw.data &&
-    Array.isArray(raw.data.data)
-  ){
-
-    source=raw.data.data;
+    return [];
 
   }
 
   const result=[];
 
-  function addArray(a){
+  /*
+    Ищем Dimension/Extent time.
+  */
 
-    if(!Array.isArray(a)){
-      return;
-    }
+  const patterns=[
 
-    if(a.length<3){
-      return;
-    }
+    /<Dimension[^>]*name=["']time["'][^>]*>([\s\S]*?)<\/Dimension>/i,
 
-    let first=
-      Number(a[0]);
+    /<Extent[^>]*name=["']time["'][^>]*>([\s\S]*?)<\/Extent>/i,
 
-    let second=
-      Number(a[1]);
+    /<Dimension[^>]*name=["']TIME["'][^>]*>([\s\S]*?)<\/Dimension>/i,
 
-    let value=
-      Number(a[2]);
+    /<Extent[^>]*name=["']TIME["'][^>]*>([\s\S]*?)<\/Extent>/i
 
-    if(
-      !Number.isFinite(first) ||
-      !Number.isFinite(second) ||
-      !Number.isFinite(value)
-    ){
+  ];
 
-      return;
+  let content=null;
 
-    }
+  for(
+    const pattern of patterns
+  ){
 
-    let lat=first;
-    let lon=second;
+    const match=
+      text.match(pattern);
 
-    if(
-      Math.abs(lat)>90 &&
-      Math.abs(lon)<=90
-    ){
+    if(match){
 
-      lat=second;
-      lon=first;
+      content=
+        match[1];
 
-    }
-
-    if(
-      Math.abs(lat)<=90 &&
-      Math.abs(lon)<=180
-    ){
-
-      if(value<=0){
-        return;
-      }
-
-      result.push({
-        lat,
-        lon,
-        value
-      });
+      break;
 
     }
 
   }
 
-  function walk(value){
+  if(!content){
 
-    if(Array.isArray(value)){
+    /*
+      Второй вариант:
+      искать timestamp'ы прямо во всём XML.
+    */
+
+    const isoMatches=
+      text.match(
+        /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g
+      );
+
+    if(isoMatches){
+
+      return normalizeNowcastTimes(
+        isoMatches
+      );
+
+    }
+
+    return [];
+
+  }
+
+  /*
+    У Nowcast время может быть:
+    2026-09-13T10:00:00Z,
+    2026-09-13T10:10:00Z,...
+  */
+
+  const matches=
+    content.match(
+      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:\d{2})/g
+    );
+
+  if(matches){
+
+    result.push(
+      ...matches
+    );
+
+  }
+
+  /*
+    Иногда список может быть записан через запятую
+    или диапазоном.
+  */
+
+  if(
+    !result.length &&
+    content.includes(",")
+  ){
+
+    const parts=
+      content
+        .split(",");
+
+    for(
+      const part of parts
+    ){
+
+      const clean=
+        part.trim();
 
       if(
-        value.length>=3 &&
-        typeof value[0]!=="object"
+        /^\d{4}-\d{2}-\d{2}T/.test(
+          clean
+        )
       ){
 
-        addArray(value);
-        return;
-
-      }
-
-      for(
-        const item of value
-      ){
-
-        walk(item);
-
-      }
-
-      return;
-
-    }
-
-    if(
-      value &&
-      typeof value==="object"
-    ){
-
-      const lat=
-        Number(
-          value.lat ??
-          value.latitude ??
-          value.y
+        result.push(
+          clean
         );
 
-      const lon=
-        Number(
-          value.lon ??
-          value.lng ??
-          value.longitude ??
-          value.x
-        );
-
-      const dbz=
-        Number(
-          value.value ??
-          value.dbz ??
-          value.reflectivity ??
-          value.z
-        );
-
-      if(
-        Number.isFinite(lat) &&
-        Number.isFinite(lon) &&
-        Number.isFinite(dbz) &&
-        dbz>0
-      ){
-
-        result.push({
-          lat,
-          lon,
-          value:dbz
-        });
-
-      }
-
-      if(value.features){
-        walk(value.features);
-      }
-
-      if(value.data){
-        walk(value.data);
       }
 
     }
 
   }
 
-  walk(source);
-
-  return result;
-}
-
-/* =====================================================
-   GET CURRENT PROCESSED FRAME
-===================================================== */
-
-function getCurrentRadarFrame(){
-
-  const time=
-    radarFrames[currentFrame];
-
-  if(!time){
-    return null;
-  }
-
-  return radarData.get(time) || null;
-}
-
-/* =====================================================
-   RADAR DRAW
-===================================================== */
-
-function redrawRadar(){
-
-  radarCtx.clearRect(
-    0,
-    0,
-    window.innerWidth,
-    window.innerHeight
+  return normalizeNowcastTimes(
+    result
   );
 
-  if(!radarVisible){
-    return;
-  }
+}
 
-  if(!map){
-    return;
-  }
+/* =====================================================
+   FALLBACK TIME GRID
+===================================================== */
 
-  const time=
-    radarFrames[currentFrame];
+function buildFallbackTimes(){
 
-  if(!time){
-    return;
-  }
+  const now=
+    new Date();
 
-  const raw=
-    radarData.get(time);
+  now.setSeconds(0,0);
 
-  if(!raw){
-    return;
-  }
+  now.setMinutes(
+    Math.floor(
+      now.getMinutes()/10
+    )*10
+  );
 
-  const points=
-    extractRadarPoints(raw);
-
-  if(!points.length){
-    return;
-  }
-
-  const zoom=
-    map.getZoom();
-
-  let size=5;
-
-  if(zoom<=3){
-    size=3;
-  }else if(zoom<=4){
-    size=4;
-  }else if(zoom<=5){
-    size=5;
-  }else if(zoom<=6){
-    size=6;
-  }else if(zoom<=7){
-    size=7;
-  }else if(zoom<=8){
-    size=8;
-  }else{
-    size=9;
-  }
+  const result=[];
 
   /*
-    Небольшое повышение качества отображения:
-    выключаем сглаживание canvas.
+    144 кадров = 24 часа.
   */
 
-  radarCtx.imageSmoothingEnabled=false;
-
   for(
-    const point of points
+    let i=143;
+    i>=0;
+    i--
   ){
 
-    const color=
-      dbzColor(
-        point.value
-      );
-
-    if(!color){
-      continue;
-    }
-
-    const latlng=
-      L.latLng(
-        point.lat,
-        point.lon
-      );
-
-    const pixel=
-      map.latLngToContainerPoint(
-        latlng
-      );
-
-    if(
-      pixel.x<-size ||
-      pixel.y<-size ||
-      pixel.x>
-        window.innerWidth+size ||
-      pixel.y>
-        window.innerHeight+size
-    ){
-
-      continue;
-
-    }
-
-    radarCtx.fillStyle=
-      color;
-
-    radarCtx.fillRect(
-      Math.round(
-        pixel.x-size/2
-      ),
-      Math.round(
-        pixel.y-size/2
-      ),
-      size,
-      size
+    result.push(
+      new Date(
+        now.getTime()-
+        i*10*60*1000
+      ).toISOString()
     );
 
   }
 
-}
-
-/* =====================================================
-   UPDATE DATA CARD
-===================================================== */
-
-function updateIntensity(){
-
-  const value=
-    $("intensityValue");
-
-  const time=
-    radarFrames[currentFrame];
-
-  if(!time){
-
-    value.textContent=
-      "Нет данных";
-
-    return;
-
-  }
-
-  const raw=
-    radarData.get(time);
-
-  if(!raw){
-
-    value.textContent=
-      "Загрузка…";
-
-    return;
-
-  }
-
-  /*
-    НОВЫЙ BACKEND:
-    максимум уже вычислен на сервере.
-  */
-
-  if(
-    raw.max &&
-    Number.isFinite(
-      Number(raw.max.dbz)
-    )
-  ){
-
-    value.textContent=
-      Number(raw.max.dbz)
-        .toFixed(1)+
-      " dBZ";
-
-    return;
-
-  }
-
-  /*
-    Дополнительная совместимость
-    со старым ответом.
-  */
-
-  const points=
-    extractRadarPoints(raw);
-
-  if(!points.length){
-
-    value.textContent=
-      "Нет данных";
-
-    return;
-
-  }
-
-  let maximum=
-    -Infinity;
-
-  for(
-    const point of points
-  ){
-
-    if(
-      Number.isFinite(point.value) &&
-      point.value>maximum
-    ){
-
-      maximum=
-        point.value;
-
-    }
-
-  }
-
-  if(maximum===-Infinity){
-
-    value.textContent=
-      "Нет данных";
-
-  }else{
-
-    value.textContent=
-      maximum.toFixed(1)+
-      " dBZ";
-
-  }
-
-}
-
-/* =====================================================
-   FRAME ANALYTICS
-===================================================== */
-
-function getCurrentRadarStats(){
-
-  const raw=
-    getCurrentRadarFrame();
-
-  if(
-    raw &&
-    raw.stats
-  ){
-
-    return raw.stats;
-
-  }
-
-  return null;
-}
-
-function getCurrentRadarCells(){
-
-  const raw=
-    getCurrentRadarFrame();
-
-  if(
-    raw &&
-    Array.isArray(raw.cells)
-  ){
-
-    return raw.cells;
-
-  }
-
-  return [];
-
-}
-
-function getCurrentRadarMaximum(){
-
-  const raw=
-    getCurrentRadarFrame();
-
-  if(
-    raw &&
-    raw.max
-  ){
-
-    return raw.max;
-
-  }
-
-  return null;
-
-}
-
-/* =====================================================
-   FORMAT TIME
-===================================================== */
-
-function formatRadarTime(time){
-
-  if(!time){
-    return "Нет данных";
-  }
-
-  const date=
-    new Date(time);
-
-  if(
-    Number.isNaN(
-      date.getTime()
-    )
-  ){
-
-    return time;
-
-  }
-
-  return new Intl.DateTimeFormat(
-    "ru-RU",
-    {
-      day:"2-digit",
-      month:"2-digit",
-      hour:"2-digit",
-      minute:"2-digit",
-      hourCycle:"h23"
-    }
-  ).format(date);
-
-}
-
-/* =====================================================
-   UPDATE TIMELINE
-===================================================== */
-
-function updateRadarTimeline(){
-
-  const range=
-    $("range");
-
-  range.min=0;
-
-  range.max=
-    Math.max(
-      0,
-      radarFrames.length-1
-    );
-
-  range.value=
-    currentFrame;
-
-  const time=
-    radarFrames[currentFrame];
-
-  $("timeLabel").textContent=
-    time
-      ? formatRadarTime(time)
-      : "Загрузка…";
-
-  updateIntensity();
-
-}
-
-/* =====================================================
-   LABELS
-===================================================== */
-
-function buildRadarLabels(){
-
-  const container=
-    $("times");
-
-  container.innerHTML="";
-
-  if(!radarFrames.length){
-    return;
-  }
-
-  const indexes=[];
-
-  indexes.push(0);
-
-  if(radarFrames.length>2){
-
-    indexes.push(
-      Math.floor(
-        (radarFrames.length-1)/2
-      )
-    );
-
-  }
-
-  if(radarFrames.length>1){
-
-    indexes.push(
-      radarFrames.length-1
-    );
-
-  }
-
-  const unique=
-    [...new Set(indexes)];
-
-  for(
-    const index of unique
-  ){
-
-    const span=
-      document.createElement(
-        "span"
-      );
-
-    span.textContent=
-      formatRadarTime(
-        radarFrames[index]
-      );
-
-    container.appendChild(
-      span
-    );
-
-  }
+  return result;
 
 }
 
@@ -2271,12 +1800,36 @@ function buildRadarLabels(){
 
 async function loadNowcastTimes(){
 
+  verifiedNowcastTimes=false;
+
+  $("framesInfo").textContent=
+    "Получение списка кадров…";
+
+  /*
+    Важно:
+    GetCapabilities запрашивается напрямую из браузера.
+
+    Если сервер разрешает CORS —
+    получаем реальные времена.
+
+    Если нет —
+    WMS всё равно работает,
+    а таймлайн получает 10-минутную сетку.
+  */
+
   try{
+
+    const url=
+      NOWCAST_WMS+
+      "?SERVICE=WMS"+
+      "&VERSION=1.1.1"+
+      "&REQUEST=GetCapabilities";
 
     const response=
       await fetch(
-        "/api/radar?action=nowcast-times",
+        url,
         {
+          method:"GET",
           cache:"no-store"
         }
       );
@@ -2289,25 +1842,26 @@ async function loadNowcastTimes(){
 
     }
 
-    const json=
-      await response.json();
+    const text=
+      await response.text();
 
-    if(
-      !json.ok ||
-      !Array.isArray(json.times)
-    ){
+    const times=
+      extractTimesFromCapabilities(
+        text
+      );
+
+    if(!times.length){
 
       throw new Error(
-        json.message ||
-        "Nowcast не вернул времена"
+        "В GetCapabilities не найдено время"
       );
 
     }
 
     allNowcastTimes=
-      normalizeNowcastTimes(
-        json.times
-      );
+      times;
+
+    verifiedNowcastTimes=true;
 
     $("framesInfo").textContent=
       "Доступно: "+
@@ -2315,45 +1869,181 @@ async function loadNowcastTimes(){
 
     await applyFrameCount();
 
-  }catch(error){
+    /*
+      Если удалось получить реальные времена,
+      сразу ставим последний доступный кадр.
+    */
 
-    console.error(
-      "Nowcast times:",
-      error
-    );
+    if(radarFrames.length){
 
-    $("framesInfo").textContent=
-      "Не удалось получить список кадров";
+      currentFrame=
+        radarFrames.length-1;
 
-    const now=
-      new Date();
+      $("range").value=
+        currentFrame;
 
-    now.setSeconds(0,0);
+      updateRadarTimeline();
 
-    now.setMinutes(
-      Math.floor(
-        now.getMinutes()/10
-      )*10
-    );
-
-    allNowcastTimes=[];
-
-    for(
-      let i=143;
-      i>=0;
-      i--
-    ){
-
-      allNowcastTimes.push(
-        new Date(
-          now.getTime()-
-          i*10*60*1000
-        ).toISOString()
-      );
+      updateWmsTime();
 
     }
 
-    await applyFrameCount();
+    return;
+
+  }catch(error){
+
+    console.warn(
+      "WMS GetCapabilities недоступен:",
+      error
+    );
+
+  }
+
+  /*
+    FALLBACK
+  */
+
+  allNowcastTimes=
+    buildFallbackTimes();
+
+  $("framesInfo").textContent=
+    "Автосписок: "+
+    allNowcastTimes.length+
+    " кадров";
+
+  await applyFrameCount();
+
+  /*
+    Ставим последний кадр.
+  */
+
+  if(radarFrames.length){
+
+    currentFrame=
+      radarFrames.length-1;
+
+    $("range").value=
+      currentFrame;
+
+    updateRadarTimeline();
+
+    updateWmsTime();
+
+  }
+
+}
+
+/* =====================================================
+   WMS TIME
+===================================================== */
+
+function getCurrentWmsTime(){
+
+  return radarFrames[currentFrame] || null;
+
+}
+
+function updateWmsTime(){
+
+  if(
+    !reflectivityWms
+  ){
+
+    return;
+
+  }
+
+  const time=
+    getCurrentWmsTime();
+
+  if(!time){
+
+    /*
+      Без TIME сервер сам отдаёт
+      актуальное/дефолтное изображение.
+    */
+
+    reflectivityWms.setParams({
+      TIME:null
+    });
+
+    return;
+
+  }
+
+  /*
+    Главная операция:
+    меняем TIME у настоящего WMS.
+  */
+
+  reflectivityWms.setParams({
+    TIME:time
+  });
+
+}
+
+/* =====================================================
+   REFLECTIVITY VISIBILITY
+===================================================== */
+
+function updateReflectivity(){
+
+  radarVisible=
+    reflectivitySwitch.classList.contains(
+      "on"
+    );
+
+  if(!reflectivityWms){
+
+    return;
+
+  }
+
+  if(radarVisible){
+
+    /*
+      Если слой ещё не был добавлен —
+      добавляем его сейчас.
+    */
+
+    if(
+      !map.hasLayer(
+        reflectivityWms
+      )
+    ){
+
+      reflectivityWms.addTo(map);
+
+    }
+
+    /*
+      Устанавливаем текущий кадр.
+    */
+
+    updateWmsTime();
+
+    reflectivityWms.setOpacity(
+      0.86
+    );
+
+  }else{
+
+    /*
+      Полностью убираем WMS с карты,
+      чтобы он не мешал ОЯ.
+    */
+
+    if(
+      map.hasLayer(
+        reflectivityWms
+      )
+    ){
+
+      map.removeLayer(
+        reflectivityWms
+      );
+
+    }
 
   }
 
@@ -2423,186 +2113,162 @@ async function applyFrameCount(){
       )
     );
 
-  currentFrame=0;
+  /*
+    Не двигаем автоматически.
+    После изменения количества кадров
+    показываем последний доступный кадр.
+  */
+
+  currentFrame=
+    radarFrames.length
+      ? radarFrames.length-1
+      : 0;
 
   updateRadarTimeline();
 
   buildRadarLabels();
 
-  await loadRadarFrames();
+  updateWmsTime();
 
 }
 
 /* =====================================================
-   LOAD FRAMES
+   FORMAT TIME
 ===================================================== */
 
-async function loadRadarFrames(){
+function formatRadarTime(time){
 
-  if(loadingRadar){
+  if(!time){
+    return "Нет данных";
+  }
+
+  const date=
+    new Date(time);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+
+    return time;
+
+  }
+
+  return new Intl.DateTimeFormat(
+    "ru-RU",
+    {
+      day:"2-digit",
+      month:"2-digit",
+      hour:"2-digit",
+      minute:"2-digit",
+      hourCycle:"h23"
+    }
+  ).format(date);
+
+}
+
+/* =====================================================
+   TIMELINE
+===================================================== */
+
+function updateRadarTimeline(){
+
+  const range=
+    $("range");
+
+  range.min=0;
+
+  range.max=
+    Math.max(
+      0,
+      radarFrames.length-1
+    );
+
+  range.value=
+    currentFrame;
+
+  const time=
+    radarFrames[currentFrame];
+
+  $("timeLabel").textContent=
+    time
+      ? formatRadarTime(time)
+      : "Загрузка…";
+
+  updateWmsTime();
+
+  /*
+    Для WMS максимальный dBZ нельзя честно получить
+    из PNG без отдельного GetFeatureInfo/векторного API.
+
+    Поэтому не подделываем число.
+  */
+
+  $("intensityValue").textContent=
+    "Нет данных";
+
+}
+
+/* =====================================================
+   LABELS
+===================================================== */
+
+function buildRadarLabels(){
+
+  const container=
+    $("times");
+
+  container.innerHTML="";
+
+  if(!radarFrames.length){
     return;
   }
 
-  loadingRadar=true;
+  const indexes=[];
 
-  $("loadingFrames")
-    .classList.add("show");
+  indexes.push(0);
 
-  const queue=
-    radarFrames.filter(
-      time=>
-        !radarData.has(time)
+  if(radarFrames.length>2){
+
+    indexes.push(
+      Math.floor(
+        (radarFrames.length-1)/2
+      )
     );
-
-  let cursor=0;
-
-  async function worker(){
-
-    while(true){
-
-      const index=
-        cursor++;
-
-      if(index>=queue.length){
-        return;
-      }
-
-      const time=
-        queue[index];
-
-      try{
-
-        const url=
-          "/api/radar?action=nowcast&time="+
-          encodeURIComponent(time);
-
-        const response=
-          await fetch(
-            url,
-            {
-              cache:"no-store"
-            }
-          );
-
-        if(!response.ok){
-
-          throw new Error(
-            "HTTP "+response.status
-          );
-
-        }
-
-        const json=
-          await response.json();
-
-        if(
-          !json ||
-          json.ok!==true
-        ){
-
-          throw new Error(
-            json?.message ||
-            "Пустой ответ Nowcast"
-          );
-
-        }
-
-        /*
-          ВАЖНО:
-
-          Было:
-          radarData.set(time,json.data)
-
-          Теперь сохраняем ВЕСЬ ответ:
-
-          json.data
-          json.pixels
-          json.max
-          json.stats
-          json.cells
-        */
-
-        radarData.set(
-          time,
-          json
-        );
-
-        /*
-          Отдельный быстрый кэш
-          обработанной информации.
-        */
-
-        radarProcessed.set(
-          time,
-          {
-            pixels:
-              Array.isArray(json.pixels)
-                ? json.pixels
-                : [],
-            max:
-              json.max || null,
-            stats:
-              json.stats || null,
-            cells:
-              Array.isArray(json.cells)
-                ? json.cells
-                : []
-          }
-        );
-
-        if(
-          time===
-          radarFrames[currentFrame]
-        ){
-
-          redrawRadar();
-          updateIntensity();
-
-        }
-
-      }catch(error){
-
-        console.warn(
-          "Ошибка кадра:",
-          time,
-          error
-        );
-
-      }
-
-    }
 
   }
 
-  const workers=[];
+  if(radarFrames.length>1){
+
+    indexes.push(
+      radarFrames.length-1
+    );
+
+  }
+
+  const unique=
+    [...new Set(indexes)];
 
   for(
-    let i=0;
-    i<Math.min(
-      10,
-      queue.length
-    );
-    i++
+    const index of unique
   ){
 
-    workers.push(
-      worker()
+    const span=
+      document.createElement(
+        "span"
+      );
+
+    span.textContent=
+      formatRadarTime(
+        radarFrames[index]
+      );
+
+    container.appendChild(
+      span
     );
 
   }
-
-  await Promise.all(
-    workers
-  );
-
-  loadingRadar=false;
-
-  $("loadingFrames")
-    .classList.remove("show");
-
-  redrawRadar();
-
-  updateIntensity();
 
 }
 
@@ -2614,14 +2280,17 @@ $("range").addEventListener(
   "input",
   ()=>{
 
+    /*
+      Только пользователь двигает ползунок.
+      Никакого автоматического перехода.
+    */
+
     currentFrame=
       Number(
         $("range").value
       );
 
     updateRadarTimeline();
-
-    redrawRadar();
 
   }
 );
@@ -2690,8 +2359,6 @@ function startRadarPlay(){
         currentFrame;
 
       updateRadarTimeline();
-
-      redrawRadar();
 
     },180);
 
@@ -2811,8 +2478,6 @@ $("geo").onclick=()=>{
 
 /* =====================================================
    LAYERS
-   ОЯ И ОТРАЖАЕМOСТЬ ВЗАИМОИСКЛЮЧАЮЩИЕ.
-   МОЛНИИ НЕЗАВИСИМЫ.
 ===================================================== */
 
 const oyaSwitch=
@@ -2848,16 +2513,9 @@ if(
 
 }
 
-function updateReflectivity(){
-
-  radarVisible=
-    reflectivitySwitch.classList.contains(
-      "on"
-    );
-
-  redrawRadar();
-
-}
+/*
+  ОЯ
+*/
 
 oyaSwitch.onclick=e=>{
 
@@ -2882,7 +2540,19 @@ oyaSwitch.onclick=e=>{
 
     radarVisible=false;
 
-    redrawRadar();
+    if(
+      reflectivityWms &&
+      map &&
+      map.hasLayer(
+        reflectivityWms
+      )
+    ){
+
+      map.removeLayer(
+        reflectivityWms
+      );
+
+    }
 
   }else{
 
@@ -2894,6 +2564,10 @@ oyaSwitch.onclick=e=>{
   }
 
 };
+
+/*
+  ОТРАЖАЕМОСТЬ
+*/
 
 reflectivitySwitch.onclick=e=>{
 
@@ -2918,7 +2592,11 @@ reflectivitySwitch.onclick=e=>{
 
     radarVisible=true;
 
-    redrawRadar();
+    updateReflectivity();
+
+    msg(
+      "Отражаемость"
+    );
 
   }else{
 
@@ -2929,11 +2607,15 @@ reflectivitySwitch.onclick=e=>{
 
     radarVisible=false;
 
-    redrawRadar();
+    updateReflectivity();
 
   }
 
 };
+
+/*
+  МОЛНИИ
+*/
 
 lightningSwitch.onclick=e=>{
 
