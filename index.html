@@ -1101,7 +1101,7 @@ body.light .frameInput{
       <path d="M12 2v3"/>
     </svg>
     <span>Опасные явления</span>
-    <button class="switch on"><i></i></button>
+    <button class="switch on" id="oyaSwitch"><i></i></button>
   </div>
 
   <div class="layer">
@@ -1110,7 +1110,7 @@ body.light .frameInput{
       <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/>
     </svg>
     <span>Отражаемость</span>
-    <button class="switch on" id="reflectivitySwitch"><i></i></button>
+    <button class="switch" id="reflectivitySwitch"><i></i></button>
   </div>
 
   <div class="layer">
@@ -1118,7 +1118,7 @@ body.light .frameInput{
       <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
     </svg>
     <span>Молнии</span>
-    <button class="switch on"><i></i></button>
+    <button class="switch on" id="lightningSwitch"><i></i></button>
   </div>
 
 </div>
@@ -1500,20 +1500,6 @@ function snapTo10Minutes(value){
 
 }
 
-/*
-  Времена Nowcast приводим к строгой сетке:
-
-  13:00
-  13:10
-  13:20
-  13:30
-  13:40
-  13:50
-  14:00
-
-  Никаких 13:42 -> 13:52.
-*/
-
 function normalizeNowcastTimes(times){
 
   const unique=
@@ -1531,12 +1517,6 @@ function normalizeNowcastTimes(times){
     if(!snapped){
       continue;
     }
-
-    /*
-      Храним первый оригинальный timestamp,
-      но ключом таймлайна является именно
-      10-минутное время.
-    */
 
     if(
       !unique.has(snapped)
@@ -1635,11 +1615,6 @@ function extractRadarPoints(raw){
       Math.abs(lat)<=90 &&
       Math.abs(lon)<=180
     ){
-
-      /*
-        Не рисуем специальные
-        значения отсутствия данных.
-      */
 
       if(value<=0){
         return;
@@ -2107,12 +2082,6 @@ async function loadNowcastTimes(){
 
     }
 
-    /*
-      ВАЖНО:
-      здесь теперь всегда получается
-      строгая 10-минутная сетка.
-    */
-
     allNowcastTimes=
       normalizeNowcastTimes(
         json.times
@@ -2133,10 +2102,6 @@ async function loadNowcastTimes(){
 
     $("framesInfo").textContent=
       "Не удалось получить список кадров";
-
-    /*
-      Fallback также строго по 10 минут.
-    */
 
     const now=
       new Date();
@@ -2586,37 +2551,175 @@ $("geo").onclick=()=>{
 
 /* =====================================================
    LAYERS
+   ОЯ И ОТРАЖАЕМOСТЬ ВЗАИМОИСКЛЮЧАЮЩИЕ.
+   МОЛНИИ НЕЗАВИСИМЫ.
 ===================================================== */
 
-document
-  .querySelectorAll(
-    ".switch"
-  )
-  .forEach(x=>{
+const oyaSwitch=
+  $("oyaSwitch");
 
-    x.onclick=e=>{
+const reflectivitySwitch=
+  $("reflectivitySwitch");
 
-      e.stopPropagation();
+const lightningSwitch=
+  $("lightningSwitch");
 
-      x.classList.toggle("on");
+function setSwitchState(
+  element,
+  enabled
+){
 
-      if(
-        x.id===
-        "reflectivitySwitch"
-      ){
+  element.classList.toggle(
+    "on",
+    enabled
+  );
 
-        radarVisible=
-          x.classList.contains(
-            "on"
-          );
+}
 
-        redrawRadar();
+/*
+  Проверяем состояние при старте.
 
-      }
+  Если каким-то образом оба слоя оказались
+  включены одновременно, оставляем ОЯ включённым
+  и выключаем отражаемость.
+*/
 
-    };
+if(
+  oyaSwitch.classList.contains("on") &&
+  reflectivitySwitch.classList.contains("on")
+){
 
-  });
+  setSwitchState(
+    reflectivitySwitch,
+    false
+  );
+
+}
+
+function updateReflectivity(){
+
+  radarVisible=
+    reflectivitySwitch.classList.contains(
+      "on"
+    );
+
+  redrawRadar();
+
+}
+
+oyaSwitch.onclick=e=>{
+
+  e.stopPropagation();
+
+  const shouldEnable=
+    !oyaSwitch.classList.contains(
+      "on"
+    );
+
+  if(shouldEnable){
+
+    /*
+      ОЯ включаем,
+      отражайку обязательно выключаем.
+    */
+
+    setSwitchState(
+      oyaSwitch,
+      true
+    );
+
+    setSwitchState(
+      reflectivitySwitch,
+      false
+    );
+
+    radarVisible=false;
+
+    redrawRadar();
+
+  }else{
+
+    /*
+      ОЯ можно выключить.
+      Отражайка при этом сама
+      НЕ включается.
+    */
+
+    setSwitchState(
+      oyaSwitch,
+      false
+    );
+
+  }
+
+};
+
+reflectivitySwitch.onclick=e=>{
+
+  e.stopPropagation();
+
+  const shouldEnable=
+    !reflectivitySwitch.classList.contains(
+      "on"
+    );
+
+  if(shouldEnable){
+
+    /*
+      Отражайку включаем,
+      ОЯ обязательно выключаем.
+    */
+
+    setSwitchState(
+      reflectivitySwitch,
+      true
+    );
+
+    setSwitchState(
+      oyaSwitch,
+      false
+    );
+
+    radarVisible=true;
+
+    redrawRadar();
+
+  }else{
+
+    /*
+      Отражайку можно выключить.
+      ОЯ при этом сама
+      НЕ включается.
+    */
+
+    setSwitchState(
+      reflectivitySwitch,
+      false
+    );
+
+    radarVisible=false;
+
+    redrawRadar();
+
+  }
+
+};
+
+lightningSwitch.onclick=e=>{
+
+  e.stopPropagation();
+
+  /*
+    Молнии полностью независимы.
+    Здесь не изменяется состояние
+    ни ОЯ, ни отражаемости.
+  */
+
+  lightningSwitch.classList.toggle(
+    "on"
+  );
+
+};
 
 /* =====================================================
    LAYERS NAV
