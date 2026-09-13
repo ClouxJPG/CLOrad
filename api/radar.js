@@ -1,288 +1,618 @@
 // api/radar.js
 
 const NOWCAST = "https://www.nowcast.ru";
-const WMS = `${NOWCAST}/baltrad_wsgi`;
-const TOKEN = `${NOWCAST}/get_token`;
 
-const LAYER = "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
+const WMS_URL =
+  `${NOWCAST}/baltrad_wsgi`;
 
-const headers = {
+const TOKEN_URL =
+  `${NOWCAST}/get_token`;
+
+// Это точное значение пункта
+// "Отражаемость 1км BUFR" из Nowcast demo.
+const RADAR_LAYER =
+  "bufr_dbz1,bufr_novosib_dbz1,bufr_vlad_dbz1";
+
+const DEMO_URL =
+  "https://www.nowcast.ru/demo/demo.html";
+
+const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1",
-  "Referer": "https://www.nowcast.ru/demo/demo.html",
-  "Origin": "https://www.nowcast.ru"
+
+  "Referer":
+    DEMO_URL,
+
+  "Origin":
+    NOWCAST
 };
 
+
+// -----------------------------------------------------
+// CORS
+// -----------------------------------------------------
+
 function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-}
 
-async function getToken() {
-  const r = await fetch(TOKEN, {
-    headers: {
-      ...headers,
-      Accept: "application/json"
-    }
-  });
-
-  if (!r.ok) {
-    throw new Error(`Token HTTP ${r.status}`);
-  }
-
-  const j = await r.json();
-
-  if (!j.token) {
-    throw new Error("Nowcast token отсутствует");
-  }
-
-  return j.token;
-}
-
-async function nowcast(url) {
-  let token = await getToken();
-
-  let r = await fetch(
-    url + (url.includes("?") ? "&" : "?") +
-    "token=" + encodeURIComponent(token),
-    {
-      headers,
-      redirect: "follow"
-    }
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
   );
 
-  if (r.status === 403) {
-    token = await getToken();
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, OPTIONS"
+  );
 
-    r = await fetch(
-      url + (url.includes("?") ? "&" : "?") +
-      "token=" + encodeURIComponent(token),
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "*"
+  );
+}
+
+
+// -----------------------------------------------------
+// TOKEN CACHE
+// -----------------------------------------------------
+
+let cachedToken = null;
+let tokenExpires = 0;
+
+
+async function getToken() {
+
+  // Используем один token примерно 25 секунд.
+  // У Nowcast он живёт около 30 секунд.
+
+  if (
+    cachedToken &&
+    Date.now() < tokenExpires
+  ) {
+
+    return cachedToken;
+  }
+
+
+  const response =
+    await fetch(
+      TOKEN_URL,
       {
-        headers,
+        method: "GET",
+
+        headers: {
+          ...HEADERS,
+          "Accept":
+            "application/json"
+        },
+
         redirect: "follow"
       }
     );
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      `Nowcast /get_token HTTP ${response.status}`
+    );
   }
 
-  return r;
+
+  const data =
+    await response.json();
+
+
+  if (!data.token) {
+
+    throw new Error(
+      "Nowcast не вернул token"
+    );
+  }
+
+
+  cachedToken =
+    data.token;
+
+  tokenExpires =
+    Date.now() + 25000;
+
+
+  return cachedToken;
 }
 
 
-/*
-=========================================================
-Получаем список времени WMS
-=========================================================
-*/
+// -----------------------------------------------------
+// ADD TOKEN
+// -----------------------------------------------------
 
-async function getTimes() {
+function withToken(url, token) {
+
+  const u =
+    new URL(url);
+
+  u.searchParams.set(
+    "token",
+    token
+  );
+
+  return u.toString();
+}
+
+
+// -----------------------------------------------------
+// FETCH NOWCAST
+// -----------------------------------------------------
+
+async function fetchNowcast(
+  url,
+  options = {}
+) {
+
+  let token =
+    await getToken();
+
+
+  let response =
+    await fetch(
+      withToken(url, token),
+      {
+        ...options,
+
+        headers: {
+          ...HEADERS,
+          ...(options.headers || {})
+        },
+
+        redirect:
+          "follow"
+      }
+    );
+
+
+  // Token мог протухнуть.
+  // Получаем новый и повторяем запрос.
+
+  if (
+    response.status === 403
+  ) {
+
+    cachedToken = null;
+    tokenExpires = 0;
+
+    token =
+      await getToken();
+
+
+    response =
+      await fetch(
+        withToken(url, token),
+        {
+          ...options,
+
+          headers: {
+            ...HEADERS,
+            ...(options.headers || {})
+          },
+
+          redirect:
+            "follow"
+        }
+      );
+  }
+
+
+  return response;
+}
+
+
+// -----------------------------------------------------
+// GET CAPABILITIES
+// -----------------------------------------------------
+
+async function getCapabilities() {
 
   const url =
-    WMS +
+    WMS_URL +
     "?SERVICE=WMS" +
     "&VERSION=1.1.1" +
     "&REQUEST=GetCapabilities";
 
-  const r = await nowcast(url);
 
-  const xml = await r.text();
+  const response =
+    await fetchNowcast(url);
 
-  if (!r.ok) {
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
     throw new Error(
-      `GetCapabilities HTTP ${r.status}`
+      `GetCapabilities HTTP ${response.status}`
     );
   }
+
+
+  return text;
+}
+
+
+// -----------------------------------------------------
+// EXTRACT TIMES
+// -----------------------------------------------------
+
+function extractTimes(xml) {
 
   const matches =
     xml.match(
       /20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
     ) || [];
 
-  return [...new Set(matches)].sort();
+
+  return [
+    ...new Set(matches)
+  ].sort();
 }
 
 
-/*
-=========================================================
-Берём время максимально близкое к текущему.
-Без vector-запросов.
-=========================================================
-*/
+// -----------------------------------------------------
+// CURRENT TIME
+// -----------------------------------------------------
 
-async function getBestTime() {
+async function getCurrentTime() {
 
-  const times = await getTimes();
+  const xml =
+    await getCapabilities();
+
+
+  const times =
+    extractTimes(xml);
+
 
   if (!times.length) {
-    throw new Error("В WMS нет временных меток");
+
+    throw new Error(
+      "Nowcast не вернул TIME"
+    );
   }
 
-  const now = Date.now();
 
-  let best = null;
-  let bestDiff = Infinity;
+  const now =
+    Date.now();
 
-  for (const t of times) {
 
-    const ms = Date.parse(t);
+  /*
+   * Берём последний timestamp,
+   * который уже наступил.
+   *
+   * Небольшой запас 15 минут оставлен
+   * на расхождение часов.
+   */
 
-    if (!Number.isFinite(ms)) continue;
+  let selected =
+    null;
 
-    /*
-     * Не берём слишком далёкое будущее.
-     * Небольшой запас оставляем из-за часов сервера.
-     */
 
-    if (ms > now + 20 * 60 * 1000) {
+  for (
+    const time of times
+  ) {
+
+    const ms =
+      Date.parse(time);
+
+
+    if (
+      !Number.isFinite(ms)
+    ) {
       continue;
     }
 
-    const diff = Math.abs(now - ms);
 
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = t;
+    if (
+      ms <=
+      now + 15 * 60 * 1000
+    ) {
+
+      selected =
+        time;
     }
   }
 
+
   /*
-   * Если часы Nowcast сильно впереди —
-   * просто используем последний timestamp.
+   * Если сервер Nowcast живёт
+   * с сильно отличающимися часами,
+   * используем последний timestamp.
    */
 
-  if (!best) {
-    best = times[times.length - 1];
+  if (!selected) {
+
+    selected =
+      times[times.length - 1];
   }
 
-  return best;
+
+  return selected;
 }
 
 
-/*
-=========================================================
-WMS IMAGE
-=========================================================
-*/
+// -----------------------------------------------------
+// WMS PROXY
+// -----------------------------------------------------
 
-async function getImage(time, req) {
+async function proxyWMS(
+  req,
+  res
+) {
 
   /*
-   * Россия + европейская часть.
-   * Координаты именно WGS84.
+   * ВАЖНО:
+   *
+   * Мы НЕ создаём BBOX сами.
+   *
+   * Leaflet создаёт его для каждого тайла.
+   *
+   * Мы просто передаём его в Nowcast.
    */
 
-  const bbox =
-    req.query.bbox ||
-    "20,40,180,82";
-
-  const width =
-    Number(req.query.width) || 1400;
-
-  const height =
-    Number(req.query.height) || 800;
+  const params =
+    new URLSearchParams();
 
 
-  const p = new URLSearchParams();
+  /*
+   * Передаём только WMS параметры.
+   */
 
-  p.set("SERVICE", "WMS");
-  p.set("VERSION", "1.1.1");
-  p.set("REQUEST", "GetMap");
-
-  p.set(
+  const allowed = [
+    "SERVICE",
+    "VERSION",
+    "REQUEST",
     "LAYERS",
-    LAYER
-  );
-
-  p.set("STYLES", "");
-
-  p.set(
+    "STYLES",
     "SRS",
-    "EPSG:4326"
-  );
-
-  p.set(
+    "CRS",
     "BBOX",
-    bbox
-  );
-
-  p.set(
     "WIDTH",
-    String(width)
-  );
-
-  p.set(
     "HEIGHT",
-    String(height)
-  );
-
-  p.set(
     "FORMAT",
-    "image/png"
+    "TRANSPARENT",
+    "TIME",
+    "EXCEPTIONS",
+    "DPI",
+    "FORMAT_OPTIONS"
+  ];
+
+
+  for (
+    const key of allowed
+  ) {
+
+    const value =
+      req.query[key.toLowerCase()] ??
+      req.query[key];
+
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+
+      params.set(
+        key,
+        String(value)
+      );
+    }
+  }
+
+
+  /*
+   * Leaflet будет использовать 1.1.1.
+   */
+
+  if (
+    !params.has("SERVICE")
+  ) {
+
+    params.set(
+      "SERVICE",
+      "WMS"
+    );
+  }
+
+
+  if (
+    !params.has("VERSION")
+  ) {
+
+    params.set(
+      "VERSION",
+      "1.1.1"
+    );
+  }
+
+
+  if (
+    !params.has("REQUEST")
+  ) {
+
+    params.set(
+      "REQUEST",
+      "GetMap"
+    );
+  }
+
+
+  /*
+   * Именно радарный слой Nowcast.
+   */
+
+  params.set(
+    "LAYERS",
+    RADAR_LAYER
   );
 
-  p.set(
+
+  if (
+    !params.has("STYLES")
+  ) {
+
+    params.set(
+      "STYLES",
+      ""
+    );
+  }
+
+
+  if (
+    !params.has("FORMAT")
+  ) {
+
+    params.set(
+      "FORMAT",
+      "image/png"
+    );
+  }
+
+
+  /*
+   * Критично:
+   * радар должен быть прозрачным.
+   */
+
+  params.set(
     "TRANSPARENT",
     "TRUE"
   );
 
-  p.set(
-    "TIME",
-    time
-  );
-
 
   const url =
-    WMS + "?" + p.toString();
+    WMS_URL +
+    "?" +
+    params.toString();
 
 
-  return await nowcast(url);
-}
+  const response =
+    await fetchNowcast(
+      url
+    );
 
 
-/*
-=========================================================
-HANDLER
-=========================================================
-*/
+  const contentType =
+    response.headers.get(
+      "content-type"
+    ) ||
+    "image/png";
 
-export default async function handler(req, res) {
+
+  const body =
+    Buffer.from(
+      await response.arrayBuffer()
+    );
+
+
+  if (!response.ok) {
+
+    res.status(
+      response.status
+    );
+
+    res.setHeader(
+      "Content-Type",
+      "text/plain; charset=utf-8"
+    );
+
+    res.end(
+      body.toString(
+        "utf8"
+      )
+    );
+
+    return;
+  }
+
 
   cors(res);
 
-  if (req.method === "OPTIONS") {
+
+  res.status(200);
+
+  res.setHeader(
+    "Content-Type",
+    contentType
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "no-store, max-age=0"
+  );
+
+
+  res.end(body);
+}
+
+
+// -----------------------------------------------------
+// HANDLER
+// -----------------------------------------------------
+
+export default async function handler(
+  req,
+  res
+) {
+
+  cors(res);
+
+
+  if (
+    req.method ===
+    "OPTIONS"
+  ) {
+
     res.status(204).end();
+
     return;
   }
+
 
   try {
 
     const action =
-      req.query.action || "nowcast-image";
+      String(
+        req.query.action ||
+        ""
+      ).toLowerCase();
 
 
-    /*
-    -----------------------------------------------------
-    ВРЕМЯ
-    -----------------------------------------------------
-    */
+    // -------------------------------------------------
+    // CURRENT TIME
+    // -------------------------------------------------
 
-    if (action === "nowcast-time") {
+    if (
+      action ===
+      "time"
+    ) {
 
       const time =
-        await getBestTime();
+        await getCurrentTime();
+
 
       res.status(200);
 
       res.setHeader(
         "Content-Type",
-        "application/json"
+        "application/json; charset=utf-8"
       );
 
       res.end(
         JSON.stringify({
           ok: true,
+
           time,
-          layer: LAYER
+
+          layer:
+            RADAR_LAYER
         })
       );
 
@@ -290,28 +620,37 @@ export default async function handler(req, res) {
     }
 
 
-    /*
-    -----------------------------------------------------
-    ВРЕМЕНА
-    -----------------------------------------------------
-    */
+    // -------------------------------------------------
+    // TIMES
+    // -------------------------------------------------
 
-    if (action === "nowcast-times") {
+    if (
+      action ===
+      "times"
+    ) {
+
+      const xml =
+        await getCapabilities();
+
 
       const times =
-        await getTimes();
+        extractTimes(xml);
+
 
       res.status(200);
 
       res.setHeader(
         "Content-Type",
-        "application/json"
+        "application/json; charset=utf-8"
       );
 
       res.end(
         JSON.stringify({
           ok: true,
-          count: times.length,
+
+          count:
+            times.length,
+
           times
         })
       );
@@ -320,134 +659,82 @@ export default async function handler(req, res) {
     }
 
 
-    /*
-    -----------------------------------------------------
-    РАДАРНАЯ КАРТИНКА
-    -----------------------------------------------------
-    */
+    // -------------------------------------------------
+    // WMS
+    // -------------------------------------------------
 
-    if (action === "nowcast-image") {
+    if (
+      action ===
+      "wms"
+    ) {
 
-      let time =
-        req.query.time;
-
-      if (!time) {
-        time =
-          await getBestTime();
-      }
-
-
-      const r =
-        await getImage(
-          time,
-          req
-        );
-
-
-      const contentType =
-        r.headers.get(
-          "content-type"
-        ) || "";
-
-
-      if (!r.ok) {
-
-        const text =
-          await r.text();
-
-        res.status(r.status);
-
-        res.setHeader(
-          "Content-Type",
-          "application/json"
-        );
-
-        res.end(
-          JSON.stringify({
-            ok: false,
-            error:
-              `Nowcast WMS HTTP ${r.status}`,
-            body:
-              text.slice(0, 1000)
-          })
-        );
-
-        return;
-      }
-
-
-      const buffer =
-        Buffer.from(
-          await r.arrayBuffer()
-        );
-
-
-      res.status(200);
-
-      res.setHeader(
-        "Content-Type",
-        contentType ||
-        "image/png"
+      await proxyWMS(
+        req,
+        res
       );
-
-      res.setHeader(
-        "Cache-Control",
-        "no-store"
-      );
-
-      res.setHeader(
-        "X-Radar-Time",
-        time
-      );
-
-      res.end(buffer);
 
       return;
     }
 
 
-    /*
-    -----------------------------------------------------
-    INFO
-    -----------------------------------------------------
-    */
+    // -------------------------------------------------
+    // DEFAULT
+    // -------------------------------------------------
 
     res.status(200);
 
     res.setHeader(
       "Content-Type",
-      "application/json"
+      "application/json; charset=utf-8"
     );
 
     res.end(
       JSON.stringify({
         ok: true,
-        service: "CLOrad Nowcast WMS",
-        layer: LAYER,
-        actions: [
-          "nowcast-time",
-          "nowcast-times",
-          "nowcast-image"
-        ]
+
+        service:
+          "CLOrad → Nowcast WMS",
+
+        layer:
+          RADAR_LAYER,
+
+        endpoints: {
+          time:
+            "/api/radar?action=time",
+
+          times:
+            "/api/radar?action=times",
+
+          wms:
+            "/api/radar?action=wms"
+        }
       })
     );
 
-  } catch (e) {
+  } catch (error) {
 
-    console.error(e);
+    console.error(
+      "CLOrad Nowcast:",
+      error
+    );
+
+
+    cors(res);
 
     res.status(500);
 
     res.setHeader(
       "Content-Type",
-      "application/json"
+      "application/json; charset=utf-8"
     );
 
     res.end(
       JSON.stringify({
         ok: false,
+
         error:
-          e.message || String(e)
+          error.message ||
+          String(error)
       })
     );
   }
