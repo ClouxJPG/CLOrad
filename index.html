@@ -7,35 +7,207 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body,#map{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
-body{overflow:hidden;background:#edf0f2;color:#eef1f3}
-button{font:inherit;cursor:pointer}
-#map{position:fixed;inset:0;z-index:0}
-.leaflet-control-attribution{font-size:9px!important;background:#ffffffaa!important}
+*{
+box-sizing:border-box;
+-webkit-tap-highlight-color:transparent
+}
+
+html,body,#map{
+margin:0;
+width:100%;
+height:100%;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
+}
+
+body{
+overflow:hidden;
+background:#edf0f2;
+color:#eef1f3
+}
+
+button{
+font:inherit;
+cursor:pointer
+}
+
+#map{
+position:fixed;
+inset:0;
+z-index:0
+}
+
+.leaflet-control-attribution{
+font-size:9px!important;
+background:#ffffffaa!important
+}
+
 
 /* =========================
    HEADER
 ========================= */
-.header{position:fixed;z-index:20;top:0;left:0;right:0;height:80px;background:#10151a;display:flex;align-items:center;padding:0 20px}
-.brand{display:flex;align-items:center;gap:10px}
-.name{font-size:34px;font-weight:800;letter-spacing:-2px;color:#f5f6f7}
-.radarLogo{width:49px;height:49px;border:2px solid #51e29a;border-radius:50%;position:relative;overflow:hidden;background:#10181a;flex:none;box-shadow:0 0 10px #51e29a22}
-.radarLogo:before,.radarLogo:after{content:"";position:absolute;border:1px solid #51e29a99;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
-.radarLogo:before{width:36px;height:36px}
-.radarLogo:after{width:20px;height:20px}
-.radarLogo b{position:absolute;width:5px;height:5px;background:#51e29a;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
-.radarLogo i{position:absolute;width:50%;height:50%;left:50%;top:50%;transform-origin:0 0;background:linear-gradient(45deg,#51e29a88,transparent);clip-path:polygon(0 0,100% 0,0 100%);animation:scan 2.4s linear infinite;z-index:2}
-@keyframes scan{to{transform:rotate(360deg)}}
-.head{margin-left:auto;display:flex;gap:5px}
-.h{width:51px;height:51px;border:0;border-radius:9px;background:transparent;color:#c3c9cd;display:grid;place-items:center;position:relative}
-.h.active{background:#222b34;border:1px solid #35404a}
-.h svg{width:29px;height:29px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.bell:after{content:"";position:absolute;width:8px;height:8px;background:#ff5867;border-radius:50%;right:6px;top:7px}
+
+.header{
+position:fixed;
+z-index:20;
+top:0;
+left:0;
+right:0;
+height:80px;
+background:#10151a;
+display:flex;
+align-items:center;
+padding:0 20px
+}
+
+.brand{
+display:flex;
+align-items:center;
+gap:10px
+}
+
+.name{
+font-size:34px;
+font-weight:800;
+letter-spacing:-2px;
+color:#f5f6f7
+}
+
+
+/* НОВАЯ СТАТИЧНАЯ RADAR ИКОНКА */
+
+.radarLogo{
+width:49px;
+height:49px;
+border:2px solid #51e29a;
+border-radius:50%;
+position:relative;
+overflow:hidden;
+background:#10181a;
+flex:none;
+box-shadow:0 0 10px #51e29a22
+}
+
+.radarLogo:before{
+content:"";
+position:absolute;
+width:32px;
+height:32px;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+border:1.5px solid #51e29a99;
+border-radius:50%
+}
+
+.radarLogo:after{
+content:"";
+position:absolute;
+width:17px;
+height:17px;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+border:1.5px solid #51e29a99;
+border-radius:50%
+}
+
+.radarLogo .rline1,
+.radarLogo .rline2,
+.radarLogo .rline3,
+.radarLogo .rline4{
+position:absolute;
+background:#51e29a88;
+left:50%;
+top:50%;
+transform-origin:center
+}
+
+.radarLogo .rline1{
+width:1px;
+height:40px;
+transform:translate(-50%,-50%)
+}
+
+.radarLogo .rline2{
+width:40px;
+height:1px;
+transform:translate(-50%,-50%)
+}
+
+.radarLogo .rline3{
+width:1px;
+height:40px;
+transform:translate(-50%,-50%) rotate(45deg)
+}
+
+.radarLogo .rline4{
+width:1px;
+height:40px;
+transform:translate(-50%,-50%) rotate(-45deg)
+}
+
+.radarLogo b{
+position:absolute;
+width:6px;
+height:6px;
+background:#51e29a;
+border-radius:50%;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+z-index:3;
+box-shadow:0 0 5px #51e29a66
+}
+
+.head{
+margin-left:auto;
+display:flex;
+gap:5px
+}
+
+.h{
+width:51px;
+height:51px;
+border:0;
+border-radius:9px;
+background:transparent;
+color:#c3c9cd;
+display:grid;
+place-items:center;
+position:relative
+}
+
+.h.active{
+background:#222b34;
+border:1px solid #35404a
+}
+
+.h svg{
+width:29px;
+height:29px;
+fill:none;
+stroke:currentColor;
+stroke-width:2;
+stroke-linecap:round;
+stroke-linejoin:round
+}
+
+.bell:after{
+content:"";
+position:absolute;
+width:8px;
+height:8px;
+background:#ff5867;
+border-radius:50%;
+right:6px;
+top:7px
+}
+
 
 /* =========================
    NAV
 ========================= */
+
 .nav{
 position:fixed;
 z-index:19;
@@ -52,10 +224,18 @@ touch-action:pan-x;
 overscroll-behavior-x:contain;
 overscroll-behavior-y:none;
 -webkit-overflow-scrolling:touch;
-transition:transform .25s ease,opacity .2s ease;
+transition:transform .25s ease,opacity .2s ease
 }
-.nav::-webkit-scrollbar{display:none}
-.nav.closed{transform:translateY(-100%);opacity:0;pointer-events:none}
+
+.nav::-webkit-scrollbar{
+display:none
+}
+
+.nav.closed{
+transform:translateY(-100%);
+opacity:0;
+pointer-events:none
+}
 
 .n{
 min-width:88px;
@@ -85,7 +265,10 @@ stroke-linecap:round;
 stroke-linejoin:round
 }
 
-.n.active{color:#53e39b}
+.n.active{
+color:#53e39b
+}
+
 .n.active:after{
 content:"";
 position:absolute;
@@ -96,9 +279,11 @@ left:8px;
 right:8px
 }
 
+
 /* =========================
    MAP TOOLS
 ========================= */
+
 .tools{
 position:fixed;
 z-index:8;
@@ -131,20 +316,39 @@ stroke-linecap:round;
 stroke-linejoin:round
 }
 
-/* Геопозиция — отдельная кнопка под +/- */
-#geo{
-color:#e4e8eb
+
+/* =========================
+   LOCATION BUTTON
+========================= */
+
+.locationMap{
+width:56px;
+height:56px;
+border-radius:11px;
+border:1px solid #3c4650;
+background:#192129ee;
+color:#e4e8eb;
+display:grid;
+place-items:center;
+box-shadow:0 3px 9px #0002;
+padding:0;
+margin:0
 }
 
-#geo svg{
-width:35px;
-height:35px;
-stroke-width:2
+.locationMap svg{
+width:34px;
+height:34px;
+fill:#e4e8eb;
+stroke:#e4e8eb;
+stroke-width:1;
+stroke-linejoin:round
 }
+
 
 /* =========================
    LAYERS
 ========================= */
+
 .layers{
 position:fixed;
 z-index:8;
@@ -168,10 +372,9 @@ pointer-events:none
 
 .layer{
 height:56px;
-display:grid;
-grid-template-columns:27px 1fr 54px;
+display:flex;
 align-items:center;
-column-gap:8px
+gap:7px
 }
 
 .layer svg{
@@ -185,13 +388,23 @@ stroke-linejoin:round;
 flex:none
 }
 
-.layer:nth-child(2) svg{stroke:#50aaff}
-.layer:nth-child(3) svg{stroke:#ff777e}
+.layer:nth-child(2) svg{
+stroke:#50aaff
+}
+
+.layer:nth-child(3) svg{
+stroke:#ff777e
+}
+
+
+/* фиксированная ширина текста =
+   все переключатели стоят ровно друг под другом */
 
 .layer span{
 font-size:16px;
 line-height:1;
-min-width:0;
+width:54px;
+flex:none;
 white-space:nowrap
 }
 
@@ -199,22 +412,24 @@ white-space:nowrap
 font-size:13px
 }
 
+
+/* немного уменьшенные переключатели */
+
 .switch{
-width:54px;
-height:30px;
+width:48px;
+height:27px;
 border:0;
 border-radius:18px;
 background:#626a70;
 position:relative;
 padding:0;
-flex:none;
-justify-self:end
+flex:none
 }
 
 .switch i{
 position:absolute;
-width:24px;
-height:24px;
+width:21px;
+height:21px;
 left:3px;
 top:3px;
 border-radius:50%;
@@ -227,12 +442,14 @@ background:#43d58d
 }
 
 .switch.on i{
-left:27px
+left:24px
 }
+
 
 /* =========================
    LEGEND
 ========================= */
+
 .legendTab{
 position:fixed;
 z-index:13;
@@ -254,7 +471,9 @@ justify-content:center;
 box-shadow:0 3px 12px #0003
 }
 
-.legendTab.hidden{display:none}
+.legendTab.hidden{
+display:none
+}
 
 .legend{
 position:fixed;
@@ -273,7 +492,9 @@ overflow:auto;
 box-shadow:0 5px 18px #0004
 }
 
-.legend.open{right:0}
+.legend.open{
+right:0
+}
 
 .legendTitle{
 font-size:16px;
@@ -330,9 +551,11 @@ flex:none
 .l18{background:#ca3cc7}
 .l19{background:#777c91}
 
+
 /* =========================
    DATA
 ========================= */
+
 .data{
 position:fixed;
 z-index:7;
@@ -357,7 +580,9 @@ flex-direction:column;
 justify-content:center
 }
 
-.cell:last-child{border:0}
+.cell:last-child{
+border:0
+}
 
 .lab{
 font-size:10px;
@@ -371,9 +596,11 @@ font-weight:700;
 margin-top:4px
 }
 
+
 /* =========================
    TIMELINE
 ========================= */
+
 .timeline{
 position:fixed;
 z-index:12;
@@ -454,9 +681,11 @@ font-size:10px;
 margin-top:8px
 }
 
+
 /* =========================
    SEARCH
 ========================= */
+
 .popup{
 position:fixed;
 z-index:30;
@@ -467,7 +696,9 @@ border-radius:9px;
 box-shadow:0 10px 30px #0008
 }
 
-.popup.open{display:block}
+.popup.open{
+display:block
+}
 
 .search{
 right:12px;
@@ -488,38 +719,81 @@ font-size:16px;
 outline:none
 }
 
+
 /* =========================
    LIGHT THEME
 ========================= */
-body.light .header{background:#f5f6f7}
-body.light .name{color:#171b1e}
-body.light .h{color:#4f575d}
-body.light .h.active{background:#e1e5e8}
-body.light .nav{background:#f5f6f7;border-color:#d4d9dd}
-body.light .n{color:#687177}
+
+body.light .header{
+background:#f5f6f7
+}
+
+body.light .name{
+color:#171b1e
+}
+
+body.light .h{
+color:#4f575d
+}
+
+body.light .h.active{
+background:#e1e5e8
+}
+
+body.light .nav{
+background:#f5f6f7;
+border-color:#d4d9dd
+}
+
+body.light .n{
+color:#687177
+}
+
 body.light .layers,
 body.light .tool,
+body.light .locationMap,
 body.light .legend,
 body.light .legendTab{
 background:#f6f8f9ee;
 color:#252b2f;
 border-color:#c9d0d5
 }
-body.light .layer span{color:#252b2f}
-body.light .tool{color:#30383d}
+
+body.light .layer span{
+color:#252b2f
+}
+
+body.light .tool,
+body.light .locationMap{
+color:#30383d
+}
+
+body.light .locationMap svg{
+fill:#30383d;
+stroke:#30383d
+}
+
 body.light .data,
 body.light .timeline{
 background:#f5f7f8ee;
 color:#22292d;
 border-color:#cbd2d6
 }
+
 body.light .lab,
-body.light .times{color:#70797f}
-body.light .timeline input{background:#a2a9ad}
+body.light .times{
+color:#70797f
+}
+
+body.light .timeline input{
+background:#a2a9ad
+}
+
 
 /* =========================
    MOBILE
 ========================= */
+
 @media(max-width:600px){
 
 .header{
@@ -602,21 +876,30 @@ width:220px
 
 <div id="map"></div>
 
+
 <!-- =========================
      HEADER
 ========================= -->
+
 <header class="header">
 
 <div class="brand">
 
 <div class="radarLogo">
-<i></i>
+
+<div class="rline1"></div>
+<div class="rline2"></div>
+<div class="rline3"></div>
+<div class="rline4"></div>
+
 <b></b>
+
 </div>
 
 <div class="name">CLOrad</div>
 
 </div>
+
 
 <div class="head">
 
@@ -629,6 +912,7 @@ width:220px
 
 </button>
 
+
 <button class="h" id="themeBtn" aria-label="Тема">
 
 <svg viewBox="0 0 24 24">
@@ -638,6 +922,7 @@ width:220px
 
 </button>
 
+
 <button class="h bell" id="bell" aria-label="Уведомления">
 
 <svg viewBox="0 0 24 24">
@@ -645,6 +930,7 @@ width:220px
 </svg>
 
 </button>
+
 
 <button class="h" id="menuBtn" aria-label="Меню">
 
@@ -669,7 +955,9 @@ width:220px
 <!-- =========================
      NAV
 ========================= -->
+
 <nav class="nav" id="nav">
+
 
 <button class="n active">
 
@@ -756,6 +1044,7 @@ width:220px
 <!-- =========================
      MAP TOOLS
 ========================= -->
+
 <div class="tools">
 
 <button class="tool" id="plus">
@@ -776,18 +1065,13 @@ width:220px
 </button>
 
 
-<!-- НОВАЯ КНОПКА ГЕОПОЗИЦИИ -->
-<button class="tool" id="geo" aria-label="Моё местоположение">
+<!-- НОВАЯ КНОПКА ГЕОЛОКАЦИИ -->
+
+<button class="locationMap" id="location" aria-label="Моё местоположение">
 
 <svg viewBox="0 0 24 24">
 
-<circle cx="12" cy="12" r="7"/>
-<circle cx="12" cy="12" r="2.5"/>
-
-<path d="M12 2v3"/>
-<path d="M12 19v3"/>
-<path d="M2 12h3"/>
-<path d="M19 12h3"/>
+<path d="M4 3.5L20.5 10.5L14 13.5L11 20.5L4 3.5Z"/>
 
 </svg>
 
@@ -799,6 +1083,7 @@ width:220px
 <!-- =========================
      LAYERS
 ========================= -->
+
 <div class="layers" id="layers">
 
 <div class="layer">
@@ -854,6 +1139,7 @@ width:220px
 <!-- =========================
      LEGEND
 ========================= -->
+
 <button class="legendTab" id="legendTab">
 Легенда
 </button>
@@ -895,6 +1181,7 @@ width:220px
 <!-- =========================
      DATA
 ========================= -->
+
 <div class="data">
 
 <div class="cell">
@@ -941,10 +1228,11 @@ width:220px
 <!-- =========================
      TIMELINE
 ========================= -->
+
 <div class="timeline">
 
 <div class="thead" id="timeLabel">
---:--, --
+13:00, 13 СЕНТЯБРЯ
 </div>
 
 
@@ -965,13 +1253,22 @@ width:220px
 id="range"
 type="range"
 min="0"
-max="0"
+max="68"
 step="1"
-value="0"
+value="68"
 >
 
+<div class="times">
 
-<div class="times" id="timeMarks"></div>
+<span>06:00</span>
+<span>08:00</span>
+<span>10:00</span>
+<span>12:00</span>
+<span>14:00</span>
+<span>16:00</span>
+<span>18:00</span>
+
+</div>
 
 </div>
 
@@ -986,18 +1283,19 @@ value="0"
 
 /* =========================
    MAP
+   ОСТАВЛЕНА ТОЛЬКО ПЕРВАЯ
+   СВЕТЛАЯ КАРТА LEAFLET
 ========================= */
 
-const map=L.map("map",{zoomControl:false})
-.setView([55.75,37.62],5);
-
+const map=L.map("map",{
+zoomControl:false
+}).setView(
+[55.75,37.62],
+5
+);
 
 const light=
 "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-const dark=
-"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-
 
 let tiles=L.tileLayer(
 light,
@@ -1012,7 +1310,8 @@ attribution:"© OpenStreetMap"
    HELPERS
 ========================= */
 
-const $=id=>document.getElementById(id);
+const $=id=>
+document.getElementById(id);
 
 
 function msg(t){
@@ -1022,7 +1321,17 @@ let x=document.createElement("div");
 x.textContent=t;
 
 x.style=
-"position:fixed;z-index:100;left:50%;bottom:125px;transform:translateX(-50%);background:#202930;color:#fff;padding:9px 14px;border-radius:8px;border:1px solid #3d4850;white-space:nowrap";
+"position:fixed;"+
+"z-index:100;"+
+"left:50%;"+
+"bottom:125px;"+
+"transform:translateX(-50%);"+
+"background:#202930;"+
+"color:#fff;"+
+"padding:9px 14px;"+
+"border-radius:8px;"+
+"border:1px solid #3d4850;"+
+"white-space:nowrap";
 
 document.body.append(x);
 
@@ -1038,35 +1347,52 @@ setTimeout(
    ZOOM
 ========================= */
 
-$("plus").onclick=()=>map.zoomIn();
+$("plus").onclick=()=>
+map.zoomIn();
 
-$("minus").onclick=()=>map.zoomOut();
+$("minus").onclick=()=>
+map.zoomOut();
 
 
 /* =========================
-   GEOLOCATION
+   LOCATION
 ========================= */
 
-$("geo").onclick=()=>{
+$("location").onclick=()=>{
 
-if(!navigator.geolocation)
-return msg("Геолокация недоступна");
+if(!navigator.geolocation){
 
+return msg(
+"Геолокация недоступна"
+);
+
+}
 
 navigator.geolocation.getCurrentPosition(
 
 p=>{
 
 map.setView(
-[p.coords.latitude,p.coords.longitude],
+[
+p.coords.latitude,
+p.coords.longitude
+],
 9
 );
 
-msg("Местоположение найдено");
+msg(
+"Местоположение найдено"
+);
 
 },
 
-()=>msg("Не удалось определить местоположение")
+()=>{
+
+msg(
+"Не удалось определить местоположение"
+);
+
+}
 
 );
 
@@ -1077,7 +1403,8 @@ msg("Местоположение найдено");
    LAYERS
 ========================= */
 
-document.querySelectorAll(".switch")
+document
+.querySelectorAll(".switch")
 .forEach(x=>{
 
 x.onclick=e=>{
@@ -1097,9 +1424,19 @@ x.classList.toggle("on");
 
 $("layersNav").onclick=()=>{
 
-$("layers").classList.toggle("hidden");
+$("layers").classList.toggle(
+"hidden"
+);
 
-$("layersNav").classList.toggle("active");
+/*
+   Верхняя кнопка Слои остаётся
+   выбранной, пока пользователь
+   работает с этим разделом.
+*/
+
+$("layersNav").classList.add(
+"active"
+);
 
 };
 
@@ -1140,7 +1477,8 @@ e=>{
 
 if(!drag)return;
 
-const dx=e.clientX-startX;
+const dx=
+e.clientX-startX;
 
 $("nav").scrollLeft=
 startScroll-dx;
@@ -1209,7 +1547,8 @@ open
 $("legendTab").onclick=()=>{
 
 legendToggle(
-!$("legend").classList.contains("open")
+!$("legend")
+.classList.contains("open")
 );
 
 };
@@ -1234,11 +1573,15 @@ x.onclick=()=>{
 
 document
 .querySelectorAll(".n")
-.forEach(n=>n.classList.remove("active"));
+.forEach(n=>
+n.classList.remove("active")
+);
 
 x.classList.add("active");
 
-msg(x.textContent);
+msg(
+x.textContent
+);
 
 };
 
@@ -1270,13 +1613,21 @@ const cities={
 
 $("searchBtn").onclick=()=>{
 
-$("search").classList.toggle("open");
+$("search").classList.toggle(
+"open"
+);
 
-if($("search").classList.contains("open"))
+if(
+$("search")
+.classList.contains("open")
+){
+
 setTimeout(
 ()=>$("searchInput").focus(),
 50
 );
+
+}
 
 };
 
@@ -1289,10 +1640,9 @@ let q=e.target.value
 .toLowerCase()
 .trim();
 
-
-let k=Object.keys(cities)
+let k=
+Object.keys(cities)
 .find(x=>x.includes(q));
-
 
 if(k){
 
@@ -1301,15 +1651,19 @@ cities[k],
 9
 );
 
-$("search").classList.remove("open");
+$("search")
+.classList.remove("open");
 
 msg(
-k[0].toUpperCase()+k.slice(1)
+k[0].toUpperCase()+
+k.slice(1)
 );
 
 }else{
 
-msg("Город не найден");
+msg(
+"Город не найден"
+);
 
 }
 
@@ -1322,15 +1676,20 @@ msg("Город не найден");
 
 $("menuBtn").onclick=()=>{
 
-$("nav").classList.toggle("closed");
+$("nav").classList.toggle(
+"closed"
+);
 
-$("search").classList.remove("open");
+$("search")
+.classList.remove("open");
 
 };
 
 
 /* =========================
    THEME
+   Карта остаётся первой
+   OSM-картой
 ========================= */
 
 let darkMode=false;
@@ -1345,23 +1704,12 @@ document.body.classList.toggle(
 !darkMode
 );
 
-
-map.removeLayer(tiles);
-
-
-tiles=L.tileLayer(
-darkMode?dark:light,
-{
-maxZoom:19,
-attribution:"© OpenStreetMap"
-}
-).addTo(map);
-
-
 msg(
 darkMode
-?"Тёмная тема"
-:"Светлая тема"
+?
+"Тёмная тема"
+:
+"Светлая тема"
 );
 
 };
@@ -1371,7 +1719,8 @@ darkMode
    NOTIFICATIONS
 ========================= */
 
-$("bell").onclick=()=>msg(
+$("bell").onclick=>
+msg(
 "Новых уведомлений нет"
 );
 
@@ -1381,130 +1730,99 @@ $("bell").onclick=()=>msg(
 ========================= */
 
 /*
-   Время определяется автоматически
-   по часовому поясу устройства.
-
-   Шаг = 10 минут.
-
-   Таймлайн показывает последние
-   12 часов до текущего момента.
+   06:00 → текущее время
+   Шаг = 10 минут
 */
 
-const timelineStep=10;
-
-const range=$("range");
-
-const timeLabel=$("timeLabel");
-
-const timeMarks=$("timeMarks");
-
-
-const deviceTimeZone=
-Intl.DateTimeFormat()
-.resolvedOptions()
-.timeZone;
-
-
-function getLocalParts(
-date=new Date()
-){
-
-const parts=
-new Intl.DateTimeFormat(
-"ru-RU",
-{
-timeZone:deviceTimeZone,
-hour:"2-digit",
-minute:"2-digit",
-day:"2-digit",
-month:"2-digit",
-year:"numeric",
-hourCycle:"h23"
-}
-).formatToParts(date);
-
-
-const obj={};
-
-
-parts.forEach(p=>{
-obj[p.type]=p.value;
-});
-
-
-return {
-
-hour:+obj.hour,
-
-minute:+obj.minute,
-
-day:+obj.day,
-
-month:+obj.month,
-
-year:+obj.year
-
-};
-
-}
-
-
-function getCurrentTimelineTime(){
+const timelineStart=
+6*60;
 
 const now=
-getLocalParts();
+new Date();
+
+const timelineEnd=
+now.getHours()*60+
+now.getMinutes();
+
+const timelineStep=
+10;
+
+const range=
+$("range");
+
+const timeLabel=
+$("timeLabel");
 
 
-const total=
-now.hour*60+
-now.minute;
+/* округляем текущее время
+   вниз до 10 минут */
 
-
-const rounded=
+let currentRounded=
 Math.floor(
-total/timelineStep
-)*timelineStep;
+timelineEnd/timelineStep
+)*
+timelineStep;
 
 
-return {
+/* если текущее время раньше 06:00 */
 
-minutes:rounded,
+if(currentRounded<timelineStart){
 
-day:now.day,
-
-month:now.month,
-
-year:now.year
-
-};
+currentRounded=
+timelineStart;
 
 }
 
 
-function formatTime(minutes){
+const maxSteps=
+Math.floor(
+(currentRounded-timelineStart)/
+timelineStep
+);
+
+
+range.max=
+Math.max(
+0,
+maxSteps
+);
+
+range.value=
+Math.max(
+0,
+maxSteps
+);
+
+
+function updateTimeline(){
+
+const minutes=
+timelineStart+
+(+range.value*
+timelineStep);
+
 
 const h=
-Math.floor(minutes/60);
+Math.floor(
+minutes/60
+);
 
 const m=
 minutes%60;
 
 
-return String(h).padStart(2,"0")
-+
-":"
-+
-String(m).padStart(2,"0");
-
-}
+const date=
+new Date();
 
 
-function monthName(month){
+const day=
+String(
+date.getDate()
+)
+.padStart(2,"0");
+
 
 const months=[
-
-"",
-
 "ЯНВАРЯ",
 "ФЕВРАЛЯ",
 "МАРТА",
@@ -1517,166 +1835,21 @@ const months=[
 "ОКТЯБРЯ",
 "НОЯБРЯ",
 "ДЕКАБРЯ"
-
 ];
 
 
-return months[month];
-
-}
-
-
-function buildTimeline(){
-
-const current=
-getCurrentTimelineTime();
-
-
-const timelineEnd=
-current.minutes;
-
-
-let endAbsolute=
-timelineEnd;
-
-
-if(endAbsolute<720)
-endAbsolute+=1440;
-
-
-let startAbsolute=
-endAbsolute-(12*60);
-
-
-const count=
-Math.floor(
-(endAbsolute-startAbsolute)/
-timelineStep
-);
-
-
-range.min=0;
-range.max=count;
-range.step=1;
-range.value=count;
-
-
-timeMarks.innerHTML="";
-
-
-const markCount=7;
-
-
-for(let i=0;i<markCount;i++){
-
-let absolute=
-startAbsolute+
-Math.round(
-((endAbsolute-startAbsolute)/
-(markCount-1))*i
-);
-
-
-absolute=
-Math.round(
-absolute/timelineStep
-)*timelineStep;
-
-
-absolute%=1440;
-
-
-const span=
-document.createElement("span");
-
-
-span.textContent=
-formatTime(absolute);
-
-
-timeMarks.appendChild(span);
-
-}
-
-
-updateTimeline();
-
-}
-
-
-function updateTimeline(){
-
-const current=
-getCurrentTimelineTime();
-
-
-let endAbsolute=
-current.minutes;
-
-
-if(endAbsolute<720)
-endAbsolute+=1440;
-
-
-const startAbsolute=
-endAbsolute-(12*60);
-
-
-const minutes=
-startAbsolute+
-(+range.value*timelineStep);
-
-
-const normalized=
-minutes%1440;
-
-
-const h=
-Math.floor(normalized/60);
-
-
-const m=
-normalized%60;
-
-
-let selectedDate=
-new Date(
-current.year,
-current.month-1,
-current.day
-);
-
-
-const dayOffset=
-Math.floor(minutes/1440)-
-Math.floor(startAbsolute/1440);
-
-
-selectedDate.setDate(
-selectedDate.getDate()+
-dayOffset
-);
-
-
-const dateParts=
-getLocalParts(selectedDate);
-
-
 timeLabel.textContent=
-formatTime(normalized)
-+
-", "
-+
-dateParts.day
-+
-" "
-+
-monthName(dateParts.month);
+String(h).padStart(2,"0")+
+":"+
+String(m).padStart(2,"0")+
+", "+
+day+
+" "+
+months[
+date.getMonth()
+];
 
 }
-
-
-buildTimeline();
 
 
 range.addEventListener(
@@ -1684,52 +1857,7 @@ range.addEventListener(
 updateTimeline
 );
 
-
-/*
-   Обновляем текущий момент
-   каждую минуту.
-*/
-
-setInterval(()=>{
-
-const oldMax=
-+range.max;
-
-
-const current=
-getCurrentTimelineTime();
-
-
-let end=
-current.minutes;
-
-
-if(end<720)
-end+=1440;
-
-
-const start=
-end-(12*60);
-
-
-const newMax=
-Math.floor(
-(end-start)/
-timelineStep
-);
-
-
-if(newMax!==oldMax){
-
-range.max=newMax;
-range.value=newMax;
-
-}
-
-
 updateTimeline();
-
-},60000);
 
 
 /* =========================
@@ -1768,16 +1896,27 @@ timer=setInterval(()=>{
 let r=$("range");
 
 
-if(+r.value>=+r.max){
+if(
++r.value>=
++r.max
+){
 
-r.value=0;
+clearInterval(timer);
 
-}else{
+timer=null;
 
-r.value=+r.value+1;
+$("play")
+.querySelector("svg")
+.innerHTML=
+'<path d="M7 4l13 8-13 8z"/>';
+
+return;
 
 }
 
+
+r.value=
++r.value+1;
 
 updateTimeline();
 
@@ -1799,7 +1938,8 @@ if(
 !e.target.closest("#searchBtn")
 ){
 
-$("search").classList.remove("open");
+$("search")
+.classList.remove("open");
 
 }
 
