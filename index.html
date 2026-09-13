@@ -2,3332 +2,1508 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
->
-<meta name="theme-color" content="#111820">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<title>CLOrad — метеорологический радар</title>
-
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151a1f">
+<title>CLOrad — метеокарта</title>
+<link rel="preconnect" href="https://unpkg.com">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-
-/* =========================================================
-   CLOrad
-   Main stylesheet
-   ========================================================= */
-
-:root {
-  --bg: #101820;
-  --panel: rgba(20, 29, 39, 0.96);
-  --panel2: rgba(27, 37, 49, 0.96);
-  --panel3: rgba(35, 47, 61, 0.96);
-  --border: rgba(255,255,255,0.10);
-  --border2: rgba(255,255,255,0.16);
-  --text: #f2f5f7;
-  --muted: #9ba7b3;
-  --muted2: #74808c;
-  --blue: #4d9fff;
-  --blue2: #2176d9;
-  --green: #36c978;
-  --yellow: #ffd447;
-  --orange: #ff8c32;
-  --red: #ff3e49;
-  --shadow: 0 12px 35px rgba(0,0,0,.38);
-  --radius: 10px;
-  --topbar: 70px;
-  --bottom: 88px;
+:root{
+  --bg:#151a1f;
+  --panel:#1b2229;
+  --panel2:#202830;
+  --panel3:#11161b;
+  --line:rgba(255,255,255,.09);
+  --text:#f3f5f7;
+  --muted:#9ca5ad;
+  --accent:#52e08b;
+  --accent2:#6aef9e;
+  --danger:#ffb84d;
+  --blue:#5aa9ff;
+  --shadow:0 12px 35px rgba(0,0,0,.35);
+  --radius:14px;
 }
-
-* {
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0}
+body{
+  overflow:hidden;
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
 }
-
-html,
-body {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Arial,
-    sans-serif;
-  background: var(--bg);
-  color: var(--text);
+button,input{font:inherit}
+button{border:0;color:inherit}
+#app{width:100%;height:100%;position:relative;overflow:hidden}
+#map{
+  position:absolute;
+  inset:0;
+  z-index:1;
+  background:#1d2730;
 }
-
-body {
-  touch-action: manipulation;
+.leaflet-container{font-family:inherit;background:#1d2730}
+.leaflet-tile{filter:brightness(.58) saturate(.65) contrast(1.08)}
+.leaflet-control-zoom{
+  margin-top:10px!important;
+  margin-left:12px!important;
+  border:0!important;
+  box-shadow:var(--shadow)!important;
 }
-
-button,
-input,
-select {
-  font: inherit;
+.leaflet-control-zoom a{
+  width:44px!important;
+  height:44px!important;
+  line-height:44px!important;
+  background:rgba(22,28,34,.94)!important;
+  color:#eef2f4!important;
+  border:0!important;
+  border-bottom:1px solid var(--line)!important;
+  font-size:25px!important;
 }
-
-button {
-  border: 0;
-  color: inherit;
+.leaflet-control-zoom a:first-child{border-radius:11px 11px 0 0}
+.leaflet-control-zoom a:last-child{
+  border-radius:0 0 11px 11px;
+  border-bottom:0!important;
 }
-
-/* =========================================================
-   MAP
-   ========================================================= */
-
-#map {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  background: #111a23;
+.leaflet-control-attribution{
+  background:rgba(12,16,20,.55)!important;
+  color:#7e878f!important;
+  font-size:9px!important;
 }
-
-.leaflet-container {
-  background: #111a23;
-  font-family: inherit;
+.leaflet-control-attribution a{color:#9ca5ad!important}
+.topbar{
+  position:absolute;
+  z-index:20;
+  top:0;
+  left:0;
+  right:0;
+  height:86px;
+  padding:0 18px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  background:linear-gradient(180deg,rgba(13,17,21,.98),rgba(16,21,26,.94));
+  border-bottom:1px solid rgba(255,255,255,.06);
+  box-shadow:0 5px 20px rgba(0,0,0,.22);
 }
-
-.leaflet-control-attribution {
-  background: rgba(10,15,20,.75) !important;
-  color: #82909d !important;
-  font-size: 9px !important;
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:180px;
+  font-size:29px;
+  font-weight:800;
+  letter-spacing:-1.2px;
 }
-
-.leaflet-control-attribution a {
-  color: #9eabb8 !important;
+.brand-mark{
+  width:38px;
+  height:38px;
+  border:2px solid rgba(82,224,139,.65);
+  border-radius:50%;
+  position:relative;
+  box-shadow:0 0 0 5px rgba(82,224,139,.07),0 0 18px rgba(82,224,139,.15);
 }
-
-.leaflet-control-zoom {
-  display: none !important;
+.brand-mark:before,
+.brand-mark:after{
+  content:"";
+  position:absolute;
+  border:1px solid rgba(82,224,139,.48);
+  border-radius:50%;
+  inset:6px;
 }
-
-/* =========================================================
-   TOP BAR
-   ========================================================= */
-
-.topbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: var(--topbar);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
+.brand-mark:after{inset:12px}
+.brand-dot{
+  position:absolute;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:var(--accent);
+  left:15px;
+  top:15px;
+  box-shadow:0 0 10px var(--accent);
+}
+.desktop-nav{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  flex:1;
+}
+.nav-btn{
+  padding:10px 12px;
+  border-radius:8px;
+  background:transparent;
+  color:#9ca4ac;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.nav-btn:hover{background:rgba(255,255,255,.05);color:#fff}
+.nav-btn.active{
+  background:#343d46;
+  color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.search{
+  width:245px;
+  height:42px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:0 12px;
+  background:#242c34;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:9px;
+}
+.search-icon{font-size:21px;color:#aeb6bd}
+.search input{
+  width:100%;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#fff;
+}
+.search input::placeholder{color:#7f8992}
+.icon-btn{
+  width:42px;
+  height:42px;
+  border-radius:9px;
+  background:transparent;
+  color:#cbd1d6;
+  font-size:22px;
+  cursor:pointer;
+  position:relative;
+}
+.icon-btn:hover{background:rgba(255,255,255,.06)}
+.notification-dot{
+  position:absolute;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#ff5d5d;
+  right:7px;
+  top:7px;
+  box-shadow:0 0 8px rgba(255,93,93,.6);
+}
+.menu-btn{display:none}
+.mobile-nav{
+  position:absolute;
+  z-index:19;
+  top:86px;
+  left:0;
+  right:0;
+  height:76px;
+  display:none;
+  overflow-x:auto;
+  background:#242b32;
+  border-bottom:1px solid var(--line);
+  scrollbar-width:none;
+}
+.mobile-nav::-webkit-scrollbar{display:none}
+.mobile-nav .nav-item{
+  min-width:76px;
+  padding:8px 8px 7px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  color:#aab2b9;
+  position:relative;
+}
+.mobile-nav .nav-item span:first-child{font-size:23px;line-height:25px}
+.mobile-nav .nav-item span:last-child{font-size:12px}
+.mobile-nav .nav-item.active{color:var(--accent)}
+.mobile-nav .nav-item.active:after{
+  content:"";
+  position:absolute;
+  bottom:0;
+  left:7px;
+  right:7px;
+  height:2px;
+  background:var(--accent);
+}
+.left-panel{
+  position:absolute;
+  z-index:15;
+  left:14px;
+  top:102px;
+  width:218px;
+  max-height:calc(100% - 235px);
+  overflow:auto;
+  background:rgba(24,30,36,.95);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  scrollbar-width:thin;
+}
+.panel-section{padding:14px 12px;border-bottom:1px solid var(--line)}
+.panel-section:last-child{border-bottom:0}
+.panel-title{
+  margin:0 0 12px;
+  color:#dce1e5;
+  font-size:13px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.35px;
+}
+.select{
+  height:38px;
+  width:100%;
+  padding:0 10px;
+  color:#e9edf0;
+  background:#303941;
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:7px;
+  outline:0;
+}
+.radar-list{display:grid;gap:8px}
+.check-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#e1e5e8;
+  font-size:13px;
+  cursor:pointer;
+}
+.check-row input{
+  width:18px;
+  height:18px;
+  accent-color:#4c9be8;
+}
+.radio-row{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin:9px 0;
+  font-size:13px;
+  color:#e0e5e8;
+}
+.radio-row input{accent-color:#4f9de9}
+.range{
+  width:100%;
+  accent-color:#4f9de9;
+}
+.toggle-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  color:#dfe4e7;
+  font-size:13px;
+}
+.toggle{
+  width:45px;
+  height:26px;
+  border-radius:30px;
+  background:#414a52;
+  padding:3px;
+  cursor:pointer;
+  flex:0 0 auto;
+}
+.toggle:before{
+  content:"";
+  display:block;
+  width:20px;
+  height:20px;
+  border-radius:50%;
+  background:#eef2f4;
+  transition:.2s;
+}
+.toggle.on{background:var(--accent)}
+.toggle.on:before{transform:translateX(19px)}
+.right-panel{
+  position:absolute;
+  z-index:15;
+  top:102px;
+  right:14px;
+  width:225px;
+  max-height:calc(100% - 235px);
+  overflow:auto;
+  background:rgba(24,30,36,.95);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  scrollbar-width:thin;
+}
+.legend-wrap{
+  display:flex;
+  gap:10px;
+  padding:12px;
+  border-bottom:1px solid var(--line);
+}
+.legend{
+  width:17px;
+  height:285px;
+  border-radius:3px;
+  background:linear-gradient(
+    to bottom,
+    #e6c5f7 0%,
+    #9d50cf 10%,
+    #d600ad 25%,
+    #e0003c 40%,
+    #ff4d00 52%,
+    #ffca28 63%,
+    #7bdc4a 76%,
+    #23b9c8 88%,
+    #3275dc 100%
+  );
+  opacity:.9;
+}
+.legend-labels{
+  height:285px;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  color:#c7cdd2;
+  font-size:12px;
+}
+.analysis-card{padding:13px;border-bottom:1px solid var(--line)}
+.analysis-card h3{
+  margin:0 0 10px;
+  font-size:14px;
+  font-weight:600;
+}
+.analysis-box{
+  min-height:155px;
+  border-radius:6px;
   background:
-    linear-gradient(
-      180deg,
-      rgba(10,15,21,.98),
-      rgba(15,23,31,.94)
-    );
-  border-bottom: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 4px 18px rgba(0,0,0,.25);
-}
-
-/* =========================================================
-   LOGO
-   ========================================================= */
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 205px;
-  user-select: none;
-}
-
-.logo-mark {
-  position: relative;
-  width: 35px;
-  height: 35px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid rgba(255,255,255,.8);
-  background:
-    radial-gradient(
-      circle at center,
-      #ffffff 0 2px,
-      transparent 3px
-    ),
-    conic-gradient(
-      from 0deg,
-      transparent 0deg 20deg,
-      #4d9fff 20deg 24deg,
-      transparent 24deg 55deg,
-      #4d9fff 55deg 59deg,
-      transparent 59deg 360deg
-    );
-}
-
-.logo-mark::before {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border: 1px solid rgba(255,255,255,.35);
-  border-radius: 50%;
-}
-
-.logo-mark::after {
-  content: "";
-  position: absolute;
-  inset: 12px;
-  border: 1px solid rgba(255,255,255,.3);
-  border-radius: 50%;
-}
-
-.logo-name {
-  font-size: 25px;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: -1px;
-}
-
-.logo-sub {
-  color: var(--muted);
-  font-size: 9px;
-  margin-top: 3px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-}
-
-/* =========================================================
-   NAVIGATION
-   ========================================================= */
-
-.nav {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  gap: 3px;
-  flex: 1;
-}
-
-.nav-item {
-  height: 42px;
-  padding: 0 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #aeb8c2;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    background .18s ease,
-    color .18s ease;
-  white-space: nowrap;
-}
-
-.nav-item:hover {
-  color: #fff;
-  background: rgba(255,255,255,.07);
-}
-
-.nav-item.active {
-  color: #fff;
-  background: rgba(255,255,255,.12);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
-}
-
-/* =========================================================
-   TOP ACTIONS
-   ========================================================= */
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.search {
-  width: 245px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: rgba(255,255,255,.055);
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 8px;
-}
-
-.search-icon {
-  color: #8c98a5;
-  font-size: 17px;
-}
-
-.search input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #fff;
-  font-size: 13px;
-}
-
-.search input::placeholder {
-  color: #7f8b97;
-}
-
-.icon-button {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: transparent;
-  color: #aeb8c2;
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  background: rgba(255,255,255,.07);
-  color: #fff;
-}
-
-.notification-dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ff515b;
-  box-shadow: 0 0 8px rgba(255,81,91,.7);
-}
-
-.clock {
-  min-width: 65px;
-  text-align: right;
-  line-height: 1.05;
-}
-
-.clock-time {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.clock-date {
-  margin-top: 3px;
-  color: #8f9ba7;
-  font-size: 9px;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  margin-left: 5px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    linear-gradient(
-      135deg,
-      #65788a,
-      #354452
-    );
-  color: #eaf0f4;
-  font-size: 16px;
-}
-
-/* =========================================================
-   SIDE PANELS
-   ========================================================= */
-
-.panel {
-  position: fixed;
-  z-index: 900;
-  background: var(--panel);
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.left-panel {
-  top: 82px;
-  left: 12px;
-  width: 218px;
-  max-height: calc(100vh - 190px);
-  border-radius: 9px;
-  overflow: hidden;
-}
-
-.right-panel {
-  top: 82px;
-  right: 12px;
-  width: 245px;
-  max-height: calc(100vh - 190px);
-  border-radius: 9px;
-  overflow: hidden;
-}
-
-/* =========================================================
-   PANEL HEADER
-   ========================================================= */
-
-.panel-header {
-  min-height: 43px;
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  color: #dce3e8;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.panel-header-small {
-  color: #98a5b1;
-  font-size: 9px;
-  letter-spacing: .6px;
-}
-
-.panel-section {
-  padding: 11px;
-  border-bottom: 1px solid var(--border);
-}
-
-.panel-section:last-child {
-  border-bottom: 0;
-}
-
-.section-title {
-  margin-bottom: 8px;
-  color: #b9c3cc;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-}
-
-/* =========================================================
-   SELECT
-   ========================================================= */
-
-.select {
-  position: relative;
-  width: 100%;
-  height: 35px;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  background: rgba(255,255,255,.065);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 6px;
-  color: #e5ebef;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.select::after {
-  content: "⌄";
-  position: absolute;
-  right: 9px;
-  color: #8c99a5;
-  font-size: 15px;
-}
-
-.select:hover {
-  background: rgba(255,255,255,.09);
-}
-
-/* =========================================================
-   RADAR LIST
-   ========================================================= */
-
-.radar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.radar-row {
-  min-height: 23px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #d9e0e5;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.checkbox {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background: #3d76a9;
-  border: 1px solid #609bd0;
-  color: #fff;
-  font-size: 12px;
-}
-
-.checkbox.off {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(255,255,255,.15);
-  color: transparent;
-}
-
-/* =========================================================
-   RADIO
-   ========================================================= */
-
-.radio-row {
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #dce2e6;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.radio {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #536273;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.radio.active {
-  border-color: #62a8ef;
-}
-
-.radio.active::after {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #62a8ef;
-}
-
-/* =========================================================
-   TOGGLE
-   ========================================================= */
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 34px;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #d9e1e6;
-  font-size: 11px;
-  line-height: 1.25;
-}
-
-.toggle {
-  width: 32px;
-  height: 18px;
-  padding: 2px;
-  border-radius: 20px;
-  background: #35424f;
-  cursor: pointer;
-  transition: background .18s ease;
-}
-
-.toggle-knob {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #e7ebee;
-  transition: transform .18s ease;
-}
-
-.toggle.active {
-  background: #397fc0;
-}
-
-.toggle.active .toggle-knob {
-  transform: translateX(14px);
-}
-
-/* =========================================================
-   MAP CONTROLS
-   ========================================================= */
-
-.map-tools {
-  position: fixed;
-  z-index: 800;
-  top: 88px;
-  left: 242px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.map-tool {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(17,26,35,.94);
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow: 0 5px 16px rgba(0,0,0,.28);
-  color: #dce5eb;
-  font-size: 18px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.map-tool:hover {
-  background: rgba(40,53,67,.97);
-}
-
-.map-tool.active {
-  color: #5baaff;
-}
-
-/* =========================================================
-   MAP STATUS
-   ========================================================= */
-
-.map-status {
-  position: fixed;
-  z-index: 800;
-  left: 50%;
-  top: 82px;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 13px;
-  border-radius: 20px;
-  background: rgba(15,23,31,.88);
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 5px 18px rgba(0,0,0,.25);
-  color: #cbd4dc;
-  font-size: 11px;
-  pointer-events: none;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #45d381;
-  box-shadow: 0 0 8px rgba(69,211,129,.8);
-}
-
-/* =========================================================
-   RIGHT ANALYTICS
-   ========================================================= */
-
-.legend-box {
-  position: relative;
-  display: flex;
-  gap: 10px;
-}
-
-.legend {
-  width: 17px;
-  height: 205px;
-  border-radius: 2px;
-  background:
-    linear-gradient(
-      to top,
-      #173fce 0%,
-      #1687ee 18%,
-      #19c957 35%,
-      #65df28 47%,
-      #f4df25 60%,
-      #ff9e16 72%,
-      #f52d26 86%,
-      #c40063 100%
-    );
-}
-
-.legend-labels {
-  height: 205px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  color: #8f9aa5;
-  font-size: 9px;
-}
-
-.legend-unit {
-  margin-bottom: 7px;
-  color: #d7dee4;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.analytics {
-  height: 205px;
-  flex: 1;
-  border-radius: 5px;
-  overflow: hidden;
-  background:
-    linear-gradient(
-      160deg,
-      rgba(190,46,105,.6),
-      rgba(89,59,143,.75) 25%,
-      rgba(48,126,153,.8) 52%,
-      rgba(41,149,104,.75) 72%,
-      rgba(238,196,48,.7)
-    );
-  border: 1px solid rgba(255,255,255,.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.analytics-text {
-  color: rgba(255,255,255,.85);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* =========================================================
-   DATA CARDS
-   ========================================================= */
-
-.data-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 0;
-  color: #aeb9c3;
-  font-size: 10px;
-}
-
-.data-line strong {
-  color: #f0f4f7;
-  font-weight: 600;
-}
-
-.warning {
-  padding: 9px;
-  border-radius: 6px;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(157,55,64,.35),
-      rgba(157,55,64,.12)
-    );
-  border: 1px solid rgba(255,80,92,.14);
-  color: #e7b6b9;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-/* =========================================================
-   RADAR MARKERS
-   ========================================================= */
-
-.radar-marker {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #56a9ff;
-  border: 2px solid #eaf5ff;
-  box-shadow:
-    0 0 0 3px rgba(77,159,255,.18),
-    0 0 13px rgba(77,159,255,.75);
-}
-
-.station-label {
-  padding: 3px 6px;
-  border-radius: 4px;
-  background: rgba(13,20,27,.9);
-  border: 1px solid rgba(255,255,255,.1);
-  color: #dce4e9;
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-/* =========================================================
-   BOTTOM TIMELINE
-   ========================================================= */
-
-.timeline {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  height: 82px;
-  z-index: 950;
-  border-radius: 9px;
-  background: rgba(16,25,34,.96);
-  border: 1px solid rgba(255,255,255,.09);
-  box-shadow: var(--shadow);
-  display: flex;
-  align-items: center;
-  padding: 9px 11px;
-  gap: 12px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.play-controls {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 195px;
-}
-
-.play-main {
-  height: 42px;
-  padding: 0 17px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border-radius: 7px;
-  background: #263544;
-  border: 1px solid rgba(255,255,255,.08);
-  cursor: pointer;
-  color: #eef3f6;
-  font-size: 12px;
-}
-
-.play-main:hover {
-  background: #304253;
-}
-
-.play-small {
-  width: 37px;
-  height: 37px;
-  border-radius: 7px;
-  background: #202d39;
-  border: 1px solid rgba(255,255,255,.07);
-  color: #cdd6dd;
-  cursor: pointer;
-}
-
-.play-small:hover {
-  background: #2b3b4a;
-}
-
-.timeline-main {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-}
-
-.timeline-date {
-  position: absolute;
-  top: -3px;
-  right: 5px;
-  color: #9ca8b3;
-  font-size: 9px;
-}
-
-.slider-wrap {
-  position: relative;
-  height: 45px;
-  margin-top: 13px;
-}
-
-.slider-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 13px;
-  height: 13px;
-  border-radius: 6px;
-  background:
-    linear-gradient(
-      90deg,
-      #1f5d8e 0%,
-      #2b6f9e 44%,
-      #2d4557 44%,
-      #2d4557 100%
-    );
-  border: 1px solid rgba(255,255,255,.08);
-}
-
-.range {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 5px;
-  width: 100%;
-  height: 30px;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 3;
-}
-
-.slider-thumb {
-  position: absolute;
-  top: 5px;
-  width: 13px;
-  height: 29px;
-  transform: translateX(-50%);
-  border-radius: 3px;
-  background: #f3f6f8;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.2);
-  pointer-events: none;
-}
-
-.now-label {
-  position: absolute;
-  top: -18px;
-  transform: translateX(-50%);
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: #f0f3f5;
-  color: #26313a;
-  font-size: 8px;
-  font-weight: 700;
-}
-
-.time-labels {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 31px;
-  display: flex;
-  justify-content: space-between;
-  color: #7d8994;
-  font-size: 9px;
-}
-
-.speed-controls {
-  display: flex;
-  gap: 4px;
-  min-width: 70px;
-}
-
-.speed {
-  width: 34px;
-  height: 36px;
-  border-radius: 6px;
-  background: #202c37;
-  color: #87939e;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.speed.active {
-  background: #344757;
-  color: #fff;
-}
-
-/* =========================================================
-   POPUP
-   ========================================================= */
-
-.info-popup {
-  position: fixed;
-  z-index: 1200;
-  min-width: 210px;
-  display: none;
-  padding: 11px;
-  border-radius: 8px;
-  background: rgba(16,24,32,.96);
-  border: 1px solid rgba(255,255,255,.11);
-  box-shadow: 0 14px 35px rgba(0,0,0,.42);
-  pointer-events: none;
-}
-
-.info-popup.visible {
-  display: block;
-}
-
-.popup-title {
-  margin-bottom: 6px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.popup-value {
-  color: #5eafff;
-  font-size: 19px;
-  font-weight: 700;
-}
-
-.popup-muted {
-  margin-top: 3px;
-  color: #87949f;
-  font-size: 9px;
-}
-
-/* =========================================================
-   MOBILE
-   ========================================================= */
-
-.mobile-menu {
-  display: none;
-}
-
-@media (max-width: 1050px) {
-
-  .nav-item {
-    padding: 0 9px;
-    font-size: 12px;
+    radial-gradient(circle at 70% 20%,rgba(255,0,144,.42),transparent 28%),
+    linear-gradient(180deg,#632c68,#70503d 43%,#306e75 72%,#274f68);
+  display:flex;
+  flex-direction:column;
+  justify-content:space-around;
+  align-items:center;
+  padding:10px;
+  text-align:center;
+  color:#f1eaf1;
+}
+.analysis-box strong{font-size:15px}
+.storm-data{padding:13px;border-bottom:1px solid var(--line)}
+.data-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:6px 0;
+  font-size:12px;
+  color:#aeb7be;
+}
+.data-row b{color:#f4d75b;font-weight:500;text-align:right}
+.warning{
+  margin:10px 12px 12px;
+  padding:10px;
+  border-radius:7px;
+  background:rgba(112,42,45,.42);
+  border:1px solid rgba(255,103,109,.2);
+  color:#ece3e4;
+  font-size:12px;
+  line-height:1.35;
+}
+.map-tools{
+  position:absolute;
+  z-index:12;
+  left:13px;
+  top:113px;
+  display:grid;
+  gap:8px;
+}
+.tool{
+  width:46px;
+  height:46px;
+  border-radius:10px;
+  background:rgba(25,31,37,.94);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+  display:grid;
+  place-items:center;
+  color:#dbe1e5;
+  font-size:23px;
+  cursor:pointer;
+}
+.tool:hover{background:#303840}
+.locate-tool{font-size:24px}
+.layer-panel{
+  position:absolute;
+  z-index:13;
+  left:13px;
+  bottom:162px;
+  width:158px;
+  padding:9px;
+  border-radius:11px;
+  background:rgba(24,30,36,.94);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+}
+.layer-row{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:44px;
+  color:#d9dfe3;
+  font-size:14px;
+}
+.layer-row .emoji{width:25px;text-align:center;font-size:21px}
+.layer-row .switch{
+  margin-left:auto;
+  width:42px;
+  height:24px;
+  padding:3px;
+  border-radius:20px;
+  background:#3d464e;
+  cursor:pointer;
+}
+.layer-row .switch i{
+  display:block;
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  background:#f3f5f6;
+  transition:.18s;
+}
+.layer-row .switch.on{background:#52d989}
+.layer-row .switch.on i{transform:translateX(18px)}
+.my-location{
+  position:absolute;
+  z-index:13;
+  left:13px;
+  bottom:112px;
+  width:158px;
+  height:45px;
+  border-radius:10px;
+  background:rgba(24,30,36,.94);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+  color:#c9d0d5;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  cursor:pointer;
+}
+.my-location:hover{color:#fff}
+.center-crosshair{
+  position:absolute;
+  z-index:5;
+  left:50%;
+  top:52%;
+  width:28px;
+  height:28px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  opacity:.8;
+}
+.center-crosshair:before,
+.center-crosshair:after{
+  content:"";
+  position:absolute;
+  background:rgba(255,255,255,.7);
+}
+.center-crosshair:before{width:28px;height:1px;top:13px;left:0}
+.center-crosshair:after{height:28px;width:1px;left:13px;top:0}
+.status-chip{
+  position:absolute;
+  z-index:10;
+  left:50%;
+  top:58%;
+  transform:translateX(-50%);
+  padding:8px 13px;
+  border-radius:8px;
+  background:rgba(20,26,31,.91);
+  border:1px solid rgba(255,255,255,.1);
+  box-shadow:var(--shadow);
+  font-size:13px;
+  color:#e6eaed;
+  display:none;
+}
+.info-card{
+  position:absolute;
+  z-index:14;
+  left:50%;
+  bottom:104px;
+  transform:translateX(-50%);
+  width:min(620px,calc(100% - 360px));
+  min-height:70px;
+  border-radius:11px;
+  background:rgba(20,26,31,.95);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+  display:flex;
+  align-items:stretch;
+  overflow:hidden;
+}
+.info-item{
+  flex:1;
+  padding:12px 16px;
+  border-right:1px solid var(--line);
+}
+.info-item:last-child{border-right:0}
+.info-label{
+  color:#8e979f;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  margin-bottom:5px;
+}
+.info-value{font-size:14px;color:#f1f3f4}
+.info-value strong{font-size:16px}
+.alert{
+  position:absolute;
+  z-index:16;
+  left:50%;
+  bottom:184px;
+  transform:translateX(-50%);
+  width:min(650px,calc(100% - 390px));
+  padding:11px 42px 11px 16px;
+  border-radius:9px;
+  background:rgba(65,70,76,.96);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+  font-size:14px;
+  line-height:1.35;
+}
+.alert .warn{font-size:19px;margin-right:7px}
+.alert .close{
+  position:absolute;
+  right:10px;
+  top:8px;
+  width:30px;
+  height:30px;
+  border-radius:7px;
+  background:transparent;
+  color:#b7bec4;
+  font-size:22px;
+  cursor:pointer;
+}
+.timeline{
+  position:absolute;
+  z-index:17;
+  left:13px;
+  right:13px;
+  bottom:13px;
+  height:78px;
+  border-radius:12px;
+  background:rgba(21,27,33,.97);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:10px 15px;
+}
+.play{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  background:#eceff1;
+  color:#1d252b;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  cursor:pointer;
+  flex:0 0 auto;
+}
+.skip{
+  width:35px;
+  height:42px;
+  background:transparent;
+  color:#aeb6bc;
+  font-size:20px;
+  cursor:pointer;
+}
+.timeline-main{flex:1;min-width:0}
+.time-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  color:#e6eaec;
+  font-size:12px;
+  margin-bottom:7px;
+}
+.time-head b{font-weight:500}
+.time-track{position:relative;height:22px}
+.time-input{
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  width:100%;
+  margin:0;
+  accent-color:#e7eaec;
+}
+.ticks{
+  position:absolute;
+  left:0;
+  right:0;
+  top:16px;
+  display:flex;
+  justify-content:space-between;
+  color:#929ba2;
+  font-size:11px;
+  pointer-events:none;
+}
+.speed{
+  display:flex;
+  gap:5px;
+  flex:0 0 auto;
+}
+.speed button{
+  width:42px;
+  height:36px;
+  border-radius:7px;
+  background:#2b333b;
+  color:#aeb6bc;
+  cursor:pointer;
+}
+.speed button.active{background:#3c4650;color:#fff}
+.search-results{
+  position:absolute;
+  z-index:30;
+  top:74px;
+  right:128px;
+  width:245px;
+  border-radius:10px;
+  background:#20272e;
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  display:none;
+}
+.search-results button{
+  width:100%;
+  text-align:left;
+  padding:11px 13px;
+  background:transparent;
+  color:#e6eaed;
+  border-bottom:1px solid var(--line);
+  cursor:pointer;
+}
+.search-results button:hover{background:#2b333b}
+.toast{
+  position:absolute;
+  z-index:50;
+  left:50%;
+  top:92px;
+  transform:translate(-50%,-20px);
+  padding:9px 14px;
+  border-radius:9px;
+  background:#273039;
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  color:#e8ecef;
+  opacity:0;
+  pointer-events:none;
+  transition:.25s;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.mobile-only{display:none}
+@media(max-width:900px){
+  .topbar{height:86px;padding:0 15px;gap:8px}
+  .brand{font-size:27px;min-width:auto}
+  .desktop-nav{display:none}
+  .search{margin-left:auto;width:205px}
+  .menu-btn{display:block}
+  .mobile-nav{display:flex}
+  .left-panel,.right-panel{display:none}
+  .map-tools{top:175px}
+  .layer-panel{bottom:156px}
+  .my-location{bottom:105px}
+  .info-card{
+    width:calc(100% - 190px);
+    left:auto;
+    right:15px;
+    transform:none;
+    bottom:105px;
   }
-
-  .logo {
-    min-width: 165px;
+  .alert{
+    width:calc(100% - 190px);
+    left:auto;
+    right:15px;
+    transform:none;
+    bottom:183px;
   }
-
-  .logo-name {
-    font-size: 21px;
-  }
-
-  .search {
-    width: 190px;
-  }
-
-  .right-panel {
-    width: 215px;
-  }
-
-  .left-panel {
-    width: 205px;
-  }
-
-  .map-tools {
-    left: 225px;
-  }
+  .timeline{bottom:10px;height:78px}
+  .speed{display:none}
 }
-
-@media (max-width: 800px) {
-
-  :root {
-    --topbar: 57px;
+@media(max-width:620px){
+  .topbar{
+    height:70px;
+    padding:0 12px;
+    gap:7px;
   }
-
-  .topbar {
-    height: 57px;
-    padding: 0 9px;
+  .brand{font-size:25px;gap:7px}
+  .brand-mark{width:32px;height:32px}
+  .brand-dot{left:12px;top:12px}
+  .brand-mark:before{inset:5px}
+  .brand-mark:after{inset:10px}
+  .search{width:42px;height:42px;padding:0;justify-content:center;background:#242c34}
+  .search input{display:none}
+  .search-icon{font-size:22px}
+  .icon-btn{width:40px;height:40px}
+  .mobile-nav{
+    top:70px;
+    height:72px;
   }
-
-  .logo {
-    min-width: auto;
+  .mobile-nav .nav-item{min-width:70px}
+  .map-tools{top:153px;left:11px}
+  .tool{width:43px;height:43px}
+  .layer-panel{
+    left:11px;
+    bottom:146px;
+    width:154px;
+    padding:7px;
   }
-
-  .logo-mark {
-    width: 31px;
-    height: 31px;
+  .my-location{
+    left:11px;
+    bottom:95px;
+    width:154px;
+    height:43px;
   }
-
-  .logo-name {
-    font-size: 19px;
+  .info-card{
+    left:11px;
+    right:11px;
+    bottom:101px;
+    width:auto;
+    min-height:61px;
   }
-
-  .logo-sub {
-    display: none;
+  .info-item{padding:9px 10px}
+  .info-label{font-size:9px}
+  .info-value{font-size:12px}
+  .info-value strong{font-size:13px}
+  .alert{
+    left:11px;
+    right:11px;
+    bottom:174px;
+    width:auto;
+    font-size:13px;
+    padding:10px 38px 10px 12px;
   }
-
-  .nav {
-    display: none;
+  .timeline{
+    left:8px;
+    right:8px;
+    bottom:8px;
+    height:76px;
+    padding:8px 10px;
+    gap:6px;
   }
-
-  .top-actions {
-    margin-left: auto;
+  .play{width:39px;height:39px}
+  .skip{width:29px}
+  .time-head{font-size:11px}
+  .ticks{font-size:9px}
+  .search-results{
+    top:60px;
+    right:60px;
+    width:220px;
   }
-
-  .search {
-    width: 38px;
-    padding: 0;
-    justify-content: center;
-    border: 0;
-    background: transparent;
-  }
-
-  .search input {
-    display: none;
-  }
-
-  .search-icon {
-    font-size: 19px;
-  }
-
-  .clock {
-    display: none;
-  }
-
-  .avatar {
-    display: none;
-  }
-
-  .mobile-menu {
-    display: flex;
-  }
-
-  .left-panel,
-  .right-panel {
-    top: 67px;
-    bottom: 102px;
-    width: calc(100vw - 24px);
-    max-height: none;
-    transition:
-      transform .25s ease,
-      opacity .25s ease;
-  }
-
-  .left-panel {
-    left: 12px;
-  }
-
-  .right-panel {
-    right: 12px;
-  }
-
-  .left-panel.mobile-hidden {
-    transform: translateX(calc(-100% - 20px));
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .right-panel.mobile-hidden {
-    transform: translateX(calc(100% + 20px));
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .map-tools {
-    top: 68px;
-    left: auto;
-    right: 12px;
-  }
-
-  .map-status {
-    top: 66px;
-    max-width: calc(100vw - 120px);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-
-  .timeline {
-    left: 6px;
-    right: 6px;
-    bottom: 6px;
-    height: 92px;
-    padding: 7px;
-    gap: 6px;
-  }
-
-  .play-controls {
-    min-width: 100px;
-    gap: 4px;
-  }
-
-  .play-main {
-    width: 43px;
-    padding: 0;
-    justify-content: center;
-    font-size: 0;
-  }
-
-  .play-main span {
-    font-size: 18px;
-  }
-
-  .play-small {
-    width: 31px;
-    height: 35px;
-  }
-
-  .speed-controls {
-    min-width: 42px;
-    flex-direction: column;
-  }
-
-  .speed {
-    width: 38px;
-    height: 28px;
-  }
-
-  .timeline-date {
-    right: 2px;
-  }
-
-  .time-labels {
-    font-size: 8px;
-  }
+  .status-chip{top:48%}
 }
-
-@media (max-width: 430px) {
-
-  .logo-name {
-    font-size: 17px;
-  }
-
-  .icon-button {
-    width: 34px;
-  }
-
-  .map-tool {
-    width: 38px;
-    height: 38px;
-  }
-
-  .timeline {
-    height: 89px;
-  }
-
-  .play-controls {
-    min-width: 96px;
-  }
-
-  .slider-wrap {
-    margin-top: 15px;
-  }
+@media(max-height:700px) and (min-width:621px){
+  .left-panel,.right-panel{max-height:calc(100% - 190px)}
+  .layer-panel{bottom:145px}
+  .my-location{bottom:95px}
+  .info-card{bottom:92px}
+  .alert{bottom:169px}
+  .timeline{height:69px}
 }
-
-/* =========================================================
-   LIGHT THEME
-   ========================================================= */
-
-body.light {
-  --bg: #e9edf1;
-  --panel: rgba(248,250,252,.96);
-  --panel2: rgba(240,244,247,.96);
-  --panel3: rgba(230,236,241,.96);
-  --border: rgba(0,0,0,.10);
-  --border2: rgba(0,0,0,.16);
-  --text: #18222b;
-  --muted: #687580;
+body.light{
+  --bg:#eef2f3;
+  --panel:#fff;
+  --panel2:#f2f4f5;
+  --panel3:#e9edef;
+  --line:rgba(0,0,0,.09);
+  --text:#1d252b;
+  --muted:#66717a;
 }
-
-body.light .topbar {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(248,250,252,.98),
-      rgba(238,242,246,.96)
-    );
-  border-bottom-color: rgba(0,0,0,.1);
-}
-
-body.light .nav-item {
-  color: #5c6872;
-}
-
-body.light .nav-item.active {
-  color: #18222b;
-  background: rgba(0,0,0,.08);
-}
-
-body.light .search {
-  background: rgba(0,0,0,.05);
-  border-color: rgba(0,0,0,.08);
-}
-
-body.light .search input {
-  color: #17212a;
-}
-
-body.light .panel,
+body.light .topbar,
+body.light .mobile-nav,
+body.light .left-panel,
+body.light .right-panel,
+body.light .layer-panel,
+body.light .my-location,
+body.light .info-card,
+body.light .alert,
 body.light .timeline,
-body.light .map-tool {
-  box-shadow: 0 10px 28px rgba(0,0,0,.15);
+body.light .search-results,
+body.light .toast,
+body.light .tool{
+  background:rgba(248,250,251,.96);
+  color:#1e252a;
 }
-
-/* =========================================================
-   EXTRA UI
-   ========================================================= */
-
-.separator {
-  height: 1px;
-  margin: 4px 0;
-  background: rgba(255,255,255,.07);
-}
-
-.coordinates {
-  color: #7d8a95;
-  font-size: 9px;
-}
-
-.empty-radar {
-  padding: 13px 10px;
-  border-radius: 6px;
-  background: rgba(255,255,255,.035);
-  color: #7f8c98;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.fake-echo {
-  pointer-events: none;
-  opacity: .16;
-}
-
-.corner-label {
-  position: fixed;
-  z-index: 700;
-  left: 15px;
-  bottom: 101px;
-  color: rgba(255,255,255,.45);
-  font-size: 9px;
-  pointer-events: none;
-}
-
-.map-crosshair {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  width: 24px;
-  height: 24px;
-  z-index: 500;
-  transform: translate(-50%,-50%);
-  pointer-events: none;
-  opacity: 0;
-}
-
-.map-crosshair::before,
-.map-crosshair::after {
-  content: "";
-  position: absolute;
-  background: rgba(255,255,255,.65);
-}
-
-.map-crosshair::before {
-  left: 0;
-  right: 0;
-  top: 11px;
-  height: 1px;
-}
-
-.map-crosshair::after {
-  top: 0;
-  bottom: 0;
-  left: 11px;
-  width: 1px;
-}
-
+body.light .nav-btn,
+body.light .mobile-nav .nav-item,
+body.light .tool,
+body.light .my-location{color:#53606a}
+body.light .search{background:#e9edef}
+body.light .search input{color:#1d252b}
+body.light .select{background:#e8ecee;color:#1d252b}
+body.light .layer-row,
+body.light .info-value,
+body.light .alert,
+body.light .timeline{color:#1d252b}
 </style>
 </head>
-
 <body>
-
-<!-- =======================================================
-     MAP
-     ======================================================= -->
-
+<div id="app">
 <div id="map"></div>
 
-<!-- =======================================================
-     TOP BAR
-     ======================================================= -->
-
 <header class="topbar">
-
-  <div class="logo">
-
-    <div class="logo-mark"></div>
-
-    <div>
-      <div class="logo-name">CLOrad</div>
-      <div class="logo-sub">meteorological radar</div>
+  <div class="brand">
+    <div class="brand-mark">
+      <div class="brand-dot"></div>
     </div>
-
+    <span>CLOrad</span>
   </div>
 
-  <nav class="nav">
-
-    <div class="nav-item active">
-      Интерактивная карта
-    </div>
-
-    <div class="nav-item">
-      Региональный
-    </div>
-
-    <div class="nav-item">
-      3D-Анализ
-    </div>
-
-    <div class="nav-item">
-      Архив
-    </div>
-
-    <div class="nav-item">
-      Предупреждения
-    </div>
-
-    <div class="nav-item">
-      Аналитика
-    </div>
-
+  <nav class="desktop-nav">
+    <button class="nav-btn active" data-page="map">Интерактивная карта</button>
+    <button class="nav-btn" data-page="regions">Регионы</button>
+    <button class="nav-btn" data-page="3d">3D</button>
+    <button class="nav-btn" data-page="alerts">Предупреждения</button>
+    <button class="nav-btn" data-page="archive">Архив</button>
+    <button class="nav-btn" data-page="analytics">Аналитика</button>
   </nav>
 
-  <div class="top-actions">
+  <label class="search">
+    <span class="search-icon">⌕</span>
+    <input id="searchInput" autocomplete="off" placeholder="Поиск города...">
+  </label>
 
-    <div class="search">
-
-      <span class="search-icon">⌕</span>
-
-      <input
-        id="searchInput"
-        type="text"
-        placeholder="Поиск города или региона..."
-      >
-
-    </div>
-
-    <button
-      class="icon-button"
-      id="themeButton"
-      title="Тема"
-    >
-      ◉
-    </button>
-
-    <button
-      class="icon-button"
-      title="Уведомления"
-    >
-      ♧
-      <span class="notification-dot"></span>
-    </button>
-
-    <div class="clock">
-      <div class="clock-time" id="clockTime">
-        12:20
-      </div>
-
-      <div class="clock-date" id="clockDate">
-        12 сентября
-      </div>
-    </div>
-
-    <div class="avatar">
-      ◉
-    </div>
-
-    <button
-      class="icon-button mobile-menu"
-      id="menuButton"
-    >
-      ☰
-    </button>
-
-  </div>
-
+  <button class="icon-btn" id="themeBtn" title="Тема">⚙</button>
+  <button class="icon-btn" id="bellBtn" title="Предупреждения">
+    ♧
+    <i class="notification-dot"></i>
+  </button>
+  <button class="icon-btn menu-btn" id="menuBtn" title="Меню">☰</button>
 </header>
 
-<!-- =======================================================
-     LEFT PANEL
-     ======================================================= -->
+<nav class="mobile-nav">
+  <button class="nav-item active"><span>⌖</span><span>Карта</span></button>
+  <button class="nav-item"><span>♟</span><span>Регионы</span></button>
+  <button class="nav-item"><span>◇</span><span>3D</span></button>
+  <button class="nav-item"><span>⚠</span><span>Предупр.</span></button>
+  <button class="nav-item"><span>▣</span><span>Архив</span></button>
+  <button class="nav-item"><span>▥</span><span>Аналитика</span></button>
+  <button class="nav-item"><span>▱</span><span>Слои</span></button>
+</nav>
 
-<aside class="panel left-panel" id="leftPanel">
+<div class="left-panel">
+  <section class="panel-section">
+    <h3 class="panel-title">Выбор региона и настройки</h3>
+    <select class="select" id="regionSelect">
+      <option>Россия</option>
+      <option>Центральный ФО</option>
+      <option>Приволжский ФО</option>
+      <option>Уральский ФО</option>
+      <option>Северо-Западный ФО</option>
+      <option>Сибирский ФО</option>
+      <option>Южный ФО</option>
+      <option>Дальневосточный ФО</option>
+    </select>
+  </section>
 
-  <div class="panel-header">
-    <span>Выбор радара и настройки</span>
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Регион
-    </div>
-
-    <div class="select" id="regionSelect">
-      Центральный ФО
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Список радара
-    </div>
-
+  <section class="panel-section">
+    <h3 class="panel-title">Список радаров</h3>
     <div class="radar-list">
-
-      <div class="radar-row" data-station="Москва">
-        <span class="checkbox">✓</span>
-        <span>Москва (Внуково)</span>
-      </div>
-
-      <div class="radar-row" data-station="Шереметьево">
-        <span class="checkbox">✓</span>
-        <span>Москва (Шереметьево)</span>
-      </div>
-
-      <div class="radar-row" data-station="Тверь">
-        <span class="checkbox">✓</span>
-        <span>Тверь</span>
-      </div>
-
-      <div class="radar-row" data-station="Калуга">
-        <span class="checkbox">✓</span>
-        <span>Калуга</span>
-      </div>
-
-      <div class="radar-row" data-station="Рязань">
-        <span class="checkbox">✓</span>
-        <span>Рязань</span>
-      </div>
-
+      <label class="check-row"><input type="checkbox" checked> Москва</label>
+      <label class="check-row"><input type="checkbox" checked> Санкт-Петербург</label>
+      <label class="check-row"><input type="checkbox" checked> Казань</label>
+      <label class="check-row"><input type="checkbox" checked> Нижний Новгород</label>
+      <label class="check-row"><input type="checkbox" checked> Екатеринбург</label>
     </div>
+  </section>
 
-  </div>
+  <section class="panel-section">
+    <h3 class="panel-title">Режим</h3>
+    <label class="radio-row"><input type="radio" name="mode" checked> Отражаемость (dBZ)</label>
+    <label class="radio-row"><input type="radio" name="mode"> Доплер (ветер)</label>
+  </section>
 
-  <div class="panel-section">
+  <section class="panel-section">
+    <h3 class="panel-title">Высота сканирования</h3>
+    <select class="select">
+      <option>1.5 км</option>
+      <option>2.0 км</option>
+      <option>3.0 км</option>
+      <option>5.0 км</option>
+    </select>
+  </section>
 
-    <div class="section-title">
-      Режим
-    </div>
-
-    <div class="radio-row">
-      <span class="radio active"></span>
-      <span>Отражаемость (dBZ)</span>
-    </div>
-
-    <div class="radio-row">
-      <span class="radio"></span>
-      <span>Доплер (ветер)</span>
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Высота сканирования
-    </div>
-
-    <div class="select">
-      1.5 км
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Движение фронта
-    </div>
-
+  <section class="panel-section">
     <div class="toggle-row">
-
-      <div class="toggle-label">
-        <span>ϟ</span>
-        <span>
-          Движение фронта<br>
-          (анимация)
-        </span>
-      </div>
-
-      <div
-        class="toggle"
-        id="frontToggle"
-      >
-        <div class="toggle-knob"></div>
-      </div>
-
+      <span>⚡ Движение фронта</span>
+      <button class="toggle" data-toggle></button>
     </div>
+  </section>
+</div>
 
+<aside class="right-panel">
+  <div class="legend-wrap">
+    <div class="legend"></div>
+    <div class="legend-labels">
+      <span>75+</span>
+      <span>70</span>
+      <span>65</span>
+      <span>60</span>
+      <span>55</span>
+      <span>50</span>
+      <span>45</span>
+      <span>40</span>
+      <span>35</span>
+      <span>30</span>
+      <span>25</span>
+      <span>20</span>
+      <span>15</span>
+      <span>10</span>
+      <span>5</span>
+    </div>
+    <strong style="writing-mode:vertical-rl;font-size:12px;color:#c9d0d5">dBZ</strong>
+  </div>
+
+  <div class="analysis-card">
+    <h3>АНАЛИЗ ДАННЫХ (dBZ)</h3>
+    <div class="analysis-box">
+      <strong>Слой отражаемости</strong>
+      <span>Здесь появятся реальные радарные данные</span>
+      <strong>Ливень</strong>
+    </div>
+  </div>
+
+  <div class="storm-data">
+    <h3 class="panel-title">ДАННЫЕ ПО ШТОРМУ</h3>
+    <div class="data-row"><span>Макс. отражаемость:</span><b>—</b></div>
+    <div class="data-row"><span>Высота облаков:</span><b>—</b></div>
+    <div class="data-row"><span>Движение:</span><b>—</b></div>
   </div>
 
   <div class="panel-section">
-
-    <div class="section-title">
-      Отображение
-    </div>
-
-    <div class="toggle-row">
-
-      <div class="toggle-label">
-        Названия городов
-      </div>
-
-      <div
-        class="toggle active"
-        id="citiesToggle"
-      >
-        <div class="toggle-knob"></div>
-      </div>
-
-    </div>
-
-    <div class="toggle-row">
-
-      <div class="toggle-label">
-        Зоны покрытия
-      </div>
-
-      <div
-        class="toggle active"
-        id="coverageToggle"
-      >
-        <div class="toggle-knob"></div>
-      </div>
-
-    </div>
-
+    <h3 class="panel-title">ПРЕДУПРЕЖДЕНИЯ</h3>
+    <div class="warning">⚠ Пока нет подключенных радарных предупреждений.</div>
   </div>
-
-  <div class="panel-section">
-
-    <div class="empty-radar">
-      Радарные данные пока не подключены.<br>
-      Здесь появится реальная отражаемость.
-    </div>
-
-  </div>
-
 </aside>
-
-<!-- =======================================================
-     RIGHT PANEL
-     ======================================================= -->
-
-<aside class="panel right-panel" id="rightPanel">
-
-  <div class="panel-header">
-
-    <span>(dBZ)</span>
-
-    <span class="panel-header-small">
-      Анализ данных
-    </span>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="legend-box">
-
-      <div>
-
-        <div class="legend-unit">
-          Отражаемость
-        </div>
-
-        <div class="legend"></div>
-
-      </div>
-
-      <div class="legend-labels">
-
-        <span>75+</span>
-        <span>70</span>
-        <span>60</span>
-        <span>50</span>
-        <span>40</span>
-        <span>30</span>
-        <span>20</span>
-        <span>10</span>
-        <span>0</span>
-
-      </div>
-
-      <div class="analytics">
-
-        <div class="analytics-text">
-          Анализ<br>
-          появится после<br>
-          подключения<br>
-          радарных данных
-        </div>
-
-      </div>
-
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Данные по шторму
-    </div>
-
-    <div class="data-line">
-      <span>Макс. отражаемость:</span>
-      <strong>— dBZ</strong>
-    </div>
-
-    <div class="data-line">
-      <span>Высота облаков:</span>
-      <strong>— км</strong>
-    </div>
-
-    <div class="data-line">
-      <span>Движение:</span>
-      <strong>—</strong>
-    </div>
-
-    <div class="data-line">
-      <span>Скорость:</span>
-      <strong>— км/ч</strong>
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Предупреждения
-    </div>
-
-    <div class="warning">
-      Активных радарных предупреждений
-      пока нет.
-    </div>
-
-  </div>
-
-  <div class="panel-section">
-
-    <div class="section-title">
-      Точка карты
-    </div>
-
-    <div class="data-line">
-      <span>Широта:</span>
-      <strong id="latValue">—</strong>
-    </div>
-
-    <div class="data-line">
-      <span>Долгота:</span>
-      <strong id="lonValue">—</strong>
-    </div>
-
-    <div class="coordinates">
-      Нажмите на карту для выбора точки
-    </div>
-
-  </div>
-
-</aside>
-
-<!-- =======================================================
-     MAP TOOLS
-     ======================================================= -->
 
 <div class="map-tools">
-
-  <button
-    class="map-tool"
-    id="locateButton"
-    title="Моё местоположение"
-  >
-    ◎
-  </button>
-
-  <button
-    class="map-tool"
-    id="zoomIn"
-    title="Приблизить"
-  >
-    +
-  </button>
-
-  <button
-    class="map-tool"
-    id="zoomOut"
-    title="Отдалить"
-  >
-    −
-  </button>
-
-  <button
-    class="map-tool"
-    id="settingsButton"
-    title="Настройки"
-  >
-    ⚙
-  </button>
-
+  <button class="tool" id="zoomIn" title="Приблизить">+</button>
+  <button class="tool" id="zoomOut" title="Отдалить">−</button>
+  <button class="tool locate-tool" id="locateBtn" title="Моё местоположение">➤</button>
 </div>
 
-<!-- =======================================================
-     MAP STATUS
-     ======================================================= -->
-
-<div class="map-status">
-
-  <span class="status-dot"></span>
-
-  <span id="statusText">
-    Карта готова · радарные данные не подключены
-  </span>
-
+<div class="layer-panel">
+  <div class="layer-row">
+    <span class="emoji">◉</span>
+    <span>Радар</span>
+    <button class="switch on" data-layer="radar"><i></i></button>
+  </div>
+  <div class="layer-row">
+    <span class="emoji">💧</span>
+    <span>Осадки</span>
+    <button class="switch on" data-layer="rain"><i></i></button>
+  </div>
+  <div class="layer-row">
+    <span class="emoji">⚡</span>
+    <span>Гроза</span>
+    <button class="switch on" data-layer="storm"><i></i></button>
+  </div>
+  <div class="layer-row">
+    <span class="emoji">☁</span>
+    <span>Облачность</span>
+    <button class="switch" data-layer="clouds"><i></i></button>
+  </div>
 </div>
 
-<!-- =======================================================
-     CROSSHAIR
-     ======================================================= -->
+<button class="my-location" id="myLocation">⌾ &nbsp; Моё местоположение</button>
 
-<div class="map-crosshair"></div>
+<div class="center-crosshair"></div>
+<div class="status-chip" id="statusChip">Точка карты: —</div>
 
-<!-- =======================================================
-     POPUP
-     ======================================================= -->
-
-<div
-  class="info-popup"
-  id="infoPopup"
->
-
-  <div class="popup-title">
-    Точка наблюдения
-  </div>
-
-  <div
-    class="popup-value"
-    id="popupCoords"
-  >
-    —
-  </div>
-
-  <div class="popup-muted">
-    Радарные значения появятся после подключения данных
-  </div>
-
+<div class="alert" id="alertBox">
+  <span class="warn">⚠</span>
+  <b>ШТОРМ:</b> интерфейс готов. Реальные данные будут подключены позже.
+  <button class="close" id="closeAlert">×</button>
 </div>
 
-<!-- =======================================================
-     TIMELINE
-     ======================================================= -->
+<div class="info-card">
+  <div class="info-item">
+    <div class="info-label">ИНТЕНСИВНОСТЬ</div>
+    <div class="info-value"><strong>Нет данных</strong></div>
+  </div>
+  <div class="info-item">
+    <div class="info-label">Гроза</div>
+    <div class="info-value">— %</div>
+  </div>
+  <div class="info-item">
+    <div class="info-label">Скорость</div>
+    <div class="info-value">— м/с</div>
+  </div>
+</div>
 
 <div class="timeline">
-
-  <div class="play-controls">
-
-    <button
-      class="play-main"
-      id="playButton"
-      title="Запустить анимацию"
-    >
-      <span>▶</span>
-      <span>Пуск</span>
-    </button>
-
-    <button
-      class="play-small"
-      id="previousButton"
-      title="Предыдущий кадр"
-    >
-      |◀
-    </button>
-
-    <button
-      class="play-small"
-      id="nextButton"
-      title="Следующий кадр"
-    >
-      ▶|
-    </button>
-
-  </div>
-
+  <button class="play" id="playBtn">▶</button>
+  <button class="skip" id="prevBtn">|◀</button>
   <div class="timeline-main">
-
-    <div class="timeline-date">
-      12 СЕНТЯБРЯ
+    <div class="time-head">
+      <b>СЕЙЧАС <span id="currentTime">17:20</span></b>
+      <span id="currentDate">13 СЕНТЯБРЯ</span>
     </div>
-
-    <div class="slider-wrap">
-
-      <div class="slider-line"></div>
-
-      <div
-        class="slider-thumb"
-        id="sliderThumb"
-        style="left: 50%;"
-      ></div>
-
-      <div
-        class="now-label"
-        id="nowLabel"
-        style="left: 50%;"
-      >
-        СЕЙЧАС
-      </div>
-
-      <input
-        class="range"
-        id="timeRange"
-        type="range"
-        min="0"
-        max="24"
-        value="12"
-        step="1"
-      >
-
-      <div class="time-labels">
-
-        <span>00:00</span>
-        <span>03:00</span>
+    <div class="time-track">
+      <input class="time-input" id="timeSlider" type="range" min="0" max="100" value="62">
+      <div class="ticks">
         <span>06:00</span>
-        <span>09:00</span>
+        <span>08:00</span>
+        <span>10:00</span>
         <span>12:00</span>
-        <span>15:00</span>
+        <span>14:00</span>
+        <span>17:20</span>
         <span>18:00</span>
-        <span>21:00</span>
-        <span>00:00</span>
-
+        <span>20:00</span>
+        <span>22:00</span>
       </div>
-
     </div>
-
   </div>
-
-  <div class="speed-controls">
-
-    <button
-      class="speed active"
-      data-speed="1"
-    >
-      1x
-    </button>
-
-    <button
-      class="speed"
-      data-speed="2"
-    >
-      2x
-    </button>
-
+  <button class="skip" id="nextBtn">▶|</button>
+  <div class="speed">
+    <button>1x</button>
+    <button class="active">2x</button>
   </div>
-
 </div>
 
-<div class="corner-label">
-  CLOrad · карта без радарного слоя
+<div class="search-results" id="searchResults"></div>
+<div class="toast" id="toast"></div>
 </div>
 
-<!-- =======================================================
-     LEAFLET
-     ======================================================= -->
-
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-></script>
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+const map = L.map('map', {
+  zoomControl:false,
+  minZoom:3,
+  maxZoom:18,
+  worldCopyJump:true
+}).setView([55.75,37.62],5);
 
-/* =========================================================
-   CLOrad JavaScript
-   ========================================================= */
-
-/* ---------------------------------------------------------
-   MAP
-   --------------------------------------------------------- */
-
-const map = L.map("map", {
-  zoomControl: false,
-  attributionControl: true,
-  minZoom: 3,
-  maxZoom: 12,
-  preferCanvas: true,
-  worldCopyJump: true
-});
-
-/* ---------------------------------------------------------
-   DARK MAP
-   --------------------------------------------------------- */
-
-const darkMap = L.tileLayer(
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+const mapLayer = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {
-    maxZoom: 20,
-    attribution:
-      '&copy; OpenStreetMap &copy; CARTO'
+    maxZoom:20,
+    attribution:'© OpenStreetMap © CARTO'
   }
-);
+).addTo(map);
 
-darkMap.addTo(map);
-
-/* ---------------------------------------------------------
-   LIGHT MAP
-   --------------------------------------------------------- */
-
-const lightMap = L.tileLayer(
-  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  {
-    maxZoom: 20,
-    attribution:
-      '&copy; OpenStreetMap contributors'
-  }
-);
-
-/* ---------------------------------------------------------
-   INITIAL VIEW
-   --------------------------------------------------------- */
-
-map.setView(
-  [55.7558, 37.6173],
-  5
-);
-
-/* ---------------------------------------------------------
-   RADAR ICON
-   --------------------------------------------------------- */
-
-const radarIcon = L.divIcon({
-  className: "",
-  html:
-    '<div class="radar-marker"></div>',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7]
-});
-
-/* ---------------------------------------------------------
-   RADAR STATIONS
-   --------------------------------------------------------- */
-
-const stations = [
-
-  {
-    name: "Москва",
-    short: "Внуково",
-    lat: 55.596,
-    lon: 37.267
-  },
-
-  {
-    name: "Москва",
-    short: "Шереметьево",
-    lat: 55.972,
-    lon: 37.414
-  },
-
-  {
-    name: "Тверь",
-    short: "Тверь",
-    lat: 56.858,
-    lon: 35.911
-  },
-
-  {
-    name: "Калуга",
-    short: "Калуга",
-    lat: 54.529,
-    lon: 36.275
-  },
-
-  {
-    name: "Рязань",
-    short: "Рязань",
-    lat: 54.629,
-    lon: 39.742
-  },
-
-  {
-    name: "Ярославль",
-    short: "Ярославль",
-    lat: 57.626,
-    lon: 39.893
-  },
-
-  {
-    name: "Владимир",
-    short: "Владимир",
-    lat: 56.129,
-    lon: 40.407
-  }
-
-];
-
-/* ---------------------------------------------------------
-   LAYERS
-   --------------------------------------------------------- */
-
-const stationLayer = L.layerGroup().addTo(map);
-
-const coverageLayer = L.layerGroup().addTo(map);
-
-/* ---------------------------------------------------------
-   DRAW STATIONS
-   --------------------------------------------------------- */
-
-stations.forEach(
-  station => {
-
-    const marker =
-      L.marker(
-        [
-          station.lat,
-          station.lon
-        ],
-        {
-          icon: radarIcon
-        }
-      )
-      .bindTooltip(
-        station.name +
-        " (" +
-        station.short +
-        ")",
-        {
-          direction: "top",
-          className: "station-label",
-          opacity: 1
-        }
-      );
-
-    stationLayer.addLayer(marker);
-
-    const circle =
-      L.circle(
-        [
-          station.lat,
-          station.lon
-        ],
-        {
-          radius: 120000,
-          color: "#b6c0c8",
-          weight: 1,
-          opacity: .32,
-          fill: false,
-          interactive: false
-        }
-      );
-
-    coverageLayer.addLayer(circle);
-
-  }
-);
-
-/* ---------------------------------------------------------
-   FAKE RADAR RINGS
-   --------------------------------------------------------- */
-
-const ringLayer = L.layerGroup().addTo(map);
-
-const rings = [
-
-  100000,
-  200000,
-  300000
-
-];
-
-rings.forEach(
-  radius => {
-
-    L.circle(
-      [
-        55.7558,
-        37.6173
-      ],
-      {
-        radius: radius,
-        color: "#d8e0e5",
-        weight: 1,
-        opacity: .16,
-        fill: false,
-        interactive: false,
-        className: "fake-echo"
-      }
-    ).addTo(ringLayer);
-
-  }
-);
-
-/* =========================================================
-   MAP CLICK
-   ========================================================= */
-
-map.on(
-  "click",
-  event => {
-
-    const lat =
-      event.latlng.lat.toFixed(4);
-
-    const lon =
-      event.latlng.lng.toFixed(4);
-
-    document.getElementById(
-      "latValue"
-    ).textContent = lat;
-
-    document.getElementById(
-      "lonValue"
-    ).textContent = lon;
-
-    document.getElementById(
-      "popupCoords"
-    ).textContent =
-      lat + "°, " + lon + "°";
-
-    const popup =
-      document.getElementById(
-        "infoPopup"
-      );
-
-    popup.style.left =
-      (event.originalEvent.clientX + 14) +
-      "px";
-
-    popup.style.top =
-      (event.originalEvent.clientY - 25) +
-      "px";
-
-    popup.classList.add(
-      "visible"
-    );
-
-    setTimeout(
-      () => {
-        popup.classList.remove(
-          "visible"
-        );
-      },
-      3500
-    );
-
-  }
-);
-
-/* =========================================================
-   ZOOM BUTTONS
-   ========================================================= */
-
-document.getElementById(
-  "zoomIn"
-).addEventListener(
-  "click",
-  () => map.zoomIn()
-);
-
-document.getElementById(
-  "zoomOut"
-).addEventListener(
-  "click",
-  () => map.zoomOut()
-);
-
-/* =========================================================
-   LOCATION
-   ========================================================= */
-
-document.getElementById(
-  "locateButton"
-).addEventListener(
-  "click",
-  () => {
-
-    if (!navigator.geolocation) {
-
-      alert(
-        "Геолокация не поддерживается."
-      );
-
-      return;
-
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      position => {
-
-        const lat =
-          position.coords.latitude;
-
-        const lon =
-          position.coords.longitude;
-
-        map.flyTo(
-          [
-            lat,
-            lon
-          ],
-          9,
-          {
-            duration: 1
-          }
-        );
-
-        L.circleMarker(
-          [
-            lat,
-            lon
-          ],
-          {
-            radius: 7,
-            color: "#fff",
-            weight: 3,
-            fillColor: "#4da2ff",
-            fillOpacity: 1
-          }
-        )
-        .addTo(map)
-        .bindTooltip(
-          "Ваше местоположение",
-          {
-            direction: "top"
-          }
-        )
-        .openTooltip();
-
-        document.getElementById(
-          "statusText"
-        ).textContent =
-          "Ваше местоположение";
-
-      },
-      () => {
-
-        alert(
-          "Не удалось получить местоположение."
-        );
-
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000
-      }
-    );
-
-  }
-);
-
-/* =========================================================
-   RADAR CHECKBOXES
-   ========================================================= */
-
-document
-  .querySelectorAll(".radar-row")
-  .forEach(
-    row => {
-
-      row.addEventListener(
-        "click",
-        () => {
-
-          const checkbox =
-            row.querySelector(
-              ".checkbox"
-            );
-
-          checkbox.classList.toggle(
-            "off"
-          );
-
-          checkbox.textContent =
-            checkbox.classList.contains(
-              "off"
-            )
-            ? ""
-            : "✓";
-
-          const station =
-            row.dataset.station;
-
-          const target =
-            stations.find(
-              item =>
-                item.name === station
-            );
-
-          if (target) {
-
-            const markerElements =
-              stationLayer.getLayers();
-
-            markerElements.forEach(
-              marker => {
-
-                const pos =
-                  marker.getLatLng();
-
-                if (
-                  Math.abs(
-                    pos.lat -
-                    target.lat
-                  ) < .01 &&
-                  Math.abs(
-                    pos.lng -
-                    target.lon
-                  ) < .01
-                ) {
-
-                  if (
-                    stationLayer.hasLayer(
-                      marker
-                    )
-                  ) {
-
-                    if (
-                      checkbox.classList.contains(
-                        "off"
-                      )
-                    ) {
-                      stationLayer.removeLayer(
-                        marker
-                      );
-                    }
-
-                  }
-
-                }
-
-              }
-            );
-
-          }
-
-        }
-      );
-
-    }
-  );
-
-/* =========================================================
-   TOGGLES
-   ========================================================= */
-
-document
-  .querySelectorAll(".toggle")
-  .forEach(
-    toggle => {
-
-      toggle.addEventListener(
-        "click",
-        () => {
-
-          toggle.classList.toggle(
-            "active"
-          );
-
-          if (
-            toggle.id ===
-            "coverageToggle"
-          ) {
-
-            if (
-              toggle.classList.contains(
-                "active"
-              )
-            ) {
-
-              coverageLayer.addTo(
-                map
-              );
-
-            } else {
-
-              map.removeLayer(
-                coverageLayer
-              );
-
-            }
-
-          }
-
-          if (
-            toggle.id ===
-            "citiesToggle"
-          ) {
-
-            document.body.classList.toggle(
-              "hide-city-labels"
-            );
-
-          }
-
-        }
-      );
-
-    }
-  );
-
-/* =========================================================
-   FRONT TOGGLE
-   ========================================================= */
-
-document.getElementById(
-  "frontToggle"
-).addEventListener(
-  "click",
-  function() {
-
-    this.classList.toggle(
-      "active"
-    );
-
-    if (
-      this.classList.contains(
-        "active"
-      )
-    ) {
-
-      document.getElementById(
-        "statusText"
-      ).textContent =
-        "Анимация движения включена";
-
-    } else {
-
-      document.getElementById(
-        "statusText"
-      ).textContent =
-        "Карта готова · радарные данные не подключены";
-
-    }
-
-  }
-);
-
-/* =========================================================
-   THEME
-   ========================================================= */
-
-let lightMode = false;
-
-document.getElementById(
-  "themeButton"
-).addEventListener(
-  "click",
-  () => {
-
-    lightMode =
-      !lightMode;
-
-    if (lightMode) {
-
-      document.body.classList.add(
-        "light"
-      );
-
-      map.removeLayer(
-        darkMap
-      );
-
-      lightMap.addTo(
-        map
-      );
-
-    } else {
-
-      document.body.classList.remove(
-        "light"
-      );
-
-      map.removeLayer(
-        lightMap
-      );
-
-      darkMap.addTo(
-        map
-      );
-
-    }
-
-  }
-);
-
-/* =========================================================
-   SEARCH
-   ========================================================= */
+L.control.zoom({position:'topleft'}).addTo(map);
 
 const cities = {
+  'Москва':[55.7558,37.6173],
+  'Санкт-Петербург':[59.9343,30.3351],
+  'Казань':[55.7879,49.1233],
+  'Нижний Новгород':[56.2965,43.9361],
+  'Екатеринбург':[56.8389,60.6057],
+  'Уфа':[54.7388,55.9721],
+  'Самара':[53.1959,50.1002],
+  'Пермь':[58.0105,56.2502],
+  'Челябинск':[55.1644,61.4368],
+  'Омск':[54.9885,73.3242]
+};
 
-  "москва": [
-    55.7558,
-    37.6173
-  ],
+let marker;
+let playTimer=null;
+let playing=false;
 
-  "тверь": [
-    56.8587,
-    35.9118
-  ],
+function showToast(text){
+  const toast=document.getElementById('toast');
+  toast.textContent=text;
+  toast.classList.add('show');
+  clearTimeout(showToast.timer);
+  showToast.timer=setTimeout(()=>toast.classList.remove('show'),1800);
+}
 
-  "калуга": [
-    54.5293,
-    36.2754
-  ],
+function updateTime(){
+  const v=Number(document.getElementById('timeSlider').value);
+  const start=6*60;
+  const end=22*60;
+  const minutes=Math.round(start+(end-start)*(v/100));
+  const h=Math.floor(minutes/60);
+  const m=minutes%60;
+  document.getElementById('currentTime').textContent=
+    String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+}
 
-  "рязань": [
-    54.6296,
-    39.7425
-  ],
+function setCity(name){
+  const p=cities[name];
+  if(!p)return;
+  map.flyTo(p,8,{duration:.8});
+  if(marker)map.removeLayer(marker);
+  marker=L.circleMarker(p,{
+    radius:6,
+    color:'#fff',
+    weight:2,
+    fillColor:'#52e08b',
+    fillOpacity:1
+  }).addTo(map);
+  marker.bindTooltip(name,{
+    permanent:true,
+    direction:'top',
+    offset:[0,-8]
+  }).openTooltip();
+  showToast(name);
+}
 
-  "ярославль": [
-    57.6261,
-    39.8845
-  ],
+document.getElementById('zoomIn').onclick=()=>map.zoomIn();
 
-  "владимир": [
-    56.129,
-    40.4066
-  ],
+document.getElementById('zoomOut').onclick=()=>map.zoomOut();
 
-  "уфа": [
-    54.7388,
-    55.9721
-  ],
+document.getElementById('locateBtn').onclick=()=>{
+  map.locate({
+    setView:true,
+    maxZoom:10
+  });
+  showToast('Определение местоположения...');
+};
 
-  "санкт-петербург": [
-    59.9343,
-    30.3351
-  ],
+document.getElementById('myLocation').onclick=()=>{
+  map.locate({
+    setView:true,
+    maxZoom:10
+  });
+  showToast('Запрос местоположения');
+};
 
-  "петербург": [
-    59.9343,
-    30.3351
-  ],
+map.on('locationfound',e=>{
+  if(marker)map.removeLayer(marker);
 
-  "казань": [
-    55.7879,
-    49.1233
-  ],
+  marker=L.circleMarker(e.latlng,{
+    radius:8,
+    color:'#fff',
+    weight:3,
+    fillColor:'#52e08b',
+    fillOpacity:1
+  }).addTo(map);
 
-  "нижний новгород": [
-    56.2965,
-    43.9361
-  ],
+  marker.bindPopup('Ваше местоположение').openPopup();
 
-  "екатеринбург": [
-    56.8389,
-    60.6057
-  ]
+  showToast('Местоположение найдено');
+});
+
+map.on('locationerror',()=>{
+  showToast('Не удалось получить местоположение');
+});
+
+map.on('click',e=>{
+  const chip=document.getElementById('statusChip');
+
+  chip.textContent=
+    'Точка карты: '+
+    e.latlng.lat.toFixed(3)+
+    '°, '+
+    e.latlng.lng.toFixed(3)+
+    '°';
+
+  chip.style.display='block';
+
+  clearTimeout(window.chipTimer);
+
+  window.chipTimer=setTimeout(()=>{
+    chip.style.display='none';
+  },3500);
+});
+
+document.getElementById('closeAlert').onclick=()=>{
+  document.getElementById('alertBox').style.display='none';
+};
+
+document.getElementById('timeSlider')
+.addEventListener('input',updateTime);
+
+document.getElementById('prevBtn').onclick=()=>{
+  const s=document.getElementById('timeSlider');
+
+  s.value=Math.max(
+    0,
+    Number(s.value)-5
+  );
+
+  updateTime();
+};
+
+document.getElementById('nextBtn').onclick=()=>{
+  const s=document.getElementById('timeSlider');
+
+  s.value=Math.min(
+    100,
+    Number(s.value)+5
+  );
+
+  updateTime();
+};
+
+document.getElementById('playBtn').onclick=()=>{
+  playing=!playing;
+
+  const btn=document.getElementById('playBtn');
+
+  btn.textContent=playing?'Ⅱ':'▶';
+
+  if(playing){
+
+    playTimer=setInterval(()=>{
+      const s=document.getElementById('timeSlider');
+
+      let v=Number(s.value)+2;
+
+      if(v>100)v=0;
+
+      s.value=v;
+
+      updateTime();
+
+    },350);
+
+  }else{
+
+    clearInterval(playTimer);
+
+  }
+};
+
+document.querySelectorAll('[data-toggle]')
+.forEach(t=>{
+
+  t.addEventListener('click',()=>{
+    t.classList.toggle('on');
+  });
+
+});
+
+document.querySelectorAll('.switch')
+.forEach(sw=>{
+
+  sw.addEventListener('click',()=>{
+
+    sw.classList.toggle('on');
+
+    const layer=sw.dataset.layer;
+
+    const state=sw.classList.contains('on');
+
+    showToast(
+      (state?'Включён: ':'Выключен: ')+
+      layer
+    );
+
+  });
+
+});
+
+document.querySelectorAll('.speed button')
+.forEach(btn=>{
+
+  btn.addEventListener('click',()=>{
+
+    document.querySelectorAll('.speed button')
+    .forEach(b=>{
+      b.classList.remove('active');
+    });
+
+    btn.classList.add('active');
+
+    showToast(
+      'Скорость '+btn.textContent
+    );
+
+  });
+
+});
+
+document.querySelectorAll('.nav-btn')
+.forEach(btn=>{
+
+  btn.addEventListener('click',()=>{
+
+    document.querySelectorAll('.nav-btn')
+    .forEach(b=>{
+      b.classList.remove('active');
+    });
+
+    btn.classList.add('active');
+
+    showToast(btn.textContent);
+
+  });
+
+});
+
+document.querySelectorAll(
+  '.mobile-nav .nav-item'
+).forEach(btn=>{
+
+  btn.addEventListener('click',()=>{
+
+    document.querySelectorAll(
+      '.mobile-nav .nav-item'
+    ).forEach(b=>{
+      b.classList.remove('active');
+    });
+
+    btn.classList.add('active');
+
+    showToast(
+      btn.innerText
+        .trim()
+        .replace(/\n/g,' ')
+    );
+
+  });
+
+});
+
+document.getElementById('themeBtn').onclick=()=>{
+
+  document.body.classList.toggle('light');
+
+  showToast(
+    document.body.classList.contains('light')
+    ?'Светлая тема'
+    :'Тёмная тема'
+  );
 
 };
 
-document.getElementById(
-  "searchInput"
-).addEventListener(
-  "keydown",
-  event => {
+document.getElementById('bellBtn').onclick=()=>{
+  showToast('Новых предупреждений нет');
+};
 
-    if (
-      event.key !==
-      "Enter"
-    ) {
-      return;
-    }
+const searchInput=
+  document.getElementById('searchInput');
 
-    const query =
-      event.target.value
-        .trim()
-        .toLowerCase();
+const results=
+  document.getElementById('searchResults');
 
-    if (
-      !cities[query]
-    ) {
+function renderResults(query){
 
-      document.getElementById(
-        "statusText"
-      ).textContent =
-        "Город не найден";
+  const q=query.trim().toLowerCase();
 
-      return;
+  results.innerHTML='';
 
-    }
+  if(!q){
 
-    const coords =
-      cities[query];
+    results.style.display='none';
 
-    map.flyTo(
-      coords,
-      9,
-      {
-        duration: 1.1
-      }
-    );
-
-    L.circleMarker(
-      coords,
-      {
-        radius: 6,
-        color: "#fff",
-        weight: 2,
-        fillColor: "#4d9fff",
-        fillOpacity: 1
-      }
-    )
-    .addTo(map)
-    .bindTooltip(
-      query
-        .charAt(0)
-        .toUpperCase() +
-      query.slice(1),
-      {
-        direction: "top"
-      }
-    )
-    .openTooltip();
-
-    document.getElementById(
-      "statusText"
-    ).textContent =
-      "Центр карты: " +
-      query
-        .charAt(0)
-        .toUpperCase() +
-      query.slice(1);
-
-  }
-);
-
-/* =========================================================
-   CLOCK
-   ========================================================= */
-
-function updateClock() {
-
-  const now =
-    new Date();
-
-  const hours =
-    String(
-      now.getHours()
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const minutes =
-    String(
-      now.getMinutes()
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const months = [
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря"
-  ];
-
-  document.getElementById(
-    "clockTime"
-  ).textContent =
-    hours +
-    ":" +
-    minutes;
-
-  document.getElementById(
-    "clockDate"
-  ).textContent =
-    now.getDate() +
-    " " +
-    months[
-      now.getMonth()
-    ];
-
-}
-
-updateClock();
-
-setInterval(
-  updateClock,
-  1000
-);
-
-/* =========================================================
-   TIMELINE
-   ========================================================= */
-
-const range =
-  document.getElementById(
-    "timeRange"
-  );
-
-const thumb =
-  document.getElementById(
-    "sliderThumb"
-  );
-
-const nowLabel =
-  document.getElementById(
-    "nowLabel"
-  );
-
-function updateTimeline() {
-
-  const value =
-    Number(
-      range.value
-    );
-
-  const max =
-    Number(
-      range.max
-    );
-
-  const percent =
-    (value / max) *
-    100;
-
-  thumb.style.left =
-    percent + "%";
-
-  nowLabel.style.left =
-    percent + "%";
-
-  const hour =
-    String(
-      value
-    ).padStart(
-      2,
-      "0"
-    );
-
-  document.getElementById(
-    "statusText"
-  ).textContent =
-    "Время карты: " +
-    hour +
-    ":00 · данных пока нет";
-
-}
-
-range.addEventListener(
-  "input",
-  updateTimeline
-);
-
-updateTimeline();
-
-/* =========================================================
-   PLAYBACK
-   ========================================================= */
-
-let playing = false;
-
-let timer = null;
-
-let speed = 1;
-
-const playButton =
-  document.getElementById(
-    "playButton"
-  );
-
-function startPlayback() {
-
-  if (playing) {
     return;
   }
 
-  playing = true;
+  const found=
+    Object.keys(cities)
+    .filter(name=>
+      name.toLowerCase().includes(q)
+    )
+    .slice(0,6);
 
-  playButton.innerHTML =
-    "<span>Ⅱ</span><span>Пауза</span>";
+  if(!found.length){
 
-  timer =
-    setInterval(
-      () => {
+    results.innerHTML=
+      '<button disabled>Город не найден</button>';
 
-        let value =
-          Number(
-            range.value
-          );
+  }else{
 
-        value++;
+    found.forEach(name=>{
 
-        if (
-          value >
-          Number(range.max)
-        ) {
+      const b=document.createElement('button');
 
-          value =
-            Number(
-              range.min
-            );
+      b.textContent=name;
 
-        }
+      b.onclick=()=>{
 
-        range.value =
-          value;
+        setCity(name);
 
-        updateTimeline();
+        results.style.display='none';
 
-      },
-      900 / speed
-    );
+        searchInput.value=name;
+
+      };
+
+      results.appendChild(b);
+
+    });
+
+  }
+
+  results.style.display='block';
 
 }
 
-function stopPlayback() {
+searchInput.addEventListener(
+  'input',
+  e=>renderResults(e.target.value)
+);
 
-  playing = false;
+searchInput.addEventListener(
+  'keydown',
+  e=>{
 
-  clearInterval(
-    timer
-  );
+    if(e.key==='Escape'){
 
-  timer = null;
+      results.style.display='none';
 
-  playButton.innerHTML =
-    "<span>▶</span><span>Пуск</span>";
-
-}
-
-playButton.addEventListener(
-  "click",
-  () => {
-
-    if (playing) {
-
-      stopPlayback();
-
-    } else {
-
-      startPlayback();
+      searchInput.blur();
 
     }
 
-  }
-);
+    if(e.key==='Enter'){
 
-/* =========================================================
-   PREVIOUS / NEXT
-   ========================================================= */
-
-document.getElementById(
-  "previousButton"
-).addEventListener(
-  "click",
-  () => {
-
-    let value =
-      Number(
-        range.value
-      );
-
-    value--;
-
-    if (
-      value <
-      Number(range.min)
-    ) {
-
-      value =
-        Number(
-          range.max
+      const first=
+        results.querySelector(
+          'button:not([disabled])'
         );
 
+      if(first)first.click();
+
     }
-
-    range.value =
-      value;
-
-    updateTimeline();
 
   }
 );
 
-document.getElementById(
-  "nextButton"
-).addEventListener(
-  "click",
-  () => {
+document.addEventListener('click',e=>{
 
-    let value =
-      Number(
-        range.value
-      );
+  if(
+    !e.target.closest('.search') &&
+    !e.target.closest('.search-results')
+  ){
 
-    value++;
-
-    if (
-      value >
-      Number(range.max)
-    ) {
-
-      value =
-        Number(
-          range.min
-        );
-
-    }
-
-    range.value =
-      value;
-
-    updateTimeline();
+    results.style.display='none';
 
   }
-);
 
-/* =========================================================
-   SPEED
-   ========================================================= */
+});
 
-document
-  .querySelectorAll(".speed")
-  .forEach(
-    button => {
+document.getElementById('menuBtn').onclick=()=>{
 
-      button.addEventListener(
-        "click",
-        () => {
+  const nav=document.querySelector('.mobile-nav');
 
-          document
-            .querySelectorAll(
-              ".speed"
-            )
-            .forEach(
-              item =>
-                item.classList.remove(
-                  "active"
-                )
-            );
+  nav.style.display=
+    nav.style.display==='flex'
+    ?'none'
+    :'flex';
 
-          button.classList.add(
-            "active"
-          );
+};
 
-          speed =
-            Number(
-              button.dataset.speed
-            );
+document.getElementById('regionSelect')
+.onchange=e=>{
 
-          if (playing) {
-
-            stopPlayback();
-
-            startPlayback();
-
-          }
-
-        }
-      );
-
-    }
+  showToast(
+    'Регион: '+e.target.value
   );
 
-/* =========================================================
-   MOBILE PANELS
-   ========================================================= */
+};
 
-const leftPanel =
-  document.getElementById(
-    "leftPanel"
+updateTime();
+
+setTimeout(()=>{
+
+  showToast(
+    'CLOrad готов — радарные данные пока отключены'
   );
 
-const rightPanel =
-  document.getElementById(
-    "rightPanel"
-  );
+},600);
 
-let mobilePanels =
-  false;
+window.addEventListener('resize',()=>{
 
-document.getElementById(
-  "menuButton"
-).addEventListener(
-  "click",
-  () => {
+  map.invalidateSize();
 
-    mobilePanels =
-      !mobilePanels;
-
-    if (mobilePanels) {
-
-      leftPanel.classList.remove(
-        "mobile-hidden"
-      );
-
-      rightPanel.classList.remove(
-        "mobile-hidden"
-      );
-
-    } else {
-
-      leftPanel.classList.add(
-        "mobile-hidden"
-      );
-
-      rightPanel.classList.add(
-        "mobile-hidden"
-      );
-
-    }
-
-  }
-);
-
-/* =========================================================
-   SETTINGS BUTTON
-   ========================================================= */
-
-document.getElementById(
-  "settingsButton"
-).addEventListener(
-  "click",
-  () => {
-
-    if (
-      window.innerWidth <=
-      800
-    ) {
-
-      leftPanel.classList.toggle(
-        "mobile-hidden"
-      );
-
-      rightPanel.classList.add(
-        "mobile-hidden"
-      );
-
-    } else {
-
-      leftPanel.scrollIntoView({
-        behavior: "smooth"
-      });
-
-    }
-
-  }
-);
-
-/* =========================================================
-   REGION BUTTON
-   ========================================================= */
-
-document.getElementById(
-  "regionSelect"
-).addEventListener(
-  "click",
-  () => {
-
-    const regions = [
-      "Центральный ФО",
-      "Приволжский ФО",
-      "Уральский ФО",
-      "Сибирский ФО",
-      "Южный ФО",
-      "Северо-Западный ФО"
-    ];
-
-    const current =
-      document.getElementById(
-        "regionSelect"
-      );
-
-    const index =
-      regions.indexOf(
-        current.textContent
-      );
-
-    current.textContent =
-      regions[
-        (index + 1) %
-        regions.length
-      ];
-
-  }
-);
-
-/* =========================================================
-   NAVIGATION
-   ========================================================= */
-
-document
-  .querySelectorAll(".nav-item")
-  .forEach(
-    item => {
-
-      item.addEventListener(
-        "click",
-        () => {
-
-          document
-            .querySelectorAll(
-              ".nav-item"
-            )
-            .forEach(
-              nav =>
-                nav.classList.remove(
-                  "active"
-                )
-            );
-
-          item.classList.add(
-            "active"
-          );
-
-          document.getElementById(
-            "statusText"
-          ).textContent =
-            item.textContent.trim() +
-            " · раздел пока в разработке";
-
-        }
-      );
-
-    }
-  );
-
-/* =========================================================
-   MAP MOVE STATUS
-   ========================================================= */
-
-map.on(
-  "moveend",
-  () => {
-
-    const center =
-      map.getCenter();
-
-    document.getElementById(
-      "statusText"
-    ).textContent =
-      "Центр: " +
-      center.lat.toFixed(2) +
-      "°, " +
-      center.lng.toFixed(2) +
-      "°";
-
-  }
-);
-
-/* =========================================================
-   ESCAPE POPUP
-   ========================================================= */
-
-document.addEventListener(
-  "keydown",
-  event => {
-
-    if (
-      event.key ===
-      "Escape"
-    ) {
-
-      document
-        .getElementById(
-          "infoPopup"
-        )
-        .classList.remove(
-          "visible"
-        );
-
-    }
-
-  }
-);
-
-/* =========================================================
-   PREVENT UNWANTED DOUBLE TAP
-   ========================================================= */
-
-let lastTouch =
-  0;
-
-document.addEventListener(
-  "touchend",
-  event => {
-
-    const now =
-      Date.now();
-
-    if (
-      now -
-      lastTouch <
-      280
-    ) {
-
-      event.preventDefault();
-
-    }
-
-    lastTouch =
-      now;
-
-  },
-  {
-    passive: false
-  }
-);
-
-/* =========================================================
-   INITIAL MOBILE STATE
-   ========================================================= */
-
-function setupMobile() {
-
-  if (
-    window.innerWidth <=
-    800
-  ) {
-
-    leftPanel.classList.add(
-      "mobile-hidden"
-    );
-
-    rightPanel.classList.add(
-      "mobile-hidden"
-    );
-
-  } else {
-
-    leftPanel.classList.remove(
-      "mobile-hidden"
-    );
-
-    rightPanel.classList.remove(
-      "mobile-hidden"
-    );
-
-  }
-
-}
-
-setupMobile();
-
-window.addEventListener(
-  "resize",
-  setupMobile
-);
-
-/* =========================================================
-   FINISH
-   ========================================================= */
-
-console.log(
-  "CLOrad initialized successfully."
-);
-
-console.log(
-  "Radar data layer: waiting for connection."
-);
-
+});
 </script>
-
 </body>
 </html>
