@@ -78,6 +78,7 @@ transition:transform .25s ease,opacity .2s ease;
 .layer:nth-child(2) svg{stroke:#50aaff}
 .layer:nth-child(3) svg{stroke:#ff777e}
 .layer span{font-size:16px;line-height:1;flex:1}
+.layer:nth-child(2) span{font-size:13px}
 .switch{width:54px;height:30px;border:0;border-radius:18px;background:#626a70;position:relative;padding:0;flex:none}
 .switch i{position:absolute;width:24px;height:24px;left:3px;top:3px;border-radius:50%;background:#f6f7f7;transition:.2s}
 .switch.on{background:#43d58d}
@@ -100,7 +101,7 @@ transition:transform .25s ease,opacity .2s ease;
    LOCATION
 ========================= */
 .location{position:fixed;z-index:9;left:17px;bottom:257px;width:142px;height:57px;border:1px solid #3e4850;border-radius:9px;background:#182028ef;color:#dfe4e7;display:flex;align-items:center;justify-content:center;gap:7px;font-size:13px;line-height:17px;text-align:center;box-shadow:0 3px 10px #0003}
-.location svg{width:24px;height:24px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.location svg{width:29px;height:29px;fill:none;stroke:#dce2e5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* =========================
    DATA
@@ -117,7 +118,7 @@ transition:transform .25s ease,opacity .2s ease;
 .timeline{position:fixed;z-index:12;left:9px;right:9px;bottom:8px;height:108px;background:#151b21f5;border:1px solid #303a43;border-radius:12px;padding:8px 14px;box-shadow:0 5px 18px #0004}
 .thead{text-align:center;font-size:14px;height:27px;line-height:24px}
 .trow{height:61px;display:flex;align-items:center;gap:12px}
-.play{width:44px;height:44px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none;box-shadow:0 2px 5px #0002}
+.play{width:44px;height:44px;border:0;border-radius:50%;background:#f1f3f4;color:#182027;display:grid;place-items:center;flex:none;box-shadow:0 2px 5px #0002;transform:translateY(-4px)}
 .play svg{width:25px;height:25px;fill:currentColor}
 .slider{flex:1;min-width:0}
 .slider input{width:100%;display:block;appearance:none;height:7px;background:#70787d;border-radius:8px;margin:0}
@@ -419,8 +420,8 @@ body.light .timeline input{background:#a2a9ad}
 ========================= -->
 <div class="timeline">
 
-<div class="thead">
-СЕЙЧАС 17:20, 13 СЕНТЯБРЯ
+<div class="thead" id="timeLabel">
+--:--, --
 </div>
 
 <div class="trow">
@@ -433,21 +434,12 @@ body.light .timeline input{background:#a2a9ad}
 
 <div class="slider">
 
-<input id="range" type="range" min="0" max="100" value="70">
+<input id="range" type="range" min="0" max="0" step="1" value="0">
 
-<div class="times">
-<span>06:00</span>
-<span>08:00</span>
-<span>10:00</span>
-<span>12:00</span>
-<span>14:00</span>
-<span>17:20</span>
-<span>18:00</span>
-<span>20:00</span>
-<span>22:00</span>
-</div>
+<div class="times" id="timeMarks"></div>
 
 </div>
+
 </div>
 </div>
 
@@ -815,6 +807,334 @@ $("bell").onclick=()=>msg(
 
 
 /* =========================
+   TIMELINE
+========================= */
+
+/*
+   Время полностью определяется
+   по часовому поясу устройства.
+
+   Шаг таймлайна = 10 минут.
+   Конец таймлайна = текущее время.
+*/
+
+const timelineStep=10;
+const range=$("range");
+const timeLabel=$("timeLabel");
+const timeMarks=$("timeMarks");
+
+const deviceTimeZone=
+Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function getLocalParts(date=new Date()){
+
+const parts=new Intl.DateTimeFormat(
+"ru-RU",
+{
+timeZone:deviceTimeZone,
+hour:"2-digit",
+minute:"2-digit",
+day:"2-digit",
+month:"2-digit",
+year:"numeric",
+hourCycle:"h23"
+}
+).formatToParts(date);
+
+const obj={};
+
+parts.forEach(p=>{
+obj[p.type]=p.value;
+});
+
+return {
+hour:+obj.hour,
+minute:+obj.minute,
+day:+obj.day,
+month:+obj.month,
+year:+obj.year
+};
+
+}
+
+
+/*
+   Округляем текущее время вниз
+   до ближайших 10 минут.
+*/
+
+function getCurrentTimelineTime(){
+
+const now=getLocalParts();
+
+const total=
+now.hour*60+
+now.minute;
+
+const rounded=
+Math.floor(total/timelineStep)*timelineStep;
+
+return {
+minutes:rounded,
+day:now.day,
+month:now.month,
+year:now.year
+};
+
+}
+
+
+function formatTime(minutes){
+
+const h=
+Math.floor(minutes/60);
+
+const m=
+minutes%60;
+
+return String(h).padStart(2,"0")
++
+":"
++
+String(m).padStart(2,"0");
+
+}
+
+
+function monthName(month){
+
+const months=[
+"",
+"ЯНВАРЯ",
+"ФЕВРАЛЯ",
+"МАРТА",
+"АПРЕЛЯ",
+"МАЯ",
+"ИЮНЯ",
+"ИЮЛЯ",
+"АВГУСТА",
+"СЕНТЯБРЯ",
+"ОКТЯБРЯ",
+"НОЯБРЯ",
+"ДЕКАБРЯ"
+];
+
+return months[month];
+
+}
+
+
+/*
+   Старт таймлайна — 12 часов назад
+   от текущего времени, округлённого
+   до 10 минут.
+
+   Поэтому на любом устройстве
+   таймлайн автоматически подстраивается.
+*/
+
+function buildTimeline(){
+
+const current=
+getCurrentTimelineTime();
+
+const timelineEnd=
+current.minutes;
+
+let timelineStart=
+timelineEnd-(12*60);
+
+
+/*
+   Если текущее время раньше 12:00,
+   переходим на предыдущие сутки.
+   Для визуального таймлайна используем
+   непрерывную шкалу минут.
+*/
+
+let endAbsolute=
+timelineEnd;
+
+if(endAbsolute<720)
+endAbsolute+=1440;
+
+let startAbsolute=
+endAbsolute-(12*60);
+
+const count=
+Math.floor(
+(endAbsolute-startAbsolute)/timelineStep
+);
+
+range.min=0;
+range.max=count;
+range.step=1;
+range.value=count;
+
+
+/*
+   Создаём подписи примерно каждые 2 часа.
+*/
+
+timeMarks.innerHTML="";
+
+const markCount=7;
+
+for(let i=0;i<markCount;i++){
+
+let absolute=
+startAbsolute+
+Math.round(
+((endAbsolute-startAbsolute)/(markCount-1))*i
+);
+
+absolute=
+Math.round(absolute/timelineStep)*timelineStep;
+
+absolute%=1440;
+
+const span=
+document.createElement("span");
+
+span.textContent=
+formatTime(absolute);
+
+timeMarks.appendChild(span);
+
+}
+
+updateTimeline();
+
+}
+
+
+function updateTimeline(){
+
+const current=
+getCurrentTimelineTime();
+
+const endAbsolute=
+current.minutes;
+
+let actualEnd=
+endAbsolute;
+
+if(actualEnd<720)
+actualEnd+=1440;
+
+const startAbsolute=
+actualEnd-(12*60);
+
+const minutes=
+startAbsolute+
+(+range.value*timelineStep);
+
+const normalized=
+minutes%1440;
+
+const h=
+Math.floor(normalized/60);
+
+const m=
+normalized%60;
+
+
+/*
+   Дата выбранного момента.
+*/
+
+let selectedDate=
+new Date(
+current.year,
+current.month-1,
+current.day
+);
+
+const dayOffset=
+Math.floor(minutes/1440)-
+Math.floor(startAbsolute/1440);
+
+selectedDate.setDate(
+selectedDate.getDate()+dayOffset
+);
+
+const dateParts=
+getLocalParts(selectedDate);
+
+timeLabel.textContent=
+formatTime(normalized)
++
+", "
++
+dateParts.day
++
+" "
++
+monthName(dateParts.month);
+
+}
+
+
+/*
+   Строим таймлайн при загрузке.
+*/
+
+buildTimeline();
+
+
+/*
+   Ползунок — строго по 10 минут.
+*/
+
+range.addEventListener(
+"input",
+updateTimeline
+);
+
+
+/*
+   Автоматически обновляем конец таймлайна
+   раз в минуту.
+
+   Если наступили новые 10 минут,
+   ползунок переезжает на новый конец.
+*/
+
+setInterval(()=>{
+
+const oldMax=
++range.max;
+
+const current=
+getCurrentTimelineTime();
+
+let end=
+current.minutes;
+
+if(end<720)
+end+=1440;
+
+const start=
+end-(12*60);
+
+const newMax=
+Math.floor(
+(end-start)/timelineStep
+);
+
+if(newMax!==oldMax){
+
+range.max=newMax;
+range.value=newMax;
+
+}
+
+updateTimeline();
+
+},60000);
+
+
+/* =========================
    PLAY
 ========================= */
 
@@ -842,9 +1162,17 @@ timer=setInterval(()=>{
 
 let r=$("range");
 
-r.value=+r.value>=100
-?0
-:+r.value+1;
+if(+r.value>=+r.max){
+
+r.value=0;
+
+}else{
+
+r.value=+r.value+1;
+
+}
+
+updateTimeline();
 
 },180);
 
