@@ -4,2046 +4,608 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
-
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <style>
-
 /* =========================
    BASE
 ========================= */
-
-*{
-  box-sizing:border-box;
-  -webkit-tap-highlight-color:transparent;
-}
-
-html,body{
-  width:100%;
-  height:100%;
-  margin:0;
-  overflow:hidden;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
-  background:#11151b;
-  color:#f2f4f6;
-}
-
-button,input,select{
-  font:inherit;
-}
-
-button{
-  border:0;
-  cursor:pointer;
-}
-
-#map{
-  position:fixed;
-  inset:0;
-  z-index:0;
-  background:#05070a;
-}
-
-.leaflet-control-attribution{
-  background:rgba(14,18,23,.75)!important;
-  color:#7e8790!important;
-  font-size:9px!important;
-}
-
-.leaflet-control-attribution a{
-  color:#89939d!important;
-}
-
-/* =========================
-   SVG
-========================= */
-
-svg{
-  display:block;
-}
-
-.icon{
-  width:26px;
-  height:26px;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:2.3;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-}
-
-/* =========================
-   RADAR LOGO
-========================= */
-
-.brand{
-  position:absolute;
-  left:21px;
-  top:50%;
-  transform:translateY(-50%);
-  display:flex;
-  align-items:center;
-  gap:11px;
-  z-index:20;
-  user-select:none;
-}
-
-.radar-logo{
-  position:relative;
-  width:55px;
-  height:55px;
-  border:2px solid #54e7a1;
-  border-radius:50%;
-  background:#11171c;
-  box-shadow:0 0 14px rgba(69,225,157,.08);
-  overflow:hidden;
-}
-
-.radar-logo:before,
-.radar-logo:after{
-  content:"";
-  position:absolute;
-  left:50%;
-  top:50%;
-  border:1px solid rgba(84,231,161,.48);
-  border-radius:50%;
-  transform:translate(-50%,-50%);
-}
-
-.radar-logo:before{
-  width:34px;
-  height:34px;
-}
-
-.radar-logo:after{
-  width:18px;
-  height:18px;
-}
-
-.radar-dot{
-  position:absolute;
-  width:6px;
-  height:6px;
-  border-radius:50%;
-  background:#54e7a1;
-  left:50%;
-  top:50%;
-  transform:translate(-50%,-50%);
-  z-index:3;
-  box-shadow:0 0 8px #54e7a1;
-}
-
-.radar-sweep{
-  position:absolute;
-  width:50%;
-  height:50%;
-  left:50%;
-  top:50%;
-  transform-origin:0 0;
-  background:linear-gradient(
-    45deg,
-    rgba(84,231,161,.55),
-    rgba(84,231,161,0)
-  );
-  clip-path:polygon(0 0,100% 0,0 100%);
-  animation:radarSweep 2.8s linear infinite;
-  z-index:2;
-}
-
-@keyframes radarSweep{
-  from{transform:rotate(0deg)}
-  to{transform:rotate(360deg)}
-}
-
-.brand-name{
-  font-size:39px;
-  line-height:1;
-  font-weight:800;
-  letter-spacing:-2px;
-  color:#f3f5f6;
-}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151b21;color:#eee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+button,input{font:inherit;border:0;outline:0}
+button{cursor:pointer}
+#map{position:fixed;inset:0;background:#20262c}
+.leaflet-control-attribution{font-size:9px!important;background:rgba(10,14,18,.7)!important;color:#89919a!important}
+.leaflet-control-attribution a{color:#9ba3aa!important}
 
 /* =========================
    HEADER
 ========================= */
-
-.header{
-  position:fixed;
-  left:0;
-  right:0;
-  top:0;
-  height:125px;
-  background:rgba(13,17,23,.96);
-  border-bottom:1px solid rgba(255,255,255,.035);
-  z-index:10;
-}
-
-.header-actions{
-  position:absolute;
-  right:25px;
-  top:50%;
-  transform:translateY(-50%);
-  display:flex;
-  align-items:center;
-  gap:17px;
-}
-
-.header-btn{
-  width:51px;
-  height:51px;
-  border-radius:13px;
-  background:transparent;
-  color:#aeb6bf;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition:.2s;
-}
-
-.header-btn:hover{
-  color:#fff;
-  background:#202832;
-}
-
-.header-btn.search{
-  background:#27313b;
-  color:#aeb8c2;
-}
-
-.header-btn .icon{
-  width:30px;
-  height:30px;
-}
-
-.notification{
-  position:relative;
-}
-
-.notification:after{
-  content:"";
-  position:absolute;
-  width:10px;
-  height:10px;
-  border-radius:50%;
-  background:#ff5965;
-  right:7px;
-  top:7px;
-}
+.header{position:fixed;z-index:20;top:0;left:0;right:0;height:125px;background:#10151b;border-bottom:1px solid #20262c}
+.brand{position:absolute;left:20px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:10px}
+.brand-name{font-size:39px;font-weight:800;letter-spacing:-2px;line-height:1;color:#f4f5f6}
 
 /* =========================
-   MOBILE MENU
+   RADAR LOGO
 ========================= */
-
-.mobile-menu{
-  position:fixed;
-  right:16px;
-  top:78px;
-  width:235px;
-  padding:8px;
-  background:#171d24;
-  border:1px solid #303944;
-  border-radius:15px;
-  box-shadow:0 18px 50px rgba(0,0,0,.45);
-  display:none;
-  z-index:50;
-}
-
-.mobile-menu.open{
-  display:block;
-}
-
-.mobile-menu button{
-  width:100%;
-  padding:13px 14px;
-  text-align:left;
-  color:#d9dee3;
-  background:transparent;
-  border-radius:10px;
-}
-
-.mobile-menu button:hover{
-  background:#242d36;
-}
+.radar-logo{position:relative;width:53px;height:53px;border:2px solid #54e7a0;border-radius:50%;overflow:hidden;background:#11171c;box-shadow:0 0 12px #54e7a01c}
+.radar-logo:before,.radar-logo:after{content:"";position:absolute;left:50%;top:50%;border:1px solid #54e7a066;border-radius:50%;transform:translate(-50%,-50%)}
+.radar-logo:before{width:35px;height:35px}
+.radar-logo:after{width:19px;height:19px}
+.radar-dot{position:absolute;z-index:4;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#54e7a0;transform:translate(-50%,-50%);box-shadow:0 0 8px #54e7a0}
+.radar-sweep{position:absolute;z-index:2;left:50%;top:50%;width:48%;height:48%;transform-origin:0 0;background:linear-gradient(45deg,#54e7a099,#54e7a000);clip-path:polygon(0 0,100% 0,0 100%);animation:sweep 2.7s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
 
 /* =========================
-   NAVIGATION
+   HEADER BUTTONS
 ========================= */
+.header-actions{position:absolute;right:17px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:8px}
+.hbtn{width:52px;height:52px;background:transparent;color:#b9c0c7;border-radius:10px;display:grid;place-items:center}
+.hbtn:hover{background:#202832}
+.hbtn.search{width:57px;height:57px;background:#202832;border:1px solid #2c353f}
+.hbtn svg{width:31px;height:31px}
+.notify{position:relative}
+.notify:after{content:"";position:absolute;right:7px;top:7px;width:9px;height:9px;border-radius:50%;background:#ff5c69}
 
-.nav{
-  position:fixed;
-  left:0;
-  right:0;
-  top:125px;
-  height:130px;
-  background:#252e37;
-  border-bottom:1px solid rgba(255,255,255,.08);
-  z-index:9;
-  display:flex;
-  align-items:stretch;
-  overflow-x:auto;
-  scrollbar-width:none;
-}
-
-.nav::-webkit-scrollbar{
-  display:none;
-}
-
-.nav-item{
-  position:relative;
-  min-width:118px;
-  height:130px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:11px;
-  color:#9ca5ae;
-  background:transparent;
-  font-size:20px;
-  font-weight:500;
-  white-space:nowrap;
-}
-
-.nav-item .icon{
-  width:38px;
-  height:38px;
-}
-
-.nav-item.active{
-  color:#52e3a0;
-}
-
-.nav-item.active:after{
-  content:"";
-  position:absolute;
-  height:4px;
-  left:17px;
-  right:17px;
-  bottom:0;
-  background:#52e3a0;
-  border-radius:3px 3px 0 0;
-}
+/* =========================
+   NAV
+========================= */
+.nav{position:fixed;z-index:19;top:125px;left:0;right:0;height:130px;background:#273039;display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid #39434c}
+.nav::-webkit-scrollbar{display:none}
+.nav-item{position:relative;min-width:112px;height:130px;background:transparent;color:#aab2ba;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:19px}
+.nav-item svg{width:37px;height:37px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nav-item.active{color:#55e5a1}
+.nav-item.active:after{content:"";position:absolute;bottom:0;left:10px;right:10px;height:4px;background:#55e5a1}
 
 /* =========================
    MAP TOOLS
 ========================= */
-
-.map-tools{
-  position:fixed;
-  left:17px;
-  top:275px;
-  z-index:8;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-.map-tool{
-  width:78px;
-  height:78px;
-  border-radius:15px;
-  background:#171d25;
-  border:1px solid #303943;
-  color:#e3e7ea;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  box-shadow:0 6px 18px rgba(0,0,0,.3);
-}
-
-.map-tool .icon{
-  width:37px;
-  height:37px;
-}
-
-.map-tool:active{
-  transform:scale(.96);
-}
+.map-tools{position:fixed;z-index:8;left:15px;top:275px;display:flex;flex-direction:column;gap:9px}
+.map-tool{width:74px;height:74px;border-radius:13px;background:#1b222a;border:1px solid #39434d;color:#e0e4e7;display:grid;place-items:center;box-shadow:0 5px 16px #0004}
+.map-tool svg{width:37px;height:37px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.map-tool:active{transform:scale(.96)}
 
 /* =========================
-   CENTER CROSSHAIR
+   CENTER
 ========================= */
-
-.center-cross{
-  position:fixed;
-  left:50%;
-  top:53%;
-  transform:translate(-50%,-50%);
-  width:52px;
-  height:52px;
-  z-index:3;
-  pointer-events:none;
-  opacity:.55;
-}
-
-.center-cross:before,
-.center-cross:after{
-  content:"";
-  position:absolute;
-  background:#b5bcc3;
-}
-
-.center-cross:before{
-  width:2px;
-  height:52px;
-  left:25px;
-  top:0;
-}
-
-.center-cross:after{
-  width:52px;
-  height:2px;
-  left:0;
-  top:25px;
-}
+.center{position:fixed;z-index:3;left:50%;top:55%;transform:translate(-50%,-50%);width:50px;height:50px;pointer-events:none;opacity:.7}
+.center:before,.center:after{content:"";position:absolute;background:#c3c8cc}
+.center:before{width:2px;height:50px;left:24px}
+.center:after{width:50px;height:2px;top:24px}
 
 /* =========================
-   LAYER PANEL
+   LAYERS
 ========================= */
-
-.layer-panel{
-  position:fixed;
-  left:18px;
-  top:53%;
-  transform:translateY(-50%);
-  width:280px;
-  padding:14px 16px;
-  border-radius:17px;
-  background:rgba(22,28,36,.96);
-  border:1px solid #343d47;
-  box-shadow:0 12px 30px rgba(0,0,0,.36);
-  z-index:7;
-}
-
-.layer-row{
-  height:76px;
-  display:flex;
-  align-items:center;
-  gap:16px;
-}
-
-.layer-icon{
-  width:39px;
-  height:39px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#54e7a1;
-  flex:none;
-}
-
-.layer-icon.blue{
-  color:#4fa8ff;
-}
-
-.layer-icon.red{
-  color:#ff777d;
-}
-
-.layer-icon .icon{
-  width:35px;
-  height:35px;
-}
-
-.layer-name{
-  flex:1;
-  color:#e0e4e7;
-  font-size:23px;
-  font-weight:500;
-}
-
-/* =========================
-   SWITCH
-========================= */
-
-.switch{
-  position:relative;
-  width:75px;
-  height:44px;
-  border-radius:30px;
-  background:#3a424b;
-  flex:none;
-  transition:.2s;
-}
-
-.switch span{
-  position:absolute;
-  width:34px;
-  height:34px;
-  border-radius:50%;
-  left:5px;
-  top:5px;
-  background:#e8ebed;
-  transition:.2s;
-  box-shadow:0 2px 5px rgba(0,0,0,.3);
-}
-
-.switch.on{
-  background:#42d790;
-}
-
-.switch.on span{
-  left:36px;
-}
-
-.switch:active{
-  transform:scale(.96);
-}
+.layers{position:fixed;z-index:8;left:15px;top:53%;transform:translateY(-50%);width:276px;background:#182028f5;border:1px solid #39434d;border-radius:16px;padding:9px 14px;box-shadow:0 12px 30px #0005}
+.layer{height:72px;display:flex;align-items:center;gap:13px}
+.layer-icon{width:39px;height:39px;display:grid;place-items:center;color:#54e7a0;flex:none}
+.layer-icon.blue{color:#55a8ff}.layer-icon.red{color:#ff7279}
+.layer-icon svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.layer-name{font-size:21px;color:#e4e7e9;flex:1}
+.switch{width:65px;height:39px;border-radius:25px;background:#4a535c;position:relative;flex:none;transition:.2s}
+.switch i{position:absolute;left:4px;top:4px;width:31px;height:31px;border-radius:50%;background:#f1f3f4;transition:.2s;box-shadow:0 2px 5px #0004}
+.switch.on{background:#45d58d}
+.switch.on i{left:30px}
 
 /* =========================
    DATA STRIP
 ========================= */
-
-.data-strip{
-  position:fixed;
-  left:18px;
-  right:18px;
-  bottom:155px;
-  height:102px;
-  border-radius:17px;
-  background:rgba(19,25,32,.96);
-  border:1px solid #303944;
-  display:grid;
-  grid-template-columns:1fr 1fr 1fr;
-  z-index:7;
-  overflow:hidden;
-  box-shadow:0 10px 28px rgba(0,0,0,.3);
-}
-
-.data-cell{
-  padding:15px 18px;
-  border-right:1px solid #303944;
-}
-
-.data-cell:last-child{
-  border-right:0;
-}
-
-.data-label{
-  color:#8d969f;
-  font-size:13px;
-  letter-spacing:1px;
-  text-transform:uppercase;
-  margin-bottom:8px;
-}
-
-.data-value{
-  color:#eef1f3;
-  font-size:22px;
-  font-weight:650;
-}
+.data{position:fixed;z-index:7;left:70px;right:70px;bottom:153px;height:91px;border-radius:12px;background:#141a20f5;border:1px solid #2f3943;display:grid;grid-template-columns:1.2fr 1fr 1fr;overflow:hidden}
+.data-cell{padding:13px 18px;border-right:1px solid #303943}
+.data-cell:last-child{border:0}
+.data-label{font-size:12px;color:#858e96;letter-spacing:1px;text-transform:uppercase;margin-bottom:7px}
+.data-value{font-size:19px;font-weight:650}
 
 /* =========================
    ALERT
 ========================= */
-
-.alert{
-  position:fixed;
-  right:20px;
-  top:272px;
-  width:300px;
-  padding:14px 15px;
-  border-radius:14px;
-  background:rgba(29,25,27,.96);
-  border:1px solid #55383d;
-  z-index:8;
-  display:none;
-}
-
-.alert.show{
-  display:flex;
-}
-
-.alert-icon{
-  width:36px;
-  color:#ff737b;
-  flex:none;
-}
-
-.alert-content{
-  flex:1;
-}
-
-.alert-title{
-  font-size:15px;
-  font-weight:700;
-}
-
-.alert-text{
-  color:#929ba4;
-  font-size:13px;
-  margin-top:4px;
-}
-
-.alert-close{
-  background:transparent;
-  color:#929ba4;
-  font-size:22px;
-}
+.alert{position:fixed;z-index:10;left:70px;right:70px;bottom:247px;min-height:76px;border-radius:13px;background:#59636df2;border:1px solid #69737c;display:none;align-items:center;padding:12px 15px;box-shadow:0 8px 25px #0005}
+.alert.show{display:flex}
+.alert svg{width:31px;height:31px;fill:none;stroke:#ffd22e;stroke-width:2;flex:none}
+.alert-text{margin-left:10px;font-size:18px;line-height:1.3}
+.alert-text b{font-weight:500}
+.alert-close{margin-left:auto;background:transparent;color:#dce0e3;font-size:28px}
 
 /* =========================
    TIMELINE
 ========================= */
-
-.timeline{
-  position:fixed;
-  left:18px;
-  right:18px;
-  bottom:18px;
-  height:116px;
-  border-radius:18px;
-  background:rgba(18,24,31,.97);
-  border:1px solid #303944;
-  z-index:9;
-  box-shadow:0 10px 35px rgba(0,0,0,.38);
-}
-
-.timeline-top{
-  height:49px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 24px;
-}
-
-.timeline-now{
-  font-size:18px;
-  font-weight:650;
-}
-
-.timeline-date{
-  font-size:17px;
-  color:#d6dadd;
-}
-
-.timeline-main{
-  height:67px;
-  display:flex;
-  align-items:center;
-  gap:13px;
-  padding:0 13px 8px;
-}
-
-.time-btn{
-  width:53px;
-  height:53px;
-  border-radius:50%;
-  background:#edf0f2;
-  color:#151b20;
-  flex:none;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-.time-btn.dark{
-  width:43px;
-  height:43px;
-  border-radius:12px;
-  background:#202831;
-  border:1px solid #39434e;
-  color:#dce1e4;
-}
-
-.time-btn .icon{
-  width:27px;
-  height:27px;
-}
-
-.slider-area{
-  flex:1;
-  min-width:0;
-  position:relative;
-}
-
-.timeline-range{
-  width:100%;
-  margin:0;
-  appearance:none;
-  height:7px;
-  border-radius:10px;
-  background:#d8dbdd;
-  outline:none;
-}
-
-.timeline-range::-webkit-slider-thumb{
-  appearance:none;
-  width:44px;
-  height:32px;
-  border-radius:17px;
-  background:#f4f5f6;
-  border:0;
-  box-shadow:0 2px 6px rgba(0,0,0,.25);
-}
-
-.timeline-range::-moz-range-thumb{
-  width:44px;
-  height:32px;
-  border-radius:17px;
-  background:#f4f5f6;
-  border:0;
-}
-
-.time-labels{
-  display:flex;
-  justify-content:space-between;
-  margin-top:8px;
-  color:#858e97;
-  font-size:12px;
-}
+.timeline{position:fixed;z-index:12;left:8px;right:8px;bottom:10px;height:126px;border-radius:13px;background:#141a20f7;border:1px solid #303a44;box-shadow:0 8px 30px #0005}
+.timeline-title{text-align:center;height:43px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.timeline-row{height:74px;display:flex;align-items:center;gap:7px;padding:0 10px}
+.time-button{flex:none;width:48px;height:48px;border-radius:50%;background:#eef0f1;color:#11171c;display:grid;place-items:center}
+.time-button.small{width:43px;height:43px;border-radius:11px;background:#202832;color:#e2e5e7;border:1px solid #37414b}
+.time-button svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.slider{flex:1;min-width:0}
+input[type=range]{appearance:none;width:100%;height:7px;background:#777f86;border-radius:8px;outline:0}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:32px;height:32px;border-radius:50%;background:#f7f8f8;border:0}
+input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;background:#f7f8f8;border:0}
+.labels{display:flex;justify-content:space-between;color:#a1a8ae;font-size:11px;margin-top:8px;padding:0 2px}
 
 /* =========================
-   SPEED
+   POPUPS
 ========================= */
-
-.speed{
-  position:absolute;
-  right:14px;
-  top:-38px;
-  display:flex;
-  gap:4px;
-}
-
-.speed button{
-  background:transparent;
-  color:#8e969f;
-  font-size:13px;
-}
-
-.speed button.active{
-  color:#fff;
-  font-weight:700;
-}
-
-/* =========================
-   SEARCH
-========================= */
-
-.search-box{
-  position:fixed;
-  right:25px;
-  top:80px;
-  width:300px;
-  background:#171d24;
-  border:1px solid #333c46;
-  border-radius:14px;
-  padding:10px;
-  z-index:60;
-  display:none;
-  box-shadow:0 18px 45px rgba(0,0,0,.45);
-}
-
-.search-box.open{
-  display:flex;
-}
-
-.search-box input{
-  width:100%;
-  height:43px;
-  border:0;
-  outline:0;
-  border-radius:10px;
-  background:#222a33;
-  color:#fff;
-  padding:0 13px;
-}
-
-.search-result{
-  position:absolute;
-  top:58px;
-  left:10px;
-  right:10px;
-  padding:12px;
-  border-radius:10px;
-  background:#202831;
-  color:#cfd5d9;
-  display:none;
-}
-
-/* =========================
-   SETTINGS
-========================= */
-
-.settings{
-  position:fixed;
-  right:20px;
-  top:275px;
-  width:270px;
-  background:#171d24;
-  border:1px solid #333c46;
-  border-radius:16px;
-  padding:14px;
-  z-index:40;
-  display:none;
-  box-shadow:0 18px 50px rgba(0,0,0,.45);
-}
-
-.settings.open{
-  display:block;
-}
-
-.settings-title{
-  font-size:18px;
-  font-weight:700;
-  padding:5px 4px 13px;
-}
-
-.settings button{
-  width:100%;
-  padding:12px;
-  margin-top:5px;
-  border-radius:10px;
-  background:#202831;
-  color:#d9dfe3;
-  text-align:left;
-}
-
-.settings button.active{
-  background:#2c5645;
-  color:#61e8a6;
-}
+.menu,.search,.settings{position:fixed;z-index:40;background:#181f27;border:1px solid #343e48;border-radius:14px;box-shadow:0 15px 45px #0008;display:none}
+.menu{right:12px;top:80px;width:220px;padding:7px}
+.menu button{width:100%;padding:12px;background:transparent;color:#d8dde1;text-align:left;border-radius:9px}
+.menu button:hover{background:#252e37}
+.search{right:12px;top:82px;width:310px;padding:9px}
+.search.open,.menu.open,.settings.open{display:block}
+.search input{width:100%;height:44px;border-radius:9px;background:#252e37;color:#fff;padding:0 12px}
+.settings{right:15px;top:270px;width:250px;padding:10px}
+.settings button{display:block;width:100%;padding:12px;background:#232c35;color:#dce1e4;border-radius:8px;margin:4px 0;text-align:left}
+.settings button.active{color:#55e5a1}
 
 /* =========================
    TOAST
 ========================= */
-
-.toast{
-  position:fixed;
-  left:50%;
-  bottom:150px;
-  transform:translate(-50%,15px);
-  background:#222a33;
-  border:1px solid #3a4651;
-  color:#e8ecef;
-  border-radius:11px;
-  padding:10px 15px;
-  opacity:0;
-  pointer-events:none;
-  transition:.25s;
-  z-index:100;
-  font-size:14px;
-}
-
-.toast.show{
-  opacity:1;
-  transform:translate(-50%,0);
-}
+.toast{position:fixed;z-index:100;left:50%;bottom:145px;transform:translate(-50%,15px);opacity:0;background:#252e37;border:1px solid #3a4550;border-radius:10px;padding:10px 15px;transition:.2s;pointer-events:none;font-size:14px}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* =========================
-   LIGHT THEME
+   MOBILE
 ========================= */
-
-body.light{
-  color:#182027;
-}
-
-body.light .header{
-  background:rgba(246,248,249,.96);
-}
-
-body.light .brand-name{
-  color:#161d23;
-}
-
-body.light .nav{
-  background:#e9edf0;
-}
-
-body.light .nav-item{
-  color:#69737c;
-}
-
-body.light .layer-panel,
-body.light .data-strip,
-body.light .timeline,
-body.light .settings,
-body.light .mobile-menu,
-body.light .search-box{
-  background:rgba(246,248,249,.96);
-  border-color:#d1d7dc;
-}
-
-body.light .layer-name,
-body.light .data-value,
-body.light .timeline-now,
-body.light .timeline-date{
-  color:#20282e;
-}
-
-body.light .data-cell{
-  border-color:#d4d9dd;
-}
-
-body.light .header-btn{
-  color:#626d76;
-}
-
-body.light .header-btn.search,
-body.light .time-btn.dark,
-body.light .settings button{
-  background:#e3e7ea;
-  color:#283139;
-}
-
-/* =========================
-   RESPONSIVE
-========================= */
-
 @media(max-width:700px){
-
-  .header{
-    height:125px;
-  }
-
-  .brand{
-    left:20px;
-    gap:10px;
-  }
-
-  .radar-logo{
-    width:54px;
-    height:54px;
-  }
-
-  .brand-name{
-    font-size:34px;
-  }
-
-  .header-actions{
-    right:13px;
-    gap:2px;
-  }
-
-  .header-btn{
-    width:47px;
-    height:47px;
-  }
-
-  .header-btn:nth-child(2){
-    display:none;
-  }
-
-  .nav{
-    top:125px;
-    height:130px;
-  }
-
-  .nav-item{
-    min-width:112px;
-    height:130px;
-    font-size:19px;
-  }
-
-  .map-tools{
-    left:17px;
-    top:273px;
-    gap:10px;
-  }
-
-  .map-tool{
-    width:78px;
-    height:78px;
-  }
-
-  .layer-panel{
-    left:18px;
-    top:54%;
-    width:277px;
-  }
-
-  .layer-row{
-    height:70px;
-  }
-
-  .layer-name{
-    font-size:22px;
-  }
-
-  .data-strip{
-    bottom:149px;
-    height:94px;
-  }
-
-  .data-cell{
-    padding:12px 14px;
-  }
-
-  .data-label{
-    font-size:11px;
-  }
-
-  .data-value{
-    font-size:18px;
-  }
-
-  .timeline{
-    left:13px;
-    right:13px;
-    bottom:12px;
-    height:125px;
-  }
-
-  .timeline-top{
-    height:48px;
-    padding:0 15px;
-  }
-
-  .timeline-now{
-    font-size:14px;
-  }
-
-  .timeline-date{
-    font-size:13px;
-  }
-
-  .timeline-main{
-    gap:7px;
-    padding:0 9px 8px;
-  }
-
-  .time-btn{
-    width:48px;
-    height:48px;
-  }
-
-  .time-btn.dark{
-    width:41px;
-    height:41px;
-  }
-
-  .timeline-range::-webkit-slider-thumb{
-    width:43px;
-    height:31px;
-  }
-
-  .time-labels{
-    font-size:10px;
-  }
-
-  .settings{
-    right:12px;
-    top:267px;
-    width:250px;
-  }
-
-  .search-box{
-    right:12px;
-    width:calc(100% - 24px);
-  }
-
-  .alert{
-    left:18px;
-    right:18px;
-    top:270px;
-    width:auto;
-  }
-
-  .center-cross{
-    top:54%;
-  }
+.header-actions{right:8px;gap:0}
+.hbtn{width:45px;height:48px}
+.hbtn.search{width:54px;height:54px}
+.brand{left:18px}
+.brand-name{font-size:34px}
+.radar-logo{width:50px;height:50px}
+.nav-item{min-width:103px;font-size:18px}
+.map-tools{left:14px}
+.layers{left:14px;width:274px}
+.data{left:70px;right:70px}
+.alert{left:70px;right:70px}
 }
-
-/* =========================
-   SMALL PHONE
-========================= */
-
-@media(max-width:420px){
-
-  .brand{
-    left:13px;
-  }
-
-  .radar-logo{
-    width:49px;
-    height:49px;
-  }
-
-  .brand-name{
-    font-size:29px;
-  }
-
-  .header-actions{
-    right:7px;
-  }
-
-  .header-btn{
-    width:43px;
-  }
-
-  .nav-item{
-    min-width:101px;
-    font-size:17px;
-  }
-
-  .nav-item .icon{
-    width:34px;
-    height:34px;
-  }
-
-  .map-tool{
-    width:73px;
-    height:73px;
-  }
-
-  .layer-panel{
-    width:267px;
-  }
-
-  .layer-name{
-    font-size:20px;
-  }
-
-  .data-strip{
-    left:12px;
-    right:12px;
-  }
-
-  .data-cell{
-    padding:10px;
-  }
-
-  .data-value{
-    font-size:16px;
-  }
-
-  .timeline{
-    left:9px;
-    right:9px;
-  }
-
-  .timeline-main{
-    gap:4px;
-  }
-
-  .time-btn{
-    width:44px;
-    height:44px;
-  }
-
-  .time-btn.dark{
-    width:38px;
-    height:38px;
-  }
+@media(max-width:430px){
+.brand{left:13px;gap:7px}
+.brand-name{font-size:29px}
+.radar-logo{width:48px;height:48px}
+.hbtn:nth-child(2){display:none}
+.nav-item{min-width:101px}
+.layers{width:267px}
+.data{left:70px;right:70px}
+.alert{left:70px;right:70px}
+.timeline{bottom:8px}
 }
-
 </style>
 </head>
 
 <body>
 
 <!-- =========================
-     MAP
+   MAP
 ========================= -->
-
 <div id="map"></div>
-<div class="center-cross"></div>
-
+<div class="center"></div>
 
 <!-- =========================
-     HEADER
+   HEADER
 ========================= -->
-
 <header class="header">
 
-  <div class="brand">
-
-    <div class="radar-logo">
-      <div class="radar-sweep"></div>
-      <div class="radar-dot"></div>
-    </div>
-
-    <div class="brand-name">CLOrad</div>
-
+<div class="brand">
+  <div class="radar-logo">
+    <div class="radar-sweep"></div>
+    <div class="radar-dot"></div>
   </div>
+  <div class="brand-name">CLOrad</div>
+</div>
 
+<div class="header-actions">
 
-  <div class="header-actions">
+<button class="hbtn search" id="searchBtn">
+<svg viewBox="0 0 24 24">
+<circle cx="10.5" cy="10.5" r="6.5"/>
+<path d="M16 16l5 5"/>
+</svg>
+</button>
 
-    <!-- Search -->
+<button class="hbtn" id="themeBtn">
+<svg viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="4"/>
+<path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>
+</svg>
+</button>
 
-    <button class="header-btn search" id="searchBtn" aria-label="Поиск">
-      <svg class="icon" viewBox="0 0 24 24">
-        <circle cx="10.8" cy="10.8" r="6.8"></circle>
-        <path d="M16 16l5 5"></path>
-      </svg>
-    </button>
+<button class="hbtn notify" id="notifyBtn">
+<svg viewBox="0 0 24 24">
+<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/>
+<path d="M10 21h4"/>
+</svg>
+</button>
 
+<button class="hbtn" id="menuBtn">
+<svg viewBox="0 0 24 24">
+<path d="M4 6h16M4 12h16M4 18h16"/>
+</svg>
+</button>
 
-    <!-- Theme -->
-
-    <button class="header-btn" id="themeBtn" aria-label="Оформление">
-      <svg class="icon" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="4"></circle>
-        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path>
-      </svg>
-    </button>
-
-
-    <!-- Notifications -->
-
-    <button class="header-btn notification" id="notifyBtn" aria-label="Уведомления">
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
-        <path d="M10 21h4"></path>
-      </svg>
-    </button>
-
-
-    <!-- Menu -->
-
-    <button class="header-btn" id="menuBtn" aria-label="Меню">
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M4 6h16M4 12h16M4 18h16"></path>
-      </svg>
-    </button>
-
-  </div>
-
+</div>
 </header>
 
-
 <!-- =========================
-     MOBILE MENU
+   SEARCH
 ========================= -->
-
-<div class="mobile-menu" id="mobileMenu">
-
-  <button data-menu="map">Карта</button>
-  <button data-menu="regions">Регионы</button>
-  <button data-menu="3d">3D</button>
-  <button data-menu="warning">Предупреждения</button>
-  <button data-menu="archive">Архив</button>
-  <button data-menu="analytics">Аналитика</button>
-  <button data-menu="layers">Слои</button>
-
+<div class="search" id="search">
+<input id="searchInput" placeholder="Поиск города..." autocomplete="off">
 </div>
 
-
 <!-- =========================
-     SEARCH
+   MENU
 ========================= -->
-
-<div class="search-box" id="searchBox">
-
-  <input
-    id="searchInput"
-    type="search"
-    placeholder="Поиск города или региона"
-    autocomplete="off"
-  >
-
-  <div class="search-result" id="searchResult"></div>
-
+<div class="menu" id="menu">
+<button>Карта</button>
+<button>Регионы</button>
+<button>3D</button>
+<button>Предупреждения</button>
+<button>Архив</button>
+<button>Аналитика</button>
+<button>Слои</button>
 </div>
 
-
 <!-- =========================
-     NAVIGATION
+   NAVIGATION
 ========================= -->
-
 <nav class="nav">
 
-  <!-- Карта -->
+<button class="nav-item active" data-name="Карта">
+<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
+<span>Карта</span>
+</button>
 
-  <button class="nav-item active" data-tab="map">
+<button class="nav-item" data-name="Регионы">
+<svg viewBox="0 0 24 24"><path d="M4 18V7l6 3 5-6 5 3v11l-5-3-5 4-6-1z"/><path d="M10 10v9M15 4v11"/></svg>
+<span>Регионы</span>
+</button>
 
-    <svg class="icon" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="4"></circle>
-      <circle cx="12" cy="12" r="8"></circle>
-      <path d="M12 1v3M12 20v3M1 12h3M20 12h3"></path>
-    </svg>
+<button class="nav-item" data-name="3D">
+<svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5 8-5z"/><path d="M4 8v9l8 4 8-4V8M12 13v8"/></svg>
+<span>3D</span>
+</button>
 
-    <span>Карта</span>
+<button class="nav-item" data-name="Предупреждения">
+<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 9v5"/><circle cx="12" cy="17.5" r=".7"/></svg>
+<span>Предупреждения</span>
+</button>
 
-  </button>
+<button class="nav-item" data-name="Архив">
+<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>
+<span>Архив</span>
+</button>
 
+<button class="nav-item" data-name="Аналитика">
+<svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V6M19 20V3"/></svg>
+<span>Аналитика</span>
+</button>
 
-  <!-- Регионы -->
-
-  <button class="nav-item" data-tab="regions">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M4 18V6l5 3 5-5 6 3v11l-6-3-5 4-5-1z"></path>
-      <path d="M9 9v10M14 4v11"></path>
-    </svg>
-
-    <span>Регионы</span>
-
-  </button>
-
-
-  <!-- 3D -->
-
-  <button class="nav-item" data-tab="3d">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M12 3l8 5-8 5-8-5 8-5z"></path>
-      <path d="M4 8v9l8 4 8-4V8"></path>
-      <path d="M12 13v8"></path>
-    </svg>
-
-    <span>3D</span>
-
-  </button>
-
-
-  <!-- Предупреждения -->
-
-  <button class="nav-item" data-tab="warning">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M12 3l10 18H2L12 3z"></path>
-      <path d="M12 9v5"></path>
-      <circle cx="12" cy="17.5" r=".8"></circle>
-    </svg>
-
-    <span>Предупр.</span>
-
-  </button>
-
-
-  <!-- Архив -->
-
-  <button class="nav-item" data-tab="archive">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <rect x="3" y="5" width="18" height="16" rx="2"></rect>
-      <path d="M7 3v4M17 3v4M3 10h18"></path>
-    </svg>
-
-    <span>Архив</span>
-
-  </button>
-
-
-  <!-- Аналитика -->
-
-  <button class="nav-item" data-tab="analytics">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M5 20V10M12 20V5M19 20V2"></path>
-    </svg>
-
-    <span>Аналитика</span>
-
-  </button>
-
-
-  <!-- Слои -->
-
-  <button class="nav-item" data-tab="layers">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M4 7h16M4 12h16M4 17h16"></path>
-    </svg>
-
-    <span>Слои</span>
-
-  </button>
+<button class="nav-item" data-name="Слои">
+<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+<span>Слои</span>
+</button>
 
 </nav>
 
-
 <!-- =========================
-     MAP TOOLS
+   MAP TOOLS
 ========================= -->
-
 <div class="map-tools">
 
-  <button class="map-tool" id="zoomIn">
+<button class="map-tool" id="plus">
+<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+</button>
 
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M12 5v14M5 12h14"></path>
-    </svg>
+<button class="map-tool" id="minus">
+<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+</button>
 
-  </button>
-
-
-  <button class="map-tool" id="zoomOut">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M5 12h14"></path>
-    </svg>
-
-  </button>
-
-
-  <button class="map-tool" id="locateBtn">
-
-    <svg class="icon" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="4"></circle>
-      <circle cx="12" cy="12" r="8"></circle>
-      <path d="M12 1v3M12 20v3M1 12h3M20 12h3"></path>
-    </svg>
-
-  </button>
+<button class="map-tool" id="locate">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
+</button>
 
 </div>
 
+<!-- =========================
+   LAYERS
+========================= -->
+<div class="layers">
+
+<div class="layer">
+<div class="layer-icon">
+<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3"/></svg>
+</div>
+<div class="layer-name">Радар</div>
+<button class="switch on"><i></i></button>
+</div>
+
+<div class="layer">
+<div class="layer-icon blue">
+<svg viewBox="0 0 24 24"><path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/><path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/></svg>
+</div>
+<div class="layer-name">Осадки</div>
+<button class="switch on"><i></i></button>
+</div>
+
+<div class="layer">
+<div class="layer-icon red">
+<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-13h-7l0-7z"/></svg>
+</div>
+<div class="layer-name">Гроза</div>
+<button class="switch on"><i></i></button>
+</div>
+
+</div>
 
 <!-- =========================
-     LAYER PANEL
+   DATA
 ========================= -->
+<div class="data">
 
-<section class="layer-panel">
+<div class="data-cell">
+<div class="data-label">Интенсивность:</div>
+<div class="data-value">Нет данных</div>
+</div>
 
-  <!-- Radar -->
+<div class="data-cell">
+<div class="data-label">Гроза</div>
+<div class="data-value">—</div>
+</div>
 
-  <div class="layer-row">
+<div class="data-cell">
+<div class="data-label">Скорость:</div>
+<div class="data-value">—</div>
+</div>
 
-    <div class="layer-icon">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="7"></circle>
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M12 2v3M12 19v3"></path>
-      </svg>
-
-    </div>
-
-    <div class="layer-name">Радар</div>
-
-    <button class="switch on" data-layer="radar">
-      <span></span>
-    </button>
-
-  </div>
-
-
-  <!-- Осадки -->
-
-  <div class="layer-row">
-
-    <div class="layer-icon blue">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"></path>
-        <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"></path>
-      </svg>
-
-    </div>
-
-    <div class="layer-name">Осадки</div>
-
-    <button class="switch on" data-layer="rain">
-      <span></span>
-    </button>
-
-  </div>
-
-
-  <!-- Гроза -->
-
-  <div class="layer-row">
-
-    <div class="layer-icon red">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M13 2L4 14h7l-1 8 10-13h-7l0-7z"></path>
-      </svg>
-
-    </div>
-
-    <div class="layer-name">Гроза</div>
-
-    <button class="switch on" data-layer="storm">
-      <span></span>
-    </button>
-
-  </div>
-
-</section>
-
+</div>
 
 <!-- =========================
-     DATA
+   ALERT
 ========================= -->
-
-<section class="data-strip">
-
-  <div class="data-cell">
-    <div class="data-label">Интенсивность</div>
-    <div class="data-value">Нет данных</div>
-  </div>
-
-  <div class="data-cell">
-    <div class="data-label">Гроза</div>
-    <div class="data-value">—</div>
-  </div>
-
-  <div class="data-cell">
-    <div class="data-label">Скорость</div>
-    <div class="data-value">—</div>
-  </div>
-
-</section>
-
-
-<!-- =========================
-     ALERT
-========================= -->
-
 <div class="alert" id="alert">
 
-  <div class="alert-icon">
+<svg viewBox="0 0 24 24">
+<path d="M12 3l10 18H2L12 3z"/>
+<path d="M12 9v5"/>
+<circle cx="12" cy="17.5" r=".7"/>
+</svg>
 
-    <svg class="icon" viewBox="0 0 24 24">
-      <path d="M12 3l10 18H2L12 3z"></path>
-      <path d="M12 9v5"></path>
-      <circle cx="12" cy="17.5" r=".8"></circle>
-    </svg>
+<div class="alert-text">
+<b>ШТОРМ:</b> Активных предупреждений пока нет
+</div>
 
-  </div>
-
-  <div class="alert-content">
-
-    <div class="alert-title">Предупреждения</div>
-
-    <div class="alert-text">
-      Активных предупреждений пока нет.
-    </div>
-
-  </div>
-
-  <button class="alert-close" id="alertClose">×</button>
+<button class="alert-close" id="closeAlert">×</button>
 
 </div>
 
-
 <!-- =========================
-     SETTINGS
+   SETTINGS
 ========================= -->
-
 <div class="settings" id="settings">
-
-  <div class="settings-title">Настройки</div>
-
-  <button data-theme-choice="dark" class="active">
-    Тёмная тема
-  </button>
-
-  <button data-theme-choice="light">
-    Светлая тема
-  </button>
-
-  <button id="movementBtn">
-    Движение карты: включено
-  </button>
-
+<button class="active" id="dark">Тёмная тема</button>
+<button id="light">Светлая тема</button>
+<button id="move">Движение карты: включено</button>
 </div>
 
-
 <!-- =========================
-     TIMELINE
+   TIMELINE
 ========================= -->
+<div class="timeline">
 
-<section class="timeline">
+<div class="timeline-title" id="time">
+СЕЙЧАС 17:20, 13 СЕНТЯБРЯ
+</div>
 
-  <div class="timeline-top">
+<div class="timeline-row">
 
-    <div class="timeline-now" id="timeText">
-      СЕЙЧАС 17:22
-    </div>
+<button class="time-button" id="play">
+<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7V5z"/></svg>
+</button>
 
-    <div class="timeline-date">
-      13 СЕНТЯБРЯ
-    </div>
+<button class="time-button small" id="pause">
+<svg viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"/></svg>
+</button>
 
-  </div>
+<button class="time-button small" id="prev">
+<svg viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6M6 6v12"/></svg>
+</button>
 
+<div class="slider">
+<input type="range" id="range" min="0" max="100" value="70">
+<div class="labels">
+<span>06:00</span>
+<span>08:00</span>
+<span>10:00</span>
+<span>12:00</span>
+<span>14:00</span>
+<span>17:20</span>
+<span>18:00</span>
+<span>20:00</span>
+<span>22:00</span>
+</div>
+</div>
 
-  <div class="timeline-main">
+<button class="time-button small" id="next">
+<svg viewBox="0 0 24 24"><path d="M6 6l8 6-8 6M18 6v12"/></svg>
+</button>
 
-    <!-- Play -->
-
-    <button class="time-btn" id="playBtn">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M8 5l11 7-11 7V5z"></path>
-      </svg>
-
-    </button>
-
-
-    <!-- Pause -->
-
-    <button class="time-btn dark" id="pauseBtn">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M8 6v12M16 6v12"></path>
-      </svg>
-
-    </button>
-
-
-    <!-- Previous -->
-
-    <button class="time-btn dark" id="prevBtn">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M18 6l-8 6 8 6M6 6v12"></path>
-      </svg>
-
-    </button>
-
-
-    <!-- Slider -->
-
-    <div class="slider-area">
-
-      <div class="speed">
-
-        <button class="speed-btn active" data-speed="1">
-          1x
-        </button>
-
-        <button class="speed-btn" data-speed="2">
-          2x
-        </button>
-
-      </div>
-
-
-      <input
-        class="timeline-range"
-        id="timelineRange"
-        type="range"
-        min="0"
-        max="100"
-        value="70"
-      >
-
-      <div class="time-labels">
-
-        <span>06:00</span>
-        <span>08:00</span>
-        <span>10:00</span>
-        <span>12:00</span>
-        <span>14:00</span>
-        <span>16:00</span>
-        <span>17:20</span>
-        <span>18:00</span>
-        <span>20:00</span>
-        <span>22:00</span>
-
-      </div>
-
-    </div>
-
-
-    <!-- Next -->
-
-    <button class="time-btn dark" id="nextBtn">
-
-      <svg class="icon" viewBox="0 0 24 24">
-        <path d="M6 6l8 6-8 6M18 6v12"></path>
-      </svg>
-
-    </button>
-
-  </div>
-
-</section>
-
-
-<!-- =========================
-     TOAST
-========================= -->
+</div>
+</div>
 
 <div class="toast" id="toast"></div>
 
-
-<!-- =========================
-     LEAFLET
-========================= -->
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-
 <script>
-
 /* =========================
    MAP
 ========================= */
-
-const map=L.map("map",{
-  zoomControl:false,
-  attributionControl:true,
-  minZoom:2,
-  maxZoom:18
-}).setView([55.75,37.62],5);
-
-
-/* =========================
-   DARK MAP
-========================= */
+const map=L.map("map",{zoomControl:false,minZoom:2,maxZoom:18}).setView([55.75,37.62],5);
 
 L.tileLayer(
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  {
-    maxZoom:18,
-    attribution:"© Esri © OpenStreetMap"
-  }
+"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+{maxZoom:18,attribution:"© Esri © OpenStreetMap"}
 ).addTo(map);
 
 
 /* =========================
-   ELEMENTS
+   HELPERS
 ========================= */
-
-const $=id=>document.getElementById(id);
-
-const toast=$("toast");
-const searchBox=$("searchBox");
-const searchInput=$("searchInput");
-const searchResult=$("searchResult");
-const mobileMenu=$("mobileMenu");
-const settings=$("settings");
-
-
-/* =========================
-   TOAST
-========================= */
-
+const $=x=>document.getElementById(x);
 let toastTimer;
 
-function showToast(text){
-
-  toast.textContent=text;
-  toast.classList.add("show");
-
-  clearTimeout(toastTimer);
-
-  toastTimer=setTimeout(()=>{
-    toast.classList.remove("show");
-  },1800);
+function toast(t){
+ $("toast").textContent=t;
+ $("toast").classList.add("show");
+ clearTimeout(toastTimer);
+ toastTimer=setTimeout(()=>$("toast").classList.remove("show"),1500);
 }
 
 
 /* =========================
-   MAP ZOOM
+   ZOOM
 ========================= */
-
-$("zoomIn").onclick=()=>{
-  map.zoomIn();
-};
-
-$("zoomOut").onclick=()=>{
-  map.zoomOut();
-};
+$("plus").onclick=()=>map.zoomIn();
+$("minus").onclick=()=>map.zoomOut();
 
 
 /* =========================
    LOCATION
 ========================= */
+$("locate").onclick=()=>{
 
-$("locateBtn").onclick=()=>{
+ if(!navigator.geolocation){
+   toast("Геолокация недоступна");
+   return;
+ }
 
-  if(!navigator.geolocation){
-    showToast("Геолокация недоступна");
-    return;
-  }
+ toast("Определяем местоположение…");
 
-  showToast("Определяем местоположение…");
-
-  navigator.geolocation.getCurrentPosition(
-    p=>{
-      const lat=p.coords.latitude;
-      const lon=p.coords.longitude;
-
-      map.setView([lat,lon],9);
-
-      L.circleMarker([lat,lon],{
-        radius:7,
-        color:"#fff",
-        weight:2,
-        fillColor:"#54e7a1",
-        fillOpacity:1
-      }).addTo(map);
-
-      showToast("Местоположение найдено");
-    },
-    ()=>{
-      showToast("Не удалось получить местоположение");
-    }
-  );
+ navigator.geolocation.getCurrentPosition(
+ p=>{
+   map.setView([p.coords.latitude,p.coords.longitude],9);
+   L.circleMarker([p.coords.latitude,p.coords.longitude],{
+     radius:7,color:"#fff",weight:2,fillColor:"#54e7a0",fillOpacity:1
+   }).addTo(map);
+   toast("Местоположение найдено");
+ },
+ ()=>toast("Не удалось определить местоположение")
+);
 };
-
-
-/* =========================
-   SEARCH
-========================= */
-
-$("searchBtn").onclick=()=>{
-
-  searchBox.classList.toggle("open");
-
-  if(searchBox.classList.contains("open")){
-    searchInput.focus();
-  }
-};
-
-const cities={
-  "москва":[55.7558,37.6173],
-  "уфа":[54.7388,55.9721],
-  "казань":[55.7879,49.1233],
-  "самара":[53.1959,50.1002],
-  "екатеринбург":[56.8389,60.6057],
-  "нижний новгород":[56.3269,44.0059],
-  "пермь":[58.0105,56.2502],
-  "омск":[54.9885,73.3242],
-  "новосибирск":[55.0084,82.9357],
-  "челябинск":[55.1644,61.4368],
-  "волгоград":[48.708,44.5133],
-  "архангельск":[64.5399,40.5158]
-};
-
-searchInput.addEventListener("input",()=>{
-
-  const q=searchInput.value.trim().toLowerCase();
-
-  if(!q){
-    searchResult.style.display="none";
-    return;
-  }
-
-  const key=Object.keys(cities).find(x=>x.includes(q));
-
-  if(!key){
-
-    searchResult.textContent="Ничего не найдено";
-    searchResult.style.display="block";
-    return;
-  }
-
-  searchResult.textContent=
-    key.charAt(0).toUpperCase()+key.slice(1);
-
-  searchResult.style.display="block";
-
-  searchResult.onclick=()=>{
-
-    map.setView(cities[key],8);
-
-    searchBox.classList.remove("open");
-    searchResult.style.display="none";
-    searchInput.value="";
-
-    showToast(
-      key.charAt(0).toUpperCase()+key.slice(1)
-    );
-  };
-
-});
-
-
-/* =========================
-   MOBILE MENU
-========================= */
-
-$("menuBtn").onclick=()=>{
-
-  mobileMenu.classList.toggle("open");
-
-  settings.classList.remove("open");
-  searchBox.classList.remove("open");
-};
-
-
-/* =========================
-   NAVIGATION
-========================= */
-
-document.querySelectorAll(".nav-item").forEach(btn=>{
-
-  btn.onclick=()=>{
-
-    document.querySelectorAll(".nav-item")
-      .forEach(x=>x.classList.remove("active"));
-
-    btn.classList.add("active");
-
-    const tab=btn.dataset.tab;
-
-    if(tab==="map"){
-      showToast("Карта");
-    }else{
-      showToast(btn.innerText.trim());
-    }
-  };
-
-});
-
-
-/* =========================
-   MOBILE MENU ACTIONS
-========================= */
-
-document.querySelectorAll(".mobile-menu button")
-.forEach(btn=>{
-
-  btn.onclick=()=>{
-
-    mobileMenu.classList.remove("open");
-
-    const type=btn.dataset.menu;
-
-    if(type==="layers"){
-      showToast("Слои");
-      return;
-    }
-
-    showToast(btn.textContent);
-  };
-
-});
 
 
 /* =========================
    LAYERS
 ========================= */
-
-document.querySelectorAll(".switch").forEach(sw=>{
-
-  sw.onclick=()=>{
-
-    sw.classList.toggle("on");
-
-    const state=sw.classList.contains("on");
-    const name=sw.parentElement
-      .querySelector(".layer-name")
-      .textContent;
-
-    showToast(
-      name+(state?" включён":" выключен")
-    );
-  };
-
+document.querySelectorAll(".switch").forEach(x=>{
+ x.onclick=()=>{
+   x.classList.toggle("on");
+   toast(
+     x.parentElement.querySelector(".layer-name").textContent+
+     (x.classList.contains("on")?" включён":" выключен")
+   );
+ };
 });
 
 
 /* =========================
-   SETTINGS
+   NAV
 ========================= */
+document.querySelectorAll(".nav-item").forEach(x=>{
+ x.onclick=()=>{
+   document.querySelectorAll(".nav-item").forEach(y=>y.classList.remove("active"));
+   x.classList.add("active");
+   toast(x.dataset.name);
+ };
+});
 
-$("themeBtn").onclick=()=>{
 
-  settings.classList.toggle("open");
+/* =========================
+   SEARCH
+========================= */
+$("searchBtn").onclick=()=>{};
 
-  mobileMenu.classList.remove("open");
+const searchBox=$("search");
+$("searchBtn").onclick=()=>{
+ searchBox.classList.toggle("open");
+ $("menu").classList.remove("open");
+ if(searchBox.classList.contains("open"))$("searchInput").focus();
 };
 
 
 /* =========================
-   THEME
+   MENU
 ========================= */
-
-document.querySelectorAll("[data-theme-choice]")
-.forEach(btn=>{
-
-  btn.onclick=()=>{
-
-    const theme=btn.dataset.themeChoice;
-
-    document.body.classList.toggle(
-      "light",
-      theme==="light"
-    );
-
-    document.querySelectorAll("[data-theme-choice]")
-      .forEach(x=>x.classList.remove("active"));
-
-    btn.classList.add("active");
-
-    showToast(
-      theme==="light"
-      ?"Светлая тема"
-      :"Тёмная тема"
-    );
-  };
-
-});
-
-
-/* =========================
-   MOVEMENT
-========================= */
-
-let movement=true;
-
-$("movementBtn").onclick=()=>{
-
-  movement=!movement;
-
-  map.dragging[movement?"enable":"disable"]();
-
-  $("movementBtn").textContent=
-    "Движение карты: "+
-    (movement?"включено":"выключено");
-
-  showToast(
-    movement
-    ?"Движение включено"
-    :"Движение выключено"
-  );
+$("menuBtn").onclick=()=>{
+ $("menu").classList.toggle("open");
+ searchBox.classList.remove("open");
 };
 
 
 /* =========================
    NOTIFICATIONS
 ========================= */
-
 $("notifyBtn").onclick=()=>{
+ $("alert").classList.add("show");
+};
 
-  $("alert").classList.add("show");
-
-  showToast("Уведомления");
+$("closeAlert").onclick=()=>{
+ $("alert").classList.remove("show");
 };
 
 
 /* =========================
-   ALERT CLOSE
+   THEME
 ========================= */
+$("themeBtn").onclick=()=>{
+ $("settings").classList.toggle("open");
+ $("menu").classList.remove("open");
+};
 
-$("alertClose").onclick=()=>{
+$("dark").onclick=()=>{
+ document.body.style.filter="";
+ $("dark").classList.add("active");
+ $("light").classList.remove("active");
+ toast("Тёмная тема");
+};
 
-  $("alert").classList.remove("show");
+$("light").onclick=()=>{
+ document.body.style.filter="invert(.92) hue-rotate(180deg)";
+ $("light").classList.add("active");
+ $("dark").classList.remove("active");
+ toast("Светлая тема");
+};
 
+
+/* =========================
+   MOVEMENT
+========================= */
+let moving=true;
+
+$("move").onclick=()=>{
+ moving=!moving;
+ moving?map.dragging.enable():map.dragging.disable();
+ $("move").textContent="Движение карты: "+(moving?"включено":"выключено");
 };
 
 
 /* =========================
    TIMELINE
 ========================= */
-
-const range=$("timelineRange");
-
-let playing=false;
-let speed=1;
+const range=$("range");
 let timer=null;
-
 
 function updateTime(){
 
-  const value=Number(range.value);
+ const min=360+Math.round(960*(range.value/100));
+ const h=Math.floor(min/60);
+ const m=min%60;
 
-  const start=6*60;
-  const end=22*60;
-
-  const minutes=Math.round(
-    start+(end-start)*(value/100)
-  );
-
-  const h=Math.floor(minutes/60);
-  const m=minutes%60;
-
-  $("timeText").textContent=
-    "СЕЙЧАС "+
-    String(h).padStart(2,"0")+
-    ":"+
-    String(m).padStart(2,"0");
+ $("time").textContent=
+ "СЕЙЧАС "+
+ String(h).padStart(2,"0")+":"+
+ String(m).padStart(2,"0")+
+ ", 13 СЕНТЯБРЯ";
 }
-
 
 range.oninput=updateTime;
 
@@ -2051,152 +613,94 @@ range.oninput=updateTime;
 /* =========================
    PLAY
 ========================= */
+$("play").onclick=()=>{
 
-function play(){
+ if(timer)return;
 
-  if(playing)return;
+ timer=setInterval(()=>{
 
-  playing=true;
+   range.value=Number(range.value)+1;
 
-  timer=setInterval(()=>{
+   if(range.value>100)range.value=0;
 
-    let value=Number(range.value)+speed;
+   updateTime();
 
-    if(value>100){
-      value=0;
-    }
+ },350);
 
-    range.value=value;
-
-    updateTime();
-
-  },350);
-}
-
-
-function pause(){
-
-  playing=false;
-
-  clearInterval(timer);
-  timer=null;
-}
-
-
-$("playBtn").onclick=()=>{
-  play();
-  showToast("Воспроизведение");
+ toast("Воспроизведение");
 };
 
 
-$("pauseBtn").onclick=()=>{
-  pause();
-  showToast("Пауза");
+/* =========================
+   PAUSE
+========================= */
+$("pause").onclick=()=>{
+ clearInterval(timer);
+ timer=null;
+ toast("Пауза");
 };
 
 
 /* =========================
    PREVIOUS
 ========================= */
-
-$("prevBtn").onclick=()=>{
-
-  pause();
-
-  range.value=Math.max(
-    0,
-    Number(range.value)-5
-  );
-
-  updateTime();
+$("prev").onclick=()=>{
+ range.value=Math.max(0,Number(range.value)-5);
+ updateTime();
 };
 
 
 /* =========================
    NEXT
 ========================= */
-
-$("nextBtn").onclick=()=>{
-
-  pause();
-
-  range.value=Math.min(
-    100,
-    Number(range.value)+5
-  );
-
-  updateTime();
+$("next").onclick=()=>{
+ range.value=Math.min(100,Number(range.value)+5);
+ updateTime();
 };
 
 
 /* =========================
-   SPEED
+   SEARCH CITIES
 ========================= */
+const cities={
+ москва:[55.7558,37.6173],
+ уфа:[54.7388,55.9721],
+ казань:[55.7879,49.1233],
+ самара:[53.1959,50.1002],
+ нижний:[56.3269,44.0059],
+ екатеринбург:[56.8389,60.6057],
+ омск:[54.9885,73.3242],
+ новосибирск:[55.0084,82.9357]
+};
 
-document.querySelectorAll(".speed-btn")
-.forEach(btn=>{
+$("searchInput").oninput=e=>{
 
-  btn.onclick=()=>{
+ const q=e.target.value.trim().toLowerCase();
 
-    speed=Number(btn.dataset.speed);
+ if(!q)return;
 
-    document.querySelectorAll(".speed-btn")
-      .forEach(x=>x.classList.remove("active"));
+ const key=Object.keys(cities).find(x=>x.startsWith(q));
 
-    btn.classList.add("active");
+ if(key){
 
-    showToast(speed+"x");
-  };
+   map.setView(cities[key],8);
+   toast(key[0].toUpperCase()+key.slice(1));
 
-});
+   $("search").classList.remove("open");
+   e.target.value="";
+ }
+};
 
 
 /* =========================
-   INITIAL
+   CLOSE
 ========================= */
+map.on("click",()=>{
+ $("menu").classList.remove("open");
+ $("settings").classList.remove("open");
+});
 
 updateTime();
-
-
-/* =========================
-   CLOSE POPUPS
-========================= */
-
-map.on("click",()=>{
-
-  searchBox.classList.remove("open");
-  mobileMenu.classList.remove("open");
-
-});
-
-
-/* =========================
-   KEYBOARD
-========================= */
-
-document.addEventListener("keydown",e=>{
-
-  if(e.key==="Escape"){
-
-    searchBox.classList.remove("open");
-    mobileMenu.classList.remove("open");
-    settings.classList.remove("open");
-    $("alert").classList.remove("show");
-
-  }
-
-});
-
-
-/* =========================
-   RESIZE
-========================= */
-
-window.addEventListener("resize",()=>{
-  map.invalidateSize();
-});
-
-
 </script>
 
 </body>
