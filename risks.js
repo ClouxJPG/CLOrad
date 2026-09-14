@@ -103,8 +103,8 @@
 
       width:max-content;
 
-      /* Основная высота панели */
-      height:80px;
+      /* Высота панели */
+      height:79px;
 
       background:#182028f7;
 
@@ -247,7 +247,7 @@
     }
 
 
-    .risksToggleKnob{
+    #risksSourcePanel .risksToggleKnob{
       position:absolute;
 
       width:14px;
@@ -351,7 +351,7 @@
     @media(max-width:600px){
 
       #risksSourcePanel{
-        height:78px;
+        height:79px;
 
         padding:4px;
       }
@@ -396,7 +396,7 @@
       panel.offsetWidth || 140;
 
     const panelHeight =
-      panel.offsetHeight || 80;
+      panel.offsetHeight || 79;
 
     let left =
       rect.left +
@@ -530,6 +530,10 @@
           source;
 
 
+        /*
+        Сразу показываем выбранный источник.
+        */
+
         sourceButtons.forEach(item => {
 
           item.classList.toggle(
@@ -570,11 +574,8 @@
 
 
         /*
-        После выбора источник остаётся
-        активным при следующем открытии.
+        Панель НЕ закрываем.
         */
-
-        closePanel();
 
       }
     );
@@ -614,11 +615,6 @@
     );
 
 
-    /*
-    Управляем слоем карты,
-    если он уже создан.
-    */
-
     const layer =
       window.CLOradRisksLayer;
 
@@ -645,10 +641,6 @@
 
     }
 
-
-    /*
-    Передаём состояние загрузчику.
-    */
 
     if(
       window.CLOradRisksLoader &&
