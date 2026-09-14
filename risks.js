@@ -1,285 +1,447 @@
+/* =========================================================
+   CLOrad — Risks / Warnings
+   EMS / CSF source selector
+   ========================================================= */
+
 (() => {
   "use strict";
 
-  /*
-  ============================================================
-  CLOrad — RISKS
-  Источники:
-    EMS — рабочий источник рисков/предупреждений
-    CSF — пока заглушка
-  ============================================================
-  */
-
   const nav = document.getElementById("nav");
+  if (!nav) return;
 
-  if (!nav) {
-    console.error("[CLOrad Risks] Навигация не найдена");
-    return;
-  }
+  // Находим кнопку «Предупр.»
+  const warningButton = [...nav.querySelectorAll(".n")].find(
+    el => el.textContent.trim() === "Предупр."
+  );
 
-  // ==========================================================
-  // НАХОДИМ КНОПКУ «ПРЕДУПР.»
-  // ==========================================================
+  if (!warningButton) return;
 
-  const warningButton = [...nav.querySelectorAll(".n")]
-    .find(button =>
-      button.textContent.trim().toLowerCase() === "предупр."
-    );
+  let currentSource = "EMS";
+  let panel = null;
 
-  if (!warningButton) {
-    console.error("[CLOrad Risks] Кнопка «Предупр.» не найдена");
-    return;
-  }
-
-  // ==========================================================
-  // СОЗДАЁМ ПАНЕЛЬ
-  // ==========================================================
-
-  const panel = document.createElement("div");
-
-  panel.id = "risksSourcePanel";
-  panel.innerHTML = `
-    <button
-      type="button"
-      class="risksSourceButton active"
-      data-source="EMS"
-    >
-      EMS
-    </button>
-
-    <button
-      type="button"
-      class="risksSourceButton"
-      data-source="CSF"
-    >
-      CSF
-    </button>
-  `;
-
-  document.body.appendChild(panel);
-
-  // ==========================================================
-  // CSS
-  // ==========================================================
+  /* =========================================================
+     CSS
+     ========================================================= */
 
   const style = document.createElement("style");
 
   style.textContent = `
-    /*
-    ------------------------------------------------------------
-    ПАНЕЛЬ ИСТОЧНИКОВ РИСКОВ
-    ------------------------------------------------------------
-    */
+    #risksSourcePanel {
+      position: fixed;
+      z-index: 99999;
 
-    #risksSourcePanel{
-      position:fixed;
-      z-index:25;
+      width: 150px;
+      box-sizing: border-box;
 
-      display:flex;
-      align-items:center;
+      padding: 8px;
 
-      gap:5px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 11px;
 
-      padding:5px;
+      background: rgba(25,25,28,.96);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
 
-      width:max-content;
-      height:44px;
+      box-shadow:
+        0 8px 24px rgba(0,0,0,.35),
+        0 1px 3px rgba(0,0,0,.25);
 
-      background:#182028f7;
-      border:1px solid #3d4851;
-      border-radius:9px;
-
-      box-shadow:0 5px 16px #0004;
-
-      opacity:0;
-      pointer-events:none;
-
-      transform:translateY(-5px);
+      opacity: 0;
+      transform: translateY(-4px) scale(.98);
+      pointer-events: none;
 
       transition:
-        opacity .20s ease,
-        transform .20s ease;
+        opacity .16s ease,
+        transform .16s ease;
     }
 
-    #risksSourcePanel.open{
-      opacity:1;
-      pointer-events:auto;
-      transform:translateY(0);
+    #risksSourcePanel.open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
     }
 
-    .risksSourceButton{
-      height:32px;
-      min-width:54px;
+    #risksSourcePanel .risksSources {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
 
-      padding:0 12px;
+    #risksSourcePanel .riskSource {
+      flex: 1;
 
-      border:1px solid transparent;
-      border-radius:7px;
+      height: 30px;
+      min-width: 0;
 
-      background:transparent;
-      color:#aeb7bd;
+      padding: 0 7px;
 
-      font-size:13px;
-      font-weight:700;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 7px;
 
-      display:flex;
-      align-items:center;
-      justify-content:center;
+      background: rgba(255,255,255,.045);
+      color: rgba(255,255,255,.72);
+
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+
+      cursor: pointer;
 
       transition:
-        background .16s ease,
-        color .16s ease,
-        border-color .16s ease;
+        background .14s ease,
+        color .14s ease,
+        border-color .14s ease,
+        transform .1s ease;
     }
 
-    .risksSourceButton.active{
-      background:#263139;
-      border-color:#3e4a53;
-      color:#53e39b;
+    #risksSourcePanel .riskSource:active {
+      transform: scale(.96);
     }
 
-    .risksSourceButton:active{
-      transform:scale(.96);
+    #risksSourcePanel .riskSource.active {
+      background: rgba(255,255,255,.13);
+      border-color: rgba(255,255,255,.17);
+      color: #fff;
     }
 
-    /*
-    ------------------------------------------------------------
-    СВЕТЛАЯ ТЕМА
-    ------------------------------------------------------------
-    */
+    /* =====================================================
+       Нижний переключатель
+       ===================================================== */
 
-    body.light #risksSourcePanel{
-      background:#f6f8f9ee;
-      border-color:#c9d0d5;
-      box-shadow:0 5px 16px #0002;
+    #risksSourcePanel .risksToggleRow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      margin-top: 8px;
+      padding-top: 7px;
+
+      border-top: 1px solid rgba(255,255,255,.07);
     }
 
-    body.light .risksSourceButton{
-      color:#687177;
+    #risksSourcePanel .risksToggle {
+      position: relative;
+
+      width: 54px;
+      height: 24px;
+
+      border-radius: 999px;
+
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.08);
+
+      cursor: pointer;
+
+      transition: background .18s ease;
     }
 
-    body.light .risksSourceButton.active{
-      background:#e1e6e9;
-      border-color:#c6ced3;
-      color:#168453;
+    #risksSourcePanel .risksToggleKnob {
+      position: absolute;
+
+      top: 3px;
+      left: 3px;
+
+      width: 18px;
+      height: 18px;
+
+      border-radius: 50%;
+
+      background: #fff;
+
+      box-shadow: 0 2px 6px rgba(0,0,0,.35);
+
+      transition:
+        transform .18s ease,
+        background .18s ease;
     }
 
-    /*
-    ------------------------------------------------------------
-    МОБИЛЬНЫЕ
-    ------------------------------------------------------------
-    */
+    #risksSourcePanel .risksToggle.csF {
+      background: rgba(255,255,255,.16);
+    }
 
-    @media(max-width:600px){
-      #risksSourcePanel{
-        height:42px;
-        padding:4px;
+    #risksSourcePanel .risksToggle.csF .risksToggleKnob {
+      transform: translateX(30px);
+    }
+
+    #risksSourcePanel .risksToggleLabels {
+      display: flex;
+      align-items: center;
+
+      margin-left: 7px;
+
+      font-size: 9px;
+      font-weight: 600;
+
+      line-height: 1;
+    }
+
+    #risksSourcePanel .risksToggleLabel {
+      color: rgba(255,255,255,.38);
+      transition: color .16s ease;
+    }
+
+    #risksSourcePanel .risksToggleLabel.active {
+      color: rgba(255,255,255,.85);
+    }
+
+    /* =====================================================
+       Светлая тема
+       ===================================================== */
+
+    body.light #risksSourcePanel,
+    body[data-theme="light"] #risksSourcePanel {
+      background: rgba(245,245,247,.97);
+      border-color: rgba(0,0,0,.09);
+
+      box-shadow:
+        0 8px 24px rgba(0,0,0,.15),
+        0 1px 3px rgba(0,0,0,.10);
+    }
+
+    body.light #risksSourcePanel .riskSource,
+    body[data-theme="light"] #risksSourcePanel .riskSource {
+      background: rgba(0,0,0,.035);
+      border-color: rgba(0,0,0,.07);
+      color: rgba(0,0,0,.58);
+    }
+
+    body.light #risksSourcePanel .riskSource.active,
+    body[data-theme="light"] #risksSourcePanel .riskSource.active {
+      background: rgba(0,0,0,.09);
+      border-color: rgba(0,0,0,.13);
+      color: #111;
+    }
+
+    body.light #risksSourcePanel .risksToggleRow,
+    body[data-theme="light"] #risksSourcePanel .risksToggleRow {
+      border-top-color: rgba(0,0,0,.07);
+    }
+
+    body.light #risksSourcePanel .risksToggle,
+    body[data-theme="light"] #risksSourcePanel .risksToggle {
+      background: rgba(0,0,0,.09);
+      border-color: rgba(0,0,0,.07);
+    }
+
+    body.light #risksSourcePanel .risksToggle.csF,
+    body[data-theme="light"] #risksSourcePanel .risksToggle.csF {
+      background: rgba(0,0,0,.15);
+    }
+
+    body.light #risksSourcePanel .risksToggleLabel,
+    body[data-theme="light"] #risksSourcePanel .risksToggleLabel {
+      color: rgba(0,0,0,.35);
+    }
+
+    body.light #risksSourcePanel .risksToggleLabel.active,
+    body[data-theme="light"] #risksSourcePanel .risksToggleLabel.active {
+      color: rgba(0,0,0,.75);
+    }
+
+    /* =====================================================
+       Телефон
+       ===================================================== */
+
+    @media (max-width: 480px) {
+      #risksSourcePanel {
+        width: 145px;
+        padding: 7px;
+        border-radius: 10px;
       }
 
-      .risksSourceButton{
-        height:32px;
-        min-width:52px;
-        font-size:13px;
+      #risksSourcePanel .riskSource {
+        height: 29px;
+        font-size: 10.5px;
       }
     }
   `;
 
   document.head.appendChild(style);
 
-  // ==========================================================
-  // ПОЗИЦИОНИРОВАНИЕ
-  // ==========================================================
+  /* =========================================================
+     Создание панели
+     ========================================================= */
+
+  function createPanel() {
+    if (panel) return panel;
+
+    panel = document.createElement("div");
+    panel.id = "risksSourcePanel";
+
+    panel.innerHTML = `
+      <div class="risksSources">
+        <button class="riskSource active" data-source="EMS">
+          EMS
+        </button>
+
+        <button class="riskSource" data-source="CSF">
+          CSF
+        </button>
+      </div>
+
+      <div class="risksToggleRow">
+        <div class="risksToggle" role="switch" aria-label="Источник рисков">
+          <div class="risksToggleKnob"></div>
+        </div>
+
+        <div class="risksToggleLabels">
+          <span class="risksToggleLabel active" data-label="EMS">EMS</span>
+          <span style="margin:0 3px;color:rgba(255,255,255,.25)">/</span>
+          <span class="risksToggleLabel" data-label="CSF">CSF</span>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    const sourceButtons = panel.querySelectorAll(".riskSource");
+
+    sourceButtons.forEach(button => {
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+
+        setSource(button.dataset.source);
+
+        // После выбора сразу закрываем панель
+        closePanel();
+      });
+    });
+
+    const toggle = panel.querySelector(".risksToggle");
+
+    toggle.addEventListener("click", event => {
+      event.stopPropagation();
+
+      setSource(currentSource === "EMS" ? "CSF" : "EMS");
+    });
+
+    return panel;
+  }
+
+  /* =========================================================
+     Источник
+     ========================================================= */
+
+  function setSource(source) {
+    currentSource = source === "CSF" ? "CSF" : "EMS";
+
+    if (!panel) return;
+
+    panel.querySelectorAll(".riskSource").forEach(button => {
+      button.classList.toggle(
+        "active",
+        button.dataset.source === currentSource
+      );
+    });
+
+    const toggle = panel.querySelector(".risksToggle");
+
+    if (toggle) {
+      toggle.classList.toggle("csF", currentSource === "CSF");
+      toggle.setAttribute(
+        "aria-checked",
+        currentSource === "CSF" ? "true" : "false"
+      );
+    }
+
+    panel.querySelectorAll(".risksToggleLabel").forEach(label => {
+      label.classList.toggle(
+        "active",
+        label.dataset.label === currentSource
+      );
+    });
+
+    /*
+      Здесь позже можно подключить реальные данные:
+
+      if (currentSource === "EMS") {
+        // загрузка EMS
+      }
+
+      if (currentSource === "CSF") {
+        // загрузка CSF
+      }
+    */
+  }
+
+  /* =========================================================
+     Позиционирование
+     ========================================================= */
 
   function positionPanel() {
+    if (!panel || !panel.classList.contains("open")) return;
+
     const rect = warningButton.getBoundingClientRect();
 
-    /*
-      Панель находится непосредственно СНИЗУ
-      от кнопки «Предупр.».
-    */
+    const gap = 6;
 
-    const panelWidth = panel.offsetWidth || 120;
-    const panelHeight = panel.offsetHeight || 44;
+    let left = rect.left;
+    let top = rect.bottom + gap;
 
-    let left =
-      rect.left +
-      rect.width / 2 -
-      panelWidth / 2;
+    const panelRect = panel.getBoundingClientRect();
 
-    /*
-      Не даём панели выйти за экран.
-    */
+    // Не даём панели уйти вправо
+    if (left + panelRect.width > window.innerWidth - 8) {
+      left = window.innerWidth - panelRect.width - 8;
+    }
 
-    const margin = 8;
+    // Не даём панели уйти влево
+    if (left < 8) {
+      left = 8;
+    }
 
-    left = Math.max(
-      margin,
-      Math.min(
-        left,
-        window.innerWidth -
-        panelWidth -
-        margin
-      )
-    );
+    // Если снизу мало места — показываем сверху кнопки
+    if (top + panelRect.height > window.innerHeight - 8) {
+      top = rect.top - panelRect.height - gap;
+    }
 
-    let top =
-      rect.bottom + 7;
-
-    /*
-      Если снизу недостаточно места,
-      ставим панель над кнопкой.
-      В обычном случае она всегда снизу.
-    */
-
-    if (
-      top + panelHeight >
-      window.innerHeight - 8
-    ) {
-      top =
-        rect.top -
-        panelHeight -
-        7;
+    if (top < 8) {
+      top = 8;
     }
 
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
   }
 
-  // ==========================================================
-  // ОТКРЫТИЕ / ЗАКРЫТИЕ
-  // ==========================================================
-
-  let opened = false;
+  /* =========================================================
+     Открытие / закрытие
+     ========================================================= */
 
   function openPanel() {
-    positionPanel();
+    createPanel();
 
     panel.classList.add("open");
 
-    opened = true;
+    // Сначала ставим примерно на место,
+    // затем уточняем после появления
+    positionPanel();
+
+    requestAnimationFrame(positionPanel);
   }
 
   function closePanel() {
-    panel.classList.remove("open");
+    if (!panel) return;
 
-    opened = false;
+    panel.classList.remove("open");
   }
 
   function togglePanel() {
-    if (opened) {
-      closePanel();
-    } else {
+    if (!panel || !panel.classList.contains("open")) {
       openPanel();
+    } else {
+      closePanel();
     }
   }
 
-  // ==========================================================
-  // КНОПКА «ПРЕДУПР.»
-  // ==========================================================
+  /* =========================================================
+     Клик по «Предупр.»
+     ========================================================= */
 
   warningButton.addEventListener(
     "click",
     event => {
+      event.preventDefault();
       event.stopPropagation();
 
       togglePanel();
@@ -287,177 +449,68 @@
     true
   );
 
-  // ==========================================================
-  // ВЫБОР ИСТОЧНИКА
-  // ==========================================================
+  /* =========================================================
+     Клик вне панели
+     ========================================================= */
 
-  const sourceButtons =
-    [...panel.querySelectorAll(".risksSourceButton")];
+  document.addEventListener("click", event => {
+    if (!panel || !panel.classList.contains("open")) return;
 
-  let currentSource = "EMS";
+    if (
+      event.target.closest("#risksSourcePanel") ||
+      event.target.closest(".n")
+    ) {
+      return;
+    }
 
-  sourceButtons.forEach(button => {
-    button.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const source =
-        button.dataset.source;
-
-      currentSource = source;
-
-      sourceButtons.forEach(item => {
-        item.classList.toggle(
-          "active",
-          item === button
-        );
-      });
-
-      /*
-        Здесь специально пока НЕТ сообщения
-        «данные недоступны» для CSF.
-
-        Позже сюда подключим:
-          EMS → реальные риски
-          CSF → реальные риски
-      */
-
-      if (window.CLOradRisks) {
-        window.CLOradRisks.setSource(source);
-      }
-    });
+    closePanel();
   });
 
-  // ==========================================================
-  // ЗАКРЫТИЕ ПРИ НАЖАТИИ ВНЕ ПАНЕЛИ
-  // ==========================================================
+  /* =========================================================
+     Закрытие при закрытии главного меню
+     ========================================================= */
 
-  document.addEventListener(
-    "click",
-    event => {
-      if (!opened) return;
-
-      if (
-        event.target.closest("#risksSourcePanel") ||
-        event.target.closest(".n")
-      ) {
-        return;
-      }
-
+  const observer = new MutationObserver(() => {
+    if (nav.classList.contains("closed")) {
       closePanel();
     }
-  );
-
-  // ==========================================================
-  // ЕСЛИ NAV ЗАКРЫЛИ — ПАНЕЛЬ ТОЖЕ ЗАКРЫВАЕМ
-  // ==========================================================
-
-  /*
-    В твоём index.html меню закрывается через:
-      nav.classList.toggle("closed")
-
-    Следим за изменением класса.
-  */
-
-  const navObserver =
-    new MutationObserver(() => {
-      if (
-        nav.classList.contains("closed")
-      ) {
-        closePanel();
-      }
-    });
-
-  navObserver.observe(nav, {
-    attributes:true,
-    attributeFilter:["class"]
   });
 
-  // ==========================================================
-  // ПЕРЕМЕЩЕНИЕ / RESIZE
-  // ==========================================================
+  observer.observe(nav, {
+    attributes: true,
+    attributeFilter: ["class"]
+  });
+
+  /* =========================================================
+     Перемещение / изменение размера окна
+     ========================================================= */
+
+  window.addEventListener("resize", positionPanel);
+  window.addEventListener("orientationchange", positionPanel);
 
   window.addEventListener(
-    "resize",
-    () => {
-      if (opened) {
-        positionPanel();
-      }
-    }
-  );
-
-  window.addEventListener(
-    "orientationchange",
-    () => {
-      setTimeout(() => {
-        if (opened) {
-          positionPanel();
-        }
-      }, 100);
-    }
-  );
-
-  // ==========================================================
-  // ПРИ ПРОКРУТКЕ NAV
-  // ==========================================================
-
-  nav.addEventListener(
     "scroll",
-    () => {
-      if (opened) {
-        positionPanel();
-      }
-    },
-    { passive:true }
+    positionPanel,
+    true
   );
 
-  // ==========================================================
-  // ПУБЛИЧНЫЙ API
-  // ==========================================================
+  /* =========================================================
+     API
+     ========================================================= */
 
   window.CLOradRisks = {
+    open: openPanel,
+    close: closePanel,
+    toggle: togglePanel,
 
-    open() {
-      openPanel();
+    setSource: source => {
+      setSource(source);
     },
 
-    close() {
-      closePanel();
-    },
+    getSource: () => currentSource,
 
-    toggle() {
-      togglePanel();
-    },
-
-    setSource(source) {
-      if (
-        source !== "EMS" &&
-        source !== "CSF"
-      ) {
-        return;
-      }
-
-      currentSource = source;
-
-      sourceButtons.forEach(button => {
-        button.classList.toggle(
-          "active",
-          button.dataset.source === source
-        );
-      });
-    },
-
-    getSource() {
-      return currentSource;
-    },
-
-    isOpen() {
-      return opened;
-    }
+    isOpen: () =>
+      !!panel && panel.classList.contains("open")
   };
-
-  console.log(
-    "[CLOrad Risks] Загружен"
-  );
 
 })();
