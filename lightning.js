@@ -9,53 +9,76 @@
   Источник:
     LightningMaps / Blitzortung live2
 
-  Цвет:
-    свежая молния  → жёлтая
-    старше         → оранжевая
-    старая         → красная
-
-  Размер:
-    0–1 мин    8 px
-    1–2 мин    7 px
-    2–3 мин    6 px
-    3–4 мин    5 px
-    4–5 мин    4.5 px
-    5–6 мин    4 px
-    6–8 мин    3.5 px
-    8–10 мин   3 px
-    10–15 мин  2 px
-    >15 мин    удаляется
-
+  Особенности:
+    • реальные молнии в реальном времени
+    • цвет меняется с возрастом
+    • размер уменьшается с возрастом
+    • красная обводка у недавних молний
+    • волна только у абсолютно свежего удара
+    • волна живёт около 1 секунды
+    • старые молнии удаляются
+    • минимальная нагрузка на карту
+    • карта визуально не изменяется
   ============================================================
   */
 
-  const WS_URL = "wss://live2.lightningmaps.org/";
 
-  const MAX_AGE = 15 * 60 * 1000;
+  const WS_URL =
+    "wss://live2.lightningmaps.org/";
 
-  const strikes = new Map();
+  const MAX_AGE =
+    15 * 60 * 1000;
 
-  let socket = null;
-  let enabled = true;
-  let generation = 0;
-  let reconnectTimer = null;
+  /*
+  Как часто обновляем внешний вид
+  существующих молний.
 
-  let layer = null;
+  250 мс достаточно плавно,
+  но намного легче для карты,
+  чем обновление 60 раз/сек.
+  */
 
-  let animationFrame = null;
+  const UPDATE_INTERVAL = 250;
 
 
   /*
   ============================================================
-  LAYER
+  СОСТОЯНИЕ
+  ============================================================
+  */
+
+  const strikes =
+    new Map();
+
+  let layer = null;
+
+  let socket = null;
+
+  let enabled = true;
+
+  let generation = 0;
+
+  let reconnectTimer = null;
+
+  let updateTimer = null;
+
+  let viewportTimer = null;
+
+
+  /*
+  ============================================================
+  СОЗДАЁМ СЛОЙ
   ============================================================
   */
 
   function createLayer() {
 
-    if (layer) return layer;
+    if (layer) {
+      return layer;
+    }
 
-    layer = L.layerGroup();
+    layer =
+      L.layerGroup();
 
     return layer;
   }
@@ -63,59 +86,112 @@
 
   /*
   ============================================================
-  ЦВЕТ МОЛНИИ
+  ЦВЕТ ПО ВОЗРАСТУ
   ============================================================
   */
 
   function getLightningColor(age) {
 
-    const minute = age / 60000;
+    const minute =
+      age / 60000;
+
 
     /*
-    0 мин:
-      #fff700
+    Плавный переход:
 
-    1 мин:
-      #ffe600
-
-    3 мин:
-      #ffbd00
-
-    5 мин:
-      #ff8a00
-
-    8 мин:
-      #ff5a00
-
-    10 мин:
-      #ff3200
-
-    15 мин:
-      #ff0000
+      0 мин  — жёлтый
+      1 мин  — жёлтый
+      3 мин  — жёлто-оранжевый
+      5 мин  — оранжевый
+      8 мин  — оранжево-красный
+      10 мин — красный
+      15 мин — красный
     */
 
     const stops = [
-      { t: 0,  r: 255, g: 247, b: 0   },
-      { t: 1,  r: 255, g: 225, b: 0   },
-      { t: 3,  r: 255, g: 190, b: 0   },
-      { t: 5,  r: 255, g: 135, b: 0   },
-      { t: 8,  r: 255, g: 85,  b: 0   },
-      { t: 10, r: 255, g: 45,  b: 0   },
-      { t: 15, r: 255, g: 0,   b: 0   }
+
+      {
+        t:0,
+        r:255,
+        g:247,
+        b:0
+      },
+
+      {
+        t:1,
+        r:255,
+        g:230,
+        b:0
+      },
+
+      {
+        t:3,
+        r:255,
+        g:190,
+        b:0
+      },
+
+      {
+        t:5,
+        r:255,
+        g:135,
+        b:0
+      },
+
+      {
+        t:8,
+        r:255,
+        g:80,
+        b:0
+      },
+
+      {
+        t:10,
+        r:255,
+        g:35,
+        b:0
+      },
+
+      {
+        t:15,
+        r:255,
+        g:0,
+        b:0
+      }
+
     ];
 
-    if (minute <= stops[0].t) {
+
+    if (
+      minute <= 0
+    ) {
+
       return "rgb(255,247,0)";
+
     }
 
-    if (minute >= stops[stops.length - 1].t) {
+
+    if (
+      minute >= 15
+    ) {
+
       return "rgb(255,0,0)";
+
     }
 
-    for (let i = 0; i < stops.length - 1; i++) {
 
-      const a = stops[i];
-      const b = stops[i + 1];
+    for (
+      let i = 0;
+      i < stops.length - 1;
+      i++
+    ) {
+
+      const a =
+        stops[i];
+
+      const b =
+        stops[i + 1];
+
 
       if (
         minute >= a.t &&
@@ -126,24 +202,40 @@
           (minute - a.t) /
           (b.t - a.t);
 
+
         const r =
           Math.round(
-            a.r + (b.r - a.r) * p
+            a.r +
+            (b.r - a.r) * p
           );
+
 
         const g =
           Math.round(
-            a.g + (b.g - a.g) * p
+            a.g +
+            (b.g - a.g) * p
           );
 
-        const bl =
+
+        const blue =
           Math.round(
-            a.b + (b.b - a.b) * p
+            a.b +
+            (b.b - a.b) * p
           );
 
-        return `rgb(${r},${g},${bl})`;
+
+        return `
+          rgb(
+            ${r},
+            ${g},
+            ${blue}
+          )
+        `.replace(/\s+/g, " ");
+
       }
+
     }
+
 
     return "rgb(255,0,0)";
   }
@@ -151,25 +243,113 @@
 
   /*
   ============================================================
-  РАЗМЕР МОЛНИИ
+  РАЗМЕР
   ============================================================
   */
 
   function getLightningSize(age) {
 
-    const minute = age / 60000;
+    const minute =
+      age / 60000;
 
-    if (minute < 1)  return 8;
-    if (minute < 2)  return 7;
-    if (minute < 3)  return 6;
-    if (minute < 4)  return 5;
-    if (minute < 5)  return 4.5;
-    if (minute < 6)  return 4;
-    if (minute < 8)  return 3.5;
-    if (minute < 10) return 3;
-    if (minute < 15) return 2;
+
+    if (minute < 1) {
+      return 8;
+    }
+
+    if (minute < 2) {
+      return 7;
+    }
+
+    if (minute < 3) {
+      return 6;
+    }
+
+    if (minute < 4) {
+      return 5;
+    }
+
+    if (minute < 5) {
+      return 4.5;
+    }
+
+    if (minute < 6) {
+      return 4;
+    }
+
+    if (minute < 8) {
+      return 3.5;
+    }
+
+    if (minute < 10) {
+      return 3;
+    }
+
+    if (minute < 15) {
+      return 2;
+    }
 
     return 0;
+  }
+
+
+  /*
+  ============================================================
+  КРАСНАЯ ОБВОДКА
+  ============================================================
+
+  Красная обводка только у недавних молний.
+  */
+
+  function getLightningStroke(age) {
+
+    const minute =
+      age / 60000;
+
+
+    /*
+    Первые 3 минуты —
+    заметная красная обводка.
+    */
+
+    if (minute < 3) {
+
+      return {
+        color:"#ff2020",
+        weight:2,
+        opacity:.95
+      };
+
+    }
+
+
+    /*
+    3–5 минут —
+    тоньше и менее заметно.
+    */
+
+    if (minute < 5) {
+
+      return {
+        color:"#ff3b24",
+        weight:1.4,
+        opacity:.8
+      };
+
+    }
+
+
+    /*
+    После 5 минут
+    обычная обводка.
+    */
+
+    return {
+      color:getLightningColor(age),
+      weight:1,
+      opacity:.9
+    };
+
   }
 
 
@@ -181,99 +361,57 @@
 
   function createStrikeMarker(strike) {
 
-    const color =
-      getLightningColor(
-        Date.now() - strike.time
-      );
+    const age =
+      Date.now() -
+      strike.time;
+
 
     const size =
-      getLightningSize(
-        Date.now() - strike.time
-      );
-
-    if (!size) return null;
+      getLightningSize(age);
 
 
-    /*
-    Круглая молния.
+    if (!size) {
+      return null;
+    }
 
-    Самая свежая:
-      жёлтый центр
-      тонкий светлый контур
-      дополнительное внешнее кольцо
-    */
+
+    const stroke =
+      getLightningStroke(age);
+
 
     const marker =
       L.circleMarker(
-        [strike.lat, strike.lon],
+        [
+          strike.lat,
+          strike.lon
+        ],
         {
+
           radius:size,
 
-          stroke:true,
-
-          color:color,
+          color:
+            stroke.color,
 
           weight:
-            size >= 6
-              ? 2
-              : 1.2,
+            stroke.weight,
 
-          opacity:1,
+          opacity:
+            stroke.opacity,
 
-          fillColor:color,
+          fillColor:
+            getLightningColor(age),
 
           fillOpacity:1,
 
           interactive:false
+
         }
       );
 
 
-    /*
-    Внешний ореол только для свежих.
-    */
-
-    if (
-      Date.now() - strike.time <
-      60000
-    ) {
-
-      const halo =
-        L.circleMarker(
-          [strike.lat, strike.lon],
-          {
-            radius:
-              size + 4,
-
-            stroke:true,
-
-            color:"#ffffff",
-
-            weight:2,
-
-            opacity:.75,
-
-            fill:false,
-
-            interactive:false
-          }
-        );
-
-      const group =
-        L.layerGroup([
-          halo,
-          marker
-        ]);
-
-      group._cloradStrikeId =
-        strike.id;
-
-      return group;
-    }
-
-
     marker._cloradStrikeId =
       strike.id;
+
 
     return marker;
   }
@@ -297,7 +435,7 @@
 
 
     const time =
-      typeof data.time === "number"
+      Number.isFinite(data.time)
         ? data.time
         : Date.now();
 
@@ -309,94 +447,282 @@
       );
 
 
-    strikes.set(
-      id,
-      {
-        id:id,
-        lat:data.lat,
-        lon:data.lon,
-        time:time
-      }
-    );
-
-
-    redrawStrike(id);
-  }
-
-
-  /*
-  ============================================================
-  ОБНОВЛЕНИЕ ОДНОЙ МОЛНИИ
-  ============================================================
-  */
-
-  function redrawStrike(id) {
-
-    if (!layer) return;
-
-    const strike =
-      strikes.get(id);
-
-    if (!strike) return;
-
-
     /*
-    Старый объект карты.
+    Не добавляем один и тот же удар
+    повторно.
     */
 
-    layer.eachLayer(item => {
-
-      if (
-        item._cloradStrikeId === id
-      ) {
-
-        layer.removeLayer(item);
-
-      }
-
-    });
-
-
-    const age =
-      Date.now() - strike.time;
-
-
-    /*
-    Удаляем после 15 минут.
-    */
-
-    if (age >= MAX_AGE) {
-
-      strikes.delete(id);
-
+    if (
+      strikes.has(id)
+    ) {
       return;
     }
 
 
+    const strike = {
+
+      id:id,
+
+      lat:data.lat,
+
+      lon:data.lon,
+
+      time:time,
+
+      marker:null,
+
+      lastSize:null,
+
+      lastColor:null,
+
+      lastStroke:null,
+
+      wave:null
+
+    };
+
+
+    strikes.set(
+      id,
+      strike
+    );
+
+
+    /*
+    Создаём основную точку.
+    */
+
     const marker =
-      createStrikeMarker(strike);
+      createStrikeMarker(
+        strike
+      );
 
 
     if (marker) {
 
-      marker._cloradStrikeId =
-        id;
+      strike.marker =
+        marker;
 
-      layer.addLayer(marker);
+      layer.addLayer(
+        marker
+      );
 
     }
+
+
+    /*
+    Волна запускается
+    только один раз —
+    непосредственно при
+    получении нового удара.
+    */
+
+    createStrikeWave(
+      strike
+    );
+
   }
 
 
   /*
   ============================================================
-  ОБНОВЛЕНИЕ ВСЕХ МОЛНИЙ
+  ВОЛНА
   ============================================================
   */
 
-  function updateAllStrikes() {
+  function createStrikeWave(strike) {
 
-    if (!enabled) return;
+    if (
+      !enabled ||
+      !layer
+    ) {
+      return;
+    }
+
+
+    /*
+    Отдельный круг.
+    Он не заменяет основную
+    молнию.
+    */
+
+    const wave =
+      L.circleMarker(
+        [
+          strike.lat,
+          strike.lon
+        ],
+        {
+
+          radius:2,
+
+          color:"#ffffff",
+
+          weight:2,
+
+          opacity:1,
+
+          fill:false,
+
+          interactive:false
+
+        }
+      );
+
+
+    strike.wave =
+      wave;
+
+
+    layer.addLayer(
+      wave
+    );
+
+
+    /*
+    Анимация ровно около 1 секунды.
+    */
+
+    const start =
+      performance.now();
+
+
+    const duration =
+      1000;
+
+
+    function animateWave(now) {
+
+      /*
+      Если слой выключили —
+      сразу прекращаем.
+      */
+
+      if (
+        !enabled ||
+        !layer
+      ) {
+
+        if (
+          layer &&
+          layer.hasLayer(wave)
+        ) {
+
+          layer.removeLayer(
+            wave
+          );
+
+        }
+
+        return;
+
+      }
+
+
+      const progress =
+        Math.min(
+          1,
+          (now - start) /
+          duration
+        );
+
+
+      /*
+      Плавное расширение.
+      */
+
+      const eased =
+        1 -
+        Math.pow(
+          1 - progress,
+          3
+        );
+
+
+      /*
+      Круг идёт от точки
+      наружу.
+      */
+
+      const radius =
+        2 +
+        eased * 24;
+
+
+      /*
+      Постепенно исчезает.
+      */
+
+      const opacity =
+        1 -
+        eased;
+
+
+      wave.setRadius(
+        radius
+      );
+
+
+      wave.setStyle({
+
+        opacity:opacity,
+
+        weight:
+          progress < .45
+            ? 2
+            : 1.5
+
+      });
+
+
+      if (
+        progress < 1
+      ) {
+
+        requestAnimationFrame(
+          animateWave
+        );
+
+      } else {
+
+        if (
+          layer.hasLayer(
+            wave
+          )
+        ) {
+
+          layer.removeLayer(
+            wave
+          );
+
+        }
+
+        strike.wave =
+          null;
+
+      }
+
+    }
+
+
+    requestAnimationFrame(
+      animateWave
+    );
+
+  }
+
+
+  /*
+  ============================================================
+  ОБНОВЛЕНИЕ МОЛНИЙ
+  ============================================================
+  */
+
+  function updateStrikes() {
+
+    if (!enabled) {
+      return;
+    }
 
 
     const now =
@@ -406,69 +732,201 @@
     strikes.forEach(
       (strike, id) => {
 
+        const age =
+          now -
+          strike.time;
+
+
+        /*
+        Удаляем старые.
+        */
+
         if (
-          now - strike.time >=
-          MAX_AGE
+          age >= MAX_AGE
         ) {
 
-          strikes.delete(id);
+          if (
+            strike.marker &&
+            layer.hasLayer(
+              strike.marker
+            )
+          ) {
+
+            layer.removeLayer(
+              strike.marker
+            );
+
+          }
+
+
+          if (
+            strike.wave &&
+            layer.hasLayer(
+              strike.wave
+            )
+          ) {
+
+            layer.removeLayer(
+              strike.wave
+            );
+
+          }
+
+
+          strikes.delete(
+            id
+          );
+
 
           return;
         }
 
 
-        redrawStrike(id);
+        if (
+          !strike.marker
+        ) {
+          return;
+        }
+
+
+        /*
+        Не трогаем маркер,
+        если его визуальные
+        параметры ещё не изменились.
+        */
+
+        const size =
+          getLightningSize(
+            age
+          );
+
+
+        const color =
+          getLightningColor(
+            age
+          );
+
+
+        const stroke =
+          getLightningStroke(
+            age
+          );
+
+
+        const sizeChanged =
+          strike.lastSize !== size;
+
+
+        const colorChanged =
+          strike.lastColor !== color;
+
+
+        const strokeChanged =
+          !strike.lastStroke ||
+          strike.lastStroke.color !==
+            stroke.color ||
+          strike.lastStroke.weight !==
+            stroke.weight ||
+          strike.lastStroke.opacity !==
+            stroke.opacity;
+
+
+        if (
+          sizeChanged ||
+          colorChanged ||
+          strokeChanged
+        ) {
+
+          strike.marker.setStyle({
+
+            radius:size,
+
+            color:
+              stroke.color,
+
+            weight:
+              stroke.weight,
+
+            opacity:
+              stroke.opacity,
+
+            fillColor:
+              color,
+
+            fillOpacity:1
+
+          });
+
+
+          strike.lastSize =
+            size;
+
+          strike.lastColor =
+            color;
+
+          strike.lastStroke =
+            stroke;
+
+        }
 
       }
     );
-
-
-    animationFrame =
-      requestAnimationFrame(
-        updateAllStrikes
-      );
-  }
-
-
-  function stopAnimation() {
-
-    if (animationFrame) {
-
-      cancelAnimationFrame(
-        animationFrame
-      );
-
-      animationFrame = null;
-
-    }
-
-  }
-
-
-  function startAnimation() {
-
-    stopAnimation();
-
-    animationFrame =
-      requestAnimationFrame(
-        updateAllStrikes
-      );
 
   }
 
 
   /*
   ============================================================
-  LIVE2
+  ЗАПУСК ОБНОВЛЕНИЯ
   ============================================================
   */
 
-  function connect(myGeneration) {
+  function startUpdateLoop() {
 
-    if (!enabled) return;
+    stopUpdateLoop();
+
+
+    updateTimer =
+      setInterval(
+        updateStrikes,
+        UPDATE_INTERVAL
+      );
+
+  }
+
+
+  function stopUpdateLoop() {
 
     if (
-      myGeneration !== generation
+      updateTimer
+    ) {
+
+      clearInterval(
+        updateTimer
+      );
+
+      updateTimer =
+        null;
+
+    }
+
+  }
+
+
+  /*
+  ============================================================
+  LIVE2 — CONNECT
+  ============================================================
+  */
+
+  function connect(
+    myGeneration
+  ) {
+
+    if (
+      !enabled ||
+      myGeneration !==
+      generation
     ) {
       return;
     }
@@ -481,50 +939,47 @@
           WS_URL
         );
 
-    } catch (error) {
+    } catch {
 
       scheduleReconnect(
         myGeneration
       );
 
       return;
+
     }
 
 
-    socket.onopen = () => {
+    socket.onopen =
+      () => {
 
-      if (
-        myGeneration !== generation ||
-        !enabled
-      ) {
+        if (
+          !enabled ||
+          myGeneration !==
+          generation
+        ) {
 
-        try {
-          socket.close();
-        } catch {}
+          try {
+            socket.close();
+          } catch {}
 
-        return;
-      }
+          return;
+
+        }
 
 
-      /*
-      Запрашиваем молнии
-      в пределах текущего
-      окна карты.
+        sendViewport();
 
-      live2 использует:
-        [latN, lonE, latS, lonW]
-      */
-
-      sendViewport();
-    };
+      };
 
 
     socket.onmessage =
       event => {
 
         if (
-          myGeneration !== generation ||
-          !enabled
+          !enabled ||
+          myGeneration !==
+          generation
         ) {
           return;
         }
@@ -537,37 +992,41 @@
       };
 
 
-    socket.onerror = () => {
+    socket.onerror =
+      () => {
 
-      /*
-      onclose также будет вызван.
-      */
+        /*
+        onclose сам выполнит
+        переподключение.
+        */
 
-    };
-
-
-    socket.onclose = () => {
-
-      if (
-        myGeneration !== generation ||
-        !enabled
-      ) {
-        return;
-      }
+      };
 
 
-      scheduleReconnect(
-        myGeneration
-      );
+    socket.onclose =
+      () => {
 
-    };
+        if (
+          !enabled ||
+          myGeneration !==
+          generation
+        ) {
+          return;
+        }
+
+
+        scheduleReconnect(
+          myGeneration
+        );
+
+      };
 
   }
 
 
   /*
   ============================================================
-  ОТПРАВКА VIEWPORT
+  VIEWPORT
   ============================================================
   */
 
@@ -645,7 +1104,9 @@
     try {
 
       socket.send(
-        JSON.stringify(message)
+        JSON.stringify(
+          message
+        )
       );
 
     } catch {}
@@ -662,7 +1123,8 @@
   function handleMessage(raw) {
 
     if (
-      typeof raw !== "string"
+      typeof raw !==
+      "string"
     ) {
       return;
     }
@@ -670,10 +1132,13 @@
 
     let data;
 
+
     try {
 
       data =
-        JSON.parse(raw);
+        JSON.parse(
+          raw
+        );
 
     } catch {
 
@@ -683,14 +1148,11 @@
 
 
     /*
-    Возможные форматы
-    live2:
+    Формат:
 
       {
         strokes:[...]
       }
-
-    либо массивы strokes
     */
 
     if (
@@ -699,24 +1161,32 @@
       )
     ) {
 
-      data.strokes.forEach(
-        stroke => {
+      for (
+        const stroke of
+        data.strokes
+      ) {
 
-          parseStroke(
-            stroke
-          );
+        parseStroke(
+          stroke
+        );
 
-        }
-      );
+      }
 
     }
 
+
+    /*
+    Иногда приходит массив
+    сообщений.
+    */
 
     if (
       Array.isArray(data)
     ) {
 
-      data.forEach(item => {
+      for (
+        const item of data
+      ) {
 
         if (
           item &&
@@ -725,34 +1195,38 @@
           )
         ) {
 
-          item.strokes.forEach(
-            stroke => {
+          for (
+            const stroke of
+            item.strokes
+          ) {
 
-              parseStroke(
-                stroke
-              );
+            parseStroke(
+              stroke
+            );
 
-            }
-          );
+          }
 
         }
 
-      });
+      }
 
     }
 
 
     /*
-    Иногда strike может прийти
-    напрямую.
+    Прямой strike.
     */
 
     if (
-      typeof data.lat === "number" &&
-      typeof data.lon === "number"
+      typeof data.lat ===
+        "number" &&
+      typeof data.lon ===
+        "number"
     ) {
 
-      parseStroke(data);
+      parseStroke(
+        data
+      );
 
     }
 
@@ -761,13 +1235,17 @@
 
   /*
   ============================================================
-  STROKE
+  PARSE STROKE
   ============================================================
   */
 
-  function parseStroke(stroke) {
+  function parseStroke(
+    stroke
+  ) {
 
-    if (!stroke) return;
+    if (!stroke) {
+      return;
+    }
 
 
     const lat =
@@ -775,6 +1253,7 @@
         stroke.lat ??
         stroke.latitude
       );
+
 
     const lon =
       Number(
@@ -800,21 +1279,42 @@
 
 
     /*
-    live2 обычно отдаёт
-    время в миллисекундах.
+    live2 может отдавать
+    timestamp в секундах
+    или миллисекундах.
     */
 
     if (
       Number.isFinite(time)
     ) {
 
-      if (time < 100000000000) {
+      if (
+        time <
+        100000000000
+      ) {
 
         time *= 1000;
 
       }
 
     } else {
+
+      time =
+        Date.now();
+
+    }
+
+
+    /*
+    Если сервер прислал
+    слишком старое время,
+    не даём отрицательный возраст.
+    */
+
+    if (
+      time >
+      Date.now() + 5000
+    ) {
 
       time =
         Date.now();
@@ -846,11 +1346,14 @@
   ============================================================
   */
 
-  function scheduleReconnect(myGeneration) {
+  function scheduleReconnect(
+    myGeneration
+  ) {
 
     if (
       !enabled ||
-      myGeneration !== generation
+      myGeneration !==
+      generation
     ) {
       return;
     }
@@ -862,46 +1365,24 @@
 
 
     reconnectTimer =
-      setTimeout(() => {
+      setTimeout(
+        () => {
 
-        if (
-          enabled &&
-          myGeneration === generation
-        ) {
+          if (
+            enabled &&
+            myGeneration ===
+            generation
+          ) {
 
-          connect(
-            myGeneration
-          );
+            connect(
+              myGeneration
+            );
 
-        }
+          }
 
-      },3000);
-
-  }
-
-
-  /*
-  ============================================================
-  КАРТА
-  ============================================================
-  */
-
-  function attachLayer() {
-
-    createLayer();
-
-
-    if (
-      enabled &&
-      window.map &&
-      !window.map.hasLayer(layer)
-    ) {
-
-      layer.addTo(
-        window.map
+        },
+        3000
       );
-
-    }
 
   }
 
@@ -932,6 +1413,11 @@
     legend.id =
       "cloradLightningLegend";
 
+
+    /*
+    В легенде каждый цвет
+    имеет собственный возраст.
+    */
 
     legend.innerHTML = `
 
@@ -966,29 +1452,21 @@
 
       <div class="cloradLightningScale">
 
+
         <div class="cloradLightningScaleItem">
 
           <span
             class="cloradLightningDot"
             style="
               --lc:#ff0000;
-              --ls:6px;
-            "
-          ></span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ff4500;
               --ls:7px;
             "
           ></span>
 
+          <span class="cloradLightningTime">
+            10–15 мин
+          </span>
+
         </div>
 
 
@@ -997,10 +1475,48 @@
           <span
             class="cloradLightningDot"
             style="
-              --lc:#ff8500;
+              --lc:#ff3500;
+              --ls:7.5px;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            8–10 мин
+          </span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff6500;
               --ls:8px;
             "
           ></span>
+
+          <span class="cloradLightningTime">
+            6–8 мин
+          </span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff9200;
+              --ls:8.5px;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            5–6 мин
+          </span>
 
         </div>
 
@@ -1015,6 +1531,10 @@
             "
           ></span>
 
+          <span class="cloradLightningTime">
+            4–5 мин
+          </span>
+
         </div>
 
 
@@ -1028,6 +1548,27 @@
             "
           ></span>
 
+          <span class="cloradLightningTime">
+            3–4 мин
+          </span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffe300;
+              --ls:11px;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            2–3 мин
+          </span>
+
         </div>
 
 
@@ -1037,9 +1578,13 @@
             class="cloradLightningDot"
             style="
               --lc:#fff000;
-              --ls:11px;
+              --ls:12px;
             "
           ></span>
+
+          <span class="cloradLightningTime">
+            1–2 мин
+          </span>
 
         </div>
 
@@ -1054,16 +1599,12 @@
             "
           ></span>
 
+          <span class="cloradLightningTime">
+            0–1 мин
+          </span>
+
         </div>
 
-      </div>
-
-
-      <div class="cloradLightningLegendBottom">
-
-        <span>СТАРЫЕ</span>
-
-        <span>СВЕЖИЕ</span>
 
       </div>
 
@@ -1074,6 +1615,12 @@
       legend
     );
 
+
+    /*
+    ============================================================
+    СТИЛИ ЛЕГЕНДЫ
+    ============================================================
+    */
 
     const style =
       document.createElement(
@@ -1096,10 +1643,10 @@
 
         z-index:20;
 
-        width:360px;
+        width:470px;
 
         padding:
-          10px 18px 9px;
+          9px 13px 8px;
 
         box-sizing:border-box;
 
@@ -1123,6 +1670,10 @@
       }
 
 
+      /*
+      Заголовок
+      */
+
       #cloradLightningLegend
       .cloradLightningLegendTitle{
 
@@ -1132,16 +1683,22 @@
 
         justify-content:center;
 
-        gap:9px;
+        gap:8px;
+
+        height:24px;
 
         font-size:16px;
 
         font-weight:700;
 
-        margin-bottom:8px;
+        margin-bottom:6px;
 
       }
 
+
+      /*
+      SVG-молния
+      */
 
       .cloradLightningIcon{
 
@@ -1171,43 +1728,63 @@
       }
 
 
+      /*
+      Шкала
+      */
+
       .cloradLightningScale{
 
-        height:28px;
+        width:100%;
 
         display:flex;
 
-        align-items:center;
+        align-items:flex-start;
 
         justify-content:space-between;
 
-        padding:0 5px;
+        gap:2px;
 
       }
 
+
+      /*
+      Один цвет + его время
+      */
 
       .cloradLightningScaleItem{
 
-        width:26px;
+        flex:1;
 
-        height:26px;
+        min-width:0;
+
+        height:39px;
 
         display:flex;
 
+        flex-direction:column;
+
         align-items:center;
 
-        justify-content:center;
+        justify-content:flex-start;
 
       }
 
+
+      /*
+      Цветная точка
+      */
 
       .cloradLightningDot{
 
         display:block;
 
+        flex:none;
+
         width:var(--ls);
 
         height:var(--ls);
+
+        margin-top:2px;
 
         border-radius:50%;
 
@@ -1216,53 +1793,64 @@
 
         border:
           1px solid
-          rgba(255,255,255,.15);
+          rgba(255,255,255,.18);
+
+        box-sizing:border-box;
 
         box-shadow:
           0 0 5px
-          color-mix(
-            in srgb,
-            var(--lc) 65%,
-            transparent
-          );
+          var(--lc);
 
       }
 
+
+      /*
+      Самая свежая точка
+      */
 
       .cloradLightningDot.latest{
 
         border:
           2px solid
-          rgba(255,255,255,.8);
+          rgba(255,255,255,.9);
 
         box-shadow:
+
           0 0 0 2px
-          rgba(255,255,255,.22),
+          rgba(255,255,255,.18),
+
           0 0 8px
-          rgba(255,230,0,.8);
+          rgba(255,235,0,.9);
 
       }
 
 
-      .cloradLightningLegendBottom{
+      /*
+      Время под каждым цветом
+      */
 
-        display:flex;
+      .cloradLightningTime{
 
-        justify-content:space-between;
+        margin-top:6px;
 
-        padding:
-          2px 3px 0;
+        white-space:nowrap;
 
         color:#dce2e6;
 
-        font-size:9px;
+        font-size:8px;
 
-        font-weight:700;
+        line-height:10px;
 
-        letter-spacing:.4px;
+        font-weight:600;
+
+        letter-spacing:.05px;
 
       }
 
+
+      /*
+      Светлая тема
+      */
 
       body.light
       #cloradLightningLegend{
@@ -1286,23 +1874,28 @@
 
 
       body.light
-      .cloradLightningLegendBottom{
+      .cloradLightningTime{
 
         color:#59636a;
 
       }
 
 
+      /*
+      Телефон
+      */
+
       @media(max-width:600px){
 
         #cloradLightningLegend{
 
-          width:300px;
+          width:
+            calc(100vw - 18px);
 
           bottom:12px;
 
           padding:
-            8px 12px 7px;
+            8px 7px 7px;
 
         }
 
@@ -1312,21 +1905,32 @@
 
           font-size:14px;
 
-          margin-bottom:6px;
+          height:22px;
+
+          margin-bottom:5px;
 
         }
 
 
         .cloradLightningScale{
 
-          padding:0 1px;
+          gap:0;
 
         }
 
 
         .cloradLightningScaleItem{
 
-          width:24px;
+          height:36px;
+
+        }
+
+
+        .cloradLightningTime{
+
+          font-size:7px;
+
+          margin-top:5px;
 
         }
 
@@ -1344,41 +1948,56 @@
 
   /*
   ============================================================
-  НАСТРОЙКА VIEWPORT
+  VIEWPORT EVENTS
   ============================================================
   */
 
   function setupMapEvents() {
 
-    if (!window.map) return;
+    if (!window.map) {
+      return;
+    }
 
 
-    const send =
+    const updateViewport =
       () => {
 
-        if (
-          enabled &&
-          socket &&
-          socket.readyState ===
-          WebSocket.OPEN
-        ) {
+        clearTimeout(
+          viewportTimer
+        );
 
-          sendViewport();
 
-        }
+        viewportTimer =
+          setTimeout(
+            () => {
+
+              if (
+                enabled &&
+                socket &&
+                socket.readyState ===
+                  WebSocket.OPEN
+              ) {
+
+                sendViewport();
+
+              }
+
+            },
+            150
+          );
 
       };
 
 
     window.map.on(
       "moveend",
-      send
+      updateViewport
     );
 
 
     window.map.on(
       "zoomend",
-      send
+      updateViewport
     );
 
   }
@@ -1386,7 +2005,7 @@
 
   /*
   ============================================================
-  ENABLE
+  ENABLE / DISABLE
   ============================================================
   */
 
@@ -1410,12 +2029,11 @@
 
     if (!enabled) {
 
-      stopAnimation();
+      /*
+      Закрываем WebSocket.
+      */
 
-
-      if (
-        socket
-      ) {
+      if (socket) {
 
         try {
           socket.close();
@@ -1424,13 +2042,20 @@
       }
 
 
-      socket = null;
+      socket =
+        null;
 
+
+      /*
+      Убираем слой.
+      */
 
       if (
         layer &&
         window.map &&
-        window.map.hasLayer(layer)
+        window.map.hasLayer(
+          layer
+        )
       ) {
 
         window.map.removeLayer(
@@ -1445,9 +2070,37 @@
     }
 
 
-    attachLayer();
+    /*
+    Возвращаем слой.
+    */
 
-    startAnimation();
+    createLayer();
+
+
+    if (
+      window.map &&
+      !window.map.hasLayer(
+        layer
+      )
+    ) {
+
+      layer.addTo(
+        window.map
+      );
+
+    }
+
+
+    /*
+    Запускаем обновление.
+    */
+
+    startUpdateLoop();
+
+
+    /*
+    Новое соединение.
+    */
 
     connect(
       myGeneration
@@ -1529,7 +2182,7 @@
 
   /*
   ============================================================
-  ЗАПУСК
+  INIT
   ============================================================
   */
 
@@ -1547,14 +2200,39 @@
     }
 
 
-    attachLayer();
+    /*
+    Слой.
+    */
+
+    layer.addTo(
+      window.map
+    );
+
+
+    /*
+    Легенда.
+    */
 
     createLightningLegend();
 
+
+    /*
+    Карта.
+    */
+
     setupMapEvents();
 
-    startAnimation();
 
+    /*
+    Обновление.
+    */
+
+    startUpdateLoop();
+
+
+    /*
+    WebSocket.
+    */
 
     const myGeneration =
       ++generation;
