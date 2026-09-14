@@ -5,67 +5,29 @@
   ============================================================
   CLOrad — LIGHTNING
   ============================================================
-
-  Источник:
-    LightningMaps / Blitzortung live2
-
-  Возраст:
-    0–1 мин
-    1–2 мин
-    2–3 мин
-    3–4 мин
-    4–5 мин
-    5–6 мин
-    6–8 мин
-    8–10 мин
-    10–15 мин
-
-  Особенности:
-    • плавный переход цвета
-    • размер уменьшается с возрастом
-    • цветная обводка соответствует возрасту
-    • красно-оранжевая обводка у свежих молний
-    • волна только у нового удара
-    • волна длится 1 секунду
-    • старые молнии удаляются
-    • оптимизированная перерисовка
-    • карта визуально не изменяется
-  ============================================================
   */
 
+  const WS_URL = "wss://live2.lightningmaps.org/";
 
-  const WS_URL =
-    "wss://live2.lightningmaps.org/";
+  const MAX_AGE = 15 * 60 * 1000;
+  const UPDATE_INTERVAL = 250;
+  const WAVE_DURATION = 1000;
+  const WAVE_NEW_AGE = 2500;
 
-  const MAX_AGE =
-    15 * 60 * 1000;
-
-  const UPDATE_INTERVAL =
-    250;
-
-
-  /*
-  ============================================================
-  СОСТОЯНИЕ
-  ============================================================
-  */
-
-  const strikes =
-    new Map();
+  const strikes = new Map();
 
   let layer = null;
-
   let socket = null;
 
   let enabled = true;
-
   let generation = 0;
 
   let reconnectTimer = null;
-
   let updateTimer = null;
-
   let viewportTimer = null;
+
+  let waveFrame = null;
+  const activeWaves = new Set();
 
 
   /*
@@ -76,12 +38,9 @@
 
   function createLayer() {
 
-    if (layer) {
-      return layer;
-    }
+    if (layer) return layer;
 
-    layer =
-      L.layerGroup();
+    layer = L.layerGroup();
 
     return layer;
   }
@@ -89,100 +48,36 @@
 
   /*
   ============================================================
-  ЦВЕТ
+  ЦВЕТ МОЛНИИ
   ============================================================
   */
 
   function getLightningColor(age) {
 
-    const minute =
-      age / 60000;
-
+    const minute = age / 60000;
 
     const stops = [
-
-      {
-        t:0,
-        r:255,
-        g:247,
-        b:0
-      },
-
-      {
-        t:1,
-        r:255,
-        g:230,
-        b:0
-      },
-
-      {
-        t:3,
-        r:255,
-        g:190,
-        b:0
-      },
-
-      {
-        t:5,
-        r:255,
-        g:135,
-        b:0
-      },
-
-      {
-        t:8,
-        r:255,
-        g:80,
-        b:0
-      },
-
-      {
-        t:10,
-        r:255,
-        g:35,
-        b:0
-      },
-
-      {
-        t:15,
-        r:255,
-        g:0,
-        b:0
-      }
-
+      { t: 0,  r:255, g:247, b:0 },
+      { t: 1,  r:255, g:230, b:0 },
+      { t: 3,  r:255, g:190, b:0 },
+      { t: 5,  r:255, g:135, b:0 },
+      { t: 8,  r:255, g:80,  b:0 },
+      { t:10,  r:255, g:35,  b:0 },
+      { t:15,  r:255, g:0,   b:0 }
     ];
 
-
-    if (
-      minute <= 0
-    ) {
-
+    if (minute <= 0) {
       return "rgb(255,247,0)";
-
     }
 
-
-    if (
-      minute >= 15
-    ) {
-
+    if (minute >= 15) {
       return "rgb(255,0,0)";
-
     }
 
+    for (let i = 0; i < stops.length - 1; i++) {
 
-    for (
-      let i = 0;
-      i < stops.length - 1;
-      i++
-    ) {
-
-      const a =
-        stops[i];
-
-      const b =
-        stops[i + 1];
-
+      const a = stops[i];
+      const b = stops[i + 1];
 
       if (
         minute >= a.t &&
@@ -193,40 +88,24 @@
           (minute - a.t) /
           (b.t - a.t);
 
-
         const r =
           Math.round(
-            a.r +
-            (b.r - a.r) * p
+            a.r + (b.r - a.r) * p
           );
-
 
         const g =
           Math.round(
-            a.g +
-            (b.g - a.g) * p
+            a.g + (b.g - a.g) * p
           );
-
 
         const blue =
           Math.round(
-            a.b +
-            (b.b - a.b) * p
+            a.b + (b.b - a.b) * p
           );
 
-
-        return (
-          "rgb(" +
-          r + "," +
-          g + "," +
-          blue +
-          ")"
-        );
-
+        return `rgb(${r},${g},${blue})`;
       }
-
     }
-
 
     return "rgb(255,0,0)";
   }
@@ -240,17 +119,9 @@
 
   function getLightningStroke(age) {
 
-    const minute =
-      age / 60000;
+    const minute = age / 60000;
 
-    /*
-    Очень свежие:
-    красно-оранжевая обводка.
-    */
-
-    if (
-      minute < 1
-    ) {
+    if (minute < 1) {
 
       return {
         color:"#ff3b00",
@@ -260,15 +131,7 @@
 
     }
 
-
-    /*
-    1–2 минуты:
-    яркая красная.
-    */
-
-    if (
-      minute < 2
-    ) {
+    if (minute < 2) {
 
       return {
         color:"#ff4a00",
@@ -278,15 +141,7 @@
 
     }
 
-
-    /*
-    2–3 минуты:
-    оранжево-красная.
-    */
-
-    if (
-      minute < 3
-    ) {
+    if (minute < 3) {
 
       return {
         color:"#ff6500",
@@ -296,15 +151,7 @@
 
     }
 
-
-    /*
-    3–4:
-    оранжевая.
-    */
-
-    if (
-      minute < 4
-    ) {
+    if (minute < 4) {
 
       return {
         color:"#ff8500",
@@ -314,15 +161,7 @@
 
     }
 
-
-    /*
-    4–5:
-    жёлто-оранжевая.
-    */
-
-    if (
-      minute < 5
-    ) {
+    if (minute < 5) {
 
       return {
         color:"#ff9d00",
@@ -332,19 +171,15 @@
 
     }
 
-
-    /*
-    После 5 минут
-    обводка продолжает
-    плавно следовать цвету.
-    */
-
     return {
-      color:getLightningColor(age),
-      weight:1.2,
-      opacity:.9
-    };
 
+      color:getLightningColor(age),
+
+      weight:1.2,
+
+      opacity:.9
+
+    };
   }
 
 
@@ -356,45 +191,17 @@
 
   function getLightningSize(age) {
 
-    const minute =
-      age / 60000;
+    const minute = age / 60000;
 
-
-    if (minute < 1) {
-      return 8;
-    }
-
-    if (minute < 2) {
-      return 7;
-    }
-
-    if (minute < 3) {
-      return 6;
-    }
-
-    if (minute < 4) {
-      return 5;
-    }
-
-    if (minute < 5) {
-      return 4.5;
-    }
-
-    if (minute < 6) {
-      return 4;
-    }
-
-    if (minute < 8) {
-      return 3.5;
-    }
-
-    if (minute < 10) {
-      return 3;
-    }
-
-    if (minute < 15) {
-      return 2;
-    }
+    if (minute < 1) return 8;
+    if (minute < 2) return 7;
+    if (minute < 3) return 6;
+    if (minute < 4) return 5;
+    if (minute < 5) return 4.5;
+    if (minute < 6) return 4;
+    if (minute < 8) return 3.5;
+    if (minute < 10) return 3;
+    if (minute < 15) return 2;
 
     return 0;
   }
@@ -406,37 +213,24 @@
   ============================================================
   */
 
-  function createStrikeMarker(
-    strike
-  ) {
+  function createStrikeMarker(strike) {
 
     const age =
       Date.now() -
       strike.time;
 
-
     const size =
-      getLightningSize(
-        age
-      );
-
+      getLightningSize(age);
 
     if (!size) {
       return null;
     }
 
-
     const color =
-      getLightningColor(
-        age
-      );
-
+      getLightningColor(age);
 
     const stroke =
-      getLightningStroke(
-        age
-      );
-
+      getLightningStroke(age);
 
     const marker =
       L.circleMarker(
@@ -445,38 +239,21 @@
           strike.lon
         ],
         {
-
           radius:size,
 
-          color:
-            stroke.color,
+          color:stroke.color,
 
-          weight:
-            stroke.weight,
+          weight:stroke.weight,
 
-          opacity:
-            stroke.opacity,
+          opacity:stroke.opacity,
 
-          fillColor:
-            color,
+          fillColor:color,
 
           fillOpacity:1,
 
           interactive:false
-
         }
       );
-
-
-    marker._cloradStrikeId =
-      strike.id;
-
-
-    /*
-    Запоминаем параметры,
-    чтобы не перерисовывать
-    точку без необходимости.
-    */
 
     strike.lastSize =
       size;
@@ -486,7 +263,6 @@
 
     strike.lastStroke =
       stroke;
-
 
     return marker;
   }
@@ -498,28 +274,20 @@
   ============================================================
   */
 
-  function addStrike(
-    data
-  ) {
+  function addStrike(data) {
 
     if (
       !data ||
-      typeof data.lat !==
-        "number" ||
-      typeof data.lon !==
-        "number"
+      !Number.isFinite(data.lat) ||
+      !Number.isFinite(data.lon)
     ) {
       return;
     }
 
-
     const time =
-      Number.isFinite(
-        data.time
-      )
+      Number.isFinite(data.time)
         ? data.time
         : Date.now();
-
 
     const id =
       String(
@@ -527,28 +295,19 @@
         `${data.lat}_${data.lon}_${time}`
       );
 
-
-    /*
-    Не добавляем
-    дубликаты.
-    */
-
-    if (
-      strikes.has(id)
-    ) {
+    if (strikes.has(id)) {
       return;
     }
 
-
     const strike = {
 
-      id:id,
+      id,
 
       lat:data.lat,
 
       lon:data.lon,
 
-      time:time,
+      time,
 
       marker:null,
 
@@ -562,22 +321,16 @@
 
     };
 
-
     strikes.set(
       id,
       strike
     );
 
 
-    /*
-    Основная точка.
-    */
-
     const marker =
       createStrikeMarker(
         strike
       );
-
 
     if (marker) {
 
@@ -592,25 +345,152 @@
 
 
     /*
-    И запускаем волну.
+    ВАЖНО:
+    Волна создаётся только если
+    удар действительно свежий.
+
+    При подключении сервер может
+    прислать историю за несколько минут,
+    и на неё волны не запускаются.
     */
 
-    createStrikeWave(
-      strike
-    );
+    const strikeAge =
+      Date.now() - time;
 
+    if (
+      strikeAge >= 0 &&
+      strikeAge <= WAVE_NEW_AGE
+    ) {
+
+      createStrikeWave(
+        strike
+      );
+
+    }
   }
 
 
   /*
   ============================================================
-  ВОЛНА
+  АНИМАЦИЯ ВОЛН
   ============================================================
   */
 
-  function createStrikeWave(
-    strike
-  ) {
+  function startWaveLoop() {
+
+    if (waveFrame) {
+      return;
+    }
+
+    function frame(now) {
+
+      waveFrame = null;
+
+      if (
+        !enabled ||
+        activeWaves.size === 0
+      ) {
+        return;
+      }
+
+      for (
+        const waveData of activeWaves
+      ) {
+
+        const progress =
+          Math.min(
+            1,
+            (now - waveData.start) /
+            WAVE_DURATION
+          );
+
+        const eased =
+          1 -
+          Math.pow(
+            1 - progress,
+            3
+          );
+
+        const radius =
+          2 +
+          eased * 24;
+
+        const opacity =
+          1 - eased;
+
+        if (
+          waveData.marker
+        ) {
+
+          waveData.marker.setRadius(
+            radius
+          );
+
+          waveData.marker.setStyle({
+
+            opacity,
+
+            weight:
+              progress < .45
+                ? 2
+                : 1.5
+
+          });
+
+        }
+
+        if (
+          progress >= 1
+        ) {
+
+          if (
+            layer &&
+            layer.hasLayer(
+              waveData.marker
+            )
+          ) {
+
+            layer.removeLayer(
+              waveData.marker
+            );
+
+          }
+
+          activeWaves.delete(
+            waveData
+          );
+
+          if (
+            waveData.strike
+          ) {
+
+            waveData.strike.wave =
+              null;
+
+          }
+        }
+      }
+
+      if (
+        activeWaves.size > 0
+      ) {
+
+        waveFrame =
+          requestAnimationFrame(
+            frame
+          );
+
+      }
+    }
+
+    waveFrame =
+      requestAnimationFrame(
+        frame
+      );
+  }
+
+
+  function createStrikeWave(strike) {
 
     if (
       !enabled ||
@@ -618,7 +498,6 @@
     ) {
       return;
     }
-
 
     const wave =
       L.circleMarker(
@@ -643,139 +522,35 @@
         }
       );
 
-
     strike.wave =
       wave;
-
 
     layer.addLayer(
       wave
     );
 
+    const waveData = {
 
-    const start =
-      performance.now();
+      marker:wave,
 
+      strike,
 
-    const duration =
-      1000;
+      start:
+        performance.now()
 
+    };
 
-    function animateWave(
-      now
-    ) {
-
-      if (
-        !enabled ||
-        !layer
-      ) {
-
-        if (
-          layer &&
-          layer.hasLayer(
-            wave
-          )
-        ) {
-
-          layer.removeLayer(
-            wave
-          );
-
-        }
-
-        return;
-      }
-
-
-      const progress =
-        Math.min(
-          1,
-          (now - start) /
-          duration
-        );
-
-
-      /*
-      Ease-out:
-      быстро стартует,
-      затем плавно затухает.
-      */
-
-      const eased =
-        1 -
-        Math.pow(
-          1 - progress,
-          3
-        );
-
-
-      const radius =
-        2 +
-        eased * 24;
-
-
-      const opacity =
-        1 - eased;
-
-
-      wave.setRadius(
-        radius
-      );
-
-
-      wave.setStyle({
-
-        opacity:opacity,
-
-        weight:
-          progress < .45
-            ? 2
-            : 1.5
-
-      });
-
-
-      if (
-        progress < 1
-      ) {
-
-        requestAnimationFrame(
-          animateWave
-        );
-
-      } else {
-
-        if (
-          layer.hasLayer(
-            wave
-          )
-        ) {
-
-          layer.removeLayer(
-            wave
-          );
-
-        }
-
-
-        strike.wave =
-          null;
-
-      }
-
-    }
-
-
-    requestAnimationFrame(
-      animateWave
+    activeWaves.add(
+      waveData
     );
 
+    startWaveLoop();
   }
 
 
   /*
   ============================================================
-  ОБНОВЛЕНИЕ ТОЧЕК
+  ОБНОВЛЕНИЕ МОЛНИЙ
   ============================================================
   */
 
@@ -785,10 +560,8 @@
       return;
     }
 
-
     const now =
       Date.now();
-
 
     strikes.forEach(
       (strike, id) => {
@@ -799,7 +572,8 @@
 
 
         /*
-        Удаляем после 15 минут.
+        Старше 15 минут —
+        удаляем.
         */
 
         if (
@@ -819,7 +593,6 @@
 
           }
 
-
           if (
             strike.wave &&
             layer.hasLayer(
@@ -832,7 +605,6 @@
             );
 
           }
-
 
           strikes.delete(
             id
@@ -854,24 +626,16 @@
             age
           );
 
-
         const color =
           getLightningColor(
             age
           );
-
 
         const stroke =
           getLightningStroke(
             age
           );
 
-
-        /*
-        Обновляем только тогда,
-        когда визуальные параметры
-        действительно изменились.
-        */
 
         const changed =
 
@@ -930,7 +694,6 @@
 
       }
     );
-
   }
 
 
@@ -944,13 +707,11 @@
 
     stopUpdateLoop();
 
-
     updateTimer =
       setInterval(
         updateStrikes,
         UPDATE_INTERVAL
       );
-
   }
 
 
@@ -966,113 +727,7 @@
 
       updateTimer =
         null;
-
     }
-
-  }
-
-
-  /*
-  ============================================================
-  WEBSOCKET
-  ============================================================
-  */
-
-  function connect(
-    myGeneration
-  ) {
-
-    if (
-      !enabled ||
-      myGeneration !==
-        generation
-    ) {
-      return;
-    }
-
-
-    try {
-
-      socket =
-        new WebSocket(
-          WS_URL
-        );
-
-    } catch {
-
-      scheduleReconnect(
-        myGeneration
-      );
-
-      return;
-
-    }
-
-
-    socket.onopen =
-      () => {
-
-        if (
-          !enabled ||
-          myGeneration !==
-            generation
-        ) {
-
-          try {
-            socket.close();
-          } catch {}
-
-          return;
-
-        }
-
-
-        sendViewport();
-
-      };
-
-
-    socket.onmessage =
-      event => {
-
-        if (
-          !enabled ||
-          myGeneration !==
-            generation
-        ) {
-          return;
-        }
-
-
-        handleMessage(
-          event.data
-        );
-
-      };
-
-
-    socket.onerror =
-      () => {};
-
-
-    socket.onclose =
-      () => {
-
-        if (
-          !enabled ||
-          myGeneration !==
-            generation
-        ) {
-          return;
-        }
-
-
-        scheduleReconnect(
-          myGeneration
-        );
-
-      };
-
   }
 
 
@@ -1093,26 +748,8 @@
       return;
     }
 
-
     const bounds =
       window.map.getBounds();
-
-
-    const north =
-      bounds.getNorth();
-
-
-    const south =
-      bounds.getSouth();
-
-
-    const east =
-      bounds.getEast();
-
-
-    const west =
-      bounds.getWest();
-
 
     const message = {
 
@@ -1145,16 +782,15 @@
       from_lightningmaps_org:true,
 
       p:[
-        north,
-        east,
-        south,
-        west
+        bounds.getNorth(),
+        bounds.getEast(),
+        bounds.getSouth(),
+        bounds.getWest()
       ],
 
       r:"A"
 
     };
-
 
     try {
 
@@ -1165,7 +801,98 @@
       );
 
     } catch {}
+  }
 
+
+  /*
+  ============================================================
+  WEBSOCKET
+  ============================================================
+  */
+
+  function connect(myGeneration) {
+
+    if (
+      !enabled ||
+      myGeneration !==
+        generation
+    ) {
+      return;
+    }
+
+    try {
+
+      socket =
+        new WebSocket(
+          WS_URL
+        );
+
+    } catch {
+
+      scheduleReconnect(
+        myGeneration
+      );
+
+      return;
+    }
+
+
+    socket.onopen =
+      () => {
+
+        if (
+          !enabled ||
+          myGeneration !==
+            generation
+        ) {
+
+          try {
+            socket.close();
+          } catch {}
+
+          return;
+        }
+
+        sendViewport();
+      };
+
+
+    socket.onmessage =
+      event => {
+
+        if (
+          !enabled ||
+          myGeneration !==
+            generation
+        ) {
+          return;
+        }
+
+        handleMessage(
+          event.data
+        );
+      };
+
+
+    socket.onerror =
+      () => {};
+
+
+    socket.onclose =
+      () => {
+
+        if (
+          !enabled ||
+          myGeneration !==
+            generation
+        ) {
+          return;
+        }
+
+        scheduleReconnect(
+          myGeneration
+        );
+      };
   }
 
 
@@ -1175,9 +902,7 @@
   ============================================================
   */
 
-  function handleMessage(
-    raw
-  ) {
+  function handleMessage(raw) {
 
     if (
       typeof raw !==
@@ -1186,9 +911,7 @@
       return;
     }
 
-
     let data;
-
 
     try {
 
@@ -1200,7 +923,6 @@
     } catch {
 
       return;
-
     }
 
 
@@ -1220,7 +942,6 @@
         );
 
       }
-
     }
 
 
@@ -1250,27 +971,24 @@
             );
 
           }
-
         }
-
       }
-
     }
 
 
     if (
-      typeof data.lat ===
-        "number" &&
-      typeof data.lon ===
-        "number"
+      Number.isFinite(
+        data.lat
+      ) &&
+      Number.isFinite(
+        data.lon
+      )
     ) {
 
       parseStroke(
         data
       );
-
     }
-
   }
 
 
@@ -1280,14 +998,11 @@
   ============================================================
   */
 
-  function parseStroke(
-    stroke
-  ) {
+  function parseStroke(stroke) {
 
     if (!stroke) {
       return;
     }
-
 
     const lat =
       Number(
@@ -1295,14 +1010,12 @@
         stroke.latitude
       );
 
-
     const lon =
       Number(
         stroke.lon ??
         stroke.lng ??
         stroke.longitude
       );
-
 
     if (
       !Number.isFinite(lat) ||
@@ -1324,8 +1037,7 @@
     ) {
 
       if (
-        time <
-        100000000000
+        time < 100000000000
       ) {
 
         time *= 1000;
@@ -1340,6 +1052,11 @@
     }
 
 
+    /*
+    Защита от некорректного
+    будущего timestamp.
+    */
+
     if (
       time >
       Date.now() + 5000
@@ -1351,29 +1068,6 @@
     }
 
 
-    parseAndAddStrike(
-      stroke,
-      lat,
-      lon,
-      time
-    );
-
-  }
-
-
-  /*
-  ============================================================
-  ДОБАВЛЕНИЕ ПОСЛЕ PARSE
-  ============================================================
-  */
-
-  function parseAndAddStrike(
-    stroke,
-    lat,
-    lon,
-    time
-  ) {
-
     addStrike({
 
       id:
@@ -1381,14 +1075,13 @@
         stroke.ID ??
         `${lat}_${lon}_${time}`,
 
-      lat:lat,
+      lat,
 
-      lon:lon,
+      lon,
 
-      time:time
+      time
 
     });
-
   }
 
 
@@ -1410,11 +1103,9 @@
       return;
     }
 
-
     clearTimeout(
       reconnectTimer
     );
-
 
     reconnectTimer =
       setTimeout(
@@ -1435,264 +1126,339 @@
         },
         3000
       );
-
   }
 
 
   /*
   ============================================================
-  LEGEND
+  ЛЕГЕНДА
   ============================================================
   */
 
-  function createLightningLegend() {
+  function setupLegend() {
+
+    /*
+    Удаляем нижнюю панель,
+    если она осталась от старой версии.
+    */
+
+    const oldBottom =
+      document.getElementById(
+        "cloradLightningLegend"
+      );
+
+    if (oldBottom) {
+      oldBottom.remove();
+    }
+
+
+    /*
+    Ищем существующую легенду
+    справа по центру.
+    */
+
+    const legend =
+      document.querySelector(
+        ".legend"
+      );
+
+    if (!legend) {
+      return;
+    }
+
+
+    /*
+    Не создаём повторно.
+    */
 
     if (
       document.getElementById(
-        "cloradLightningLegend"
+        "cloradLegendControls"
       )
     ) {
       return;
     }
 
 
-    const legend =
+    legend.classList.add(
+      "cloradLegendReady"
+    );
+
+
+    /*
+    ==========================================================
+    КНОПКИ
+    ==========================================================
+    */
+
+    const controls =
       document.createElement(
         "div"
       );
 
+    controls.id =
+      "cloradLegendControls";
 
-    legend.id =
-      "cloradLightningLegend";
+
+    controls.innerHTML = `
+
+      <button
+        type="button"
+        id="cloradOyaButton"
+        class="cloradLegendSwitch active"
+        aria-label="ОЯ"
+      >
+        ОЯ
+      </button>
+
+      <button
+        type="button"
+        id="cloradLightningButton"
+        class="cloradLegendSwitch"
+        aria-label="Молнии"
+      >
+
+        <svg
+          viewBox="0 0 32 48"
+          aria-hidden="true"
+        >
+
+          <path
+            d="
+              M18 1
+              L4 27
+              H14
+              L11 47
+              L29 19
+              H19
+              Z
+            "
+            fill="currentColor"
+          />
+
+        </svg>
+
+      </button>
+
+    `;
 
 
     /*
-    Именно кнопки легенды:
-      ОЯ
-      SVG-молния
+    Вставляем внутрь существующей
+    легенды, а не создаём новую.
     */
 
-    legend.innerHTML = `
-
-      <div
-        class="cloradLightningLegendTabs"
-      >
-
-        <button
-          type="button"
-          class="cloradLegendTab cloradOyaLegendTab"
-        >
-          ОЯ
-        </button>
+    const closeButton =
+      legend.querySelector(
+        ".legendClose"
+      );
 
 
-        <button
-          type="button"
-          class="cloradLegendTab cloradLightningLegendTab active"
-          aria-label="Молнии"
-        >
+    if (
+      closeButton &&
+      closeButton.nextSibling
+    ) {
 
-          <svg
-            viewBox="0 0 32 48"
-            aria-hidden="true"
-          >
+      legend.insertBefore(
+        controls,
+        closeButton.nextSibling
+      );
 
-            <path
-              d="
-                M18 1
-                L4 27
-                H14
-                L11 47
-                L29 19
-                H19
-                Z
-              "
-              fill="currentColor"
-            />
+    } else {
 
-          </svg>
+      legend.insertBefore(
+        controls,
+        legend.firstChild
+      );
 
-        </button>
-
-      </div>
+    }
 
 
-      <div
-        class="cloradLightningLegendContent"
-      >
+    /*
+    ==========================================================
+    ШКАЛА МОЛНИЙ
+    ==========================================================
+    */
 
-        <div
-          class="cloradLightningScale"
-        >
+    const lightningView =
+      document.createElement(
+        "div"
+      );
 
-          <div class="cloradLightningScaleItem">
-
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ff0000;
-                --ls:6px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              10–15 мин
-            </span>
-
-          </div>
+    lightningView.id =
+      "cloradLightningLegendView";
 
 
-          <div class="cloradLightningScaleItem">
+    lightningView.innerHTML = `
 
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ff3500;
-                --ls:6.5px;
-              "
-            ></span>
+      <div class="cloradLightningScale">
 
-            <span class="cloradLightningTime">
-              8–10 мин
-            </span>
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff0000;
+              --ls:6px;
+              --lb:#8f0000;
+            "
+          ></span>
 
-          </div>
-
-
-          <div class="cloradLightningScaleItem">
-
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ff6500;
-                --ls:7px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              6–8 мин
-            </span>
-
-          </div>
+          <span class="cloradLightningTime">
+            10–15
+          </span>
+        </div>
 
 
-          <div class="cloradLightningScaleItem">
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff3500;
+              --ls:6.5px;
+              --lb:#b51d00;
+            "
+          ></span>
 
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ff9200;
-                --ls:7.5px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              5–6 мин
-            </span>
-
-          </div>
-
-
-          <div class="cloradLightningScaleItem">
-
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ffb000;
-                --ls:8px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              4–5 мин
-            </span>
-
-          </div>
+          <span class="cloradLightningTime">
+            8–10
+          </span>
+        </div>
 
 
-          <div class="cloradLightningScaleItem">
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff6500;
+              --ls:7px;
+              --lb:#c84300;
+            "
+          ></span>
 
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ffd000;
-                --ls:8.5px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              3–4 мин
-            </span>
-
-          </div>
-
-
-          <div class="cloradLightningScaleItem">
-
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#ffe300;
-                --ls:9px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              2–3 мин
-            </span>
-
-          </div>
+          <span class="cloradLightningTime">
+            6–8
+          </span>
+        </div>
 
 
-          <div class="cloradLightningScaleItem">
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff9200;
+              --ls:7.5px;
+              --lb:#d66300;
+            "
+          ></span>
 
-            <span
-              class="cloradLightningDot"
-              style="
-                --lc:#fff000;
-                --ls:10px;
-              "
-            ></span>
-
-            <span class="cloradLightningTime">
-              1–2 мин
-            </span>
-
-          </div>
+          <span class="cloradLightningTime">
+            5–6
+          </span>
+        </div>
 
 
-          <div class="cloradLightningScaleItem">
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffb000;
+              --ls:8px;
+              --lb:#df7d00;
+            "
+          ></span>
 
-            <span
-              class="cloradLightningDot latest"
-              style="
-                --lc:#fff900;
-                --ls:11px;
-              "
-            ></span>
+          <span class="cloradLightningTime">
+            4–5
+          </span>
+        </div>
 
-            <span class="cloradLightningTime">
-              0–1 мин
-            </span>
 
-          </div>
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffd000;
+              --ls:8.5px;
+              --lb:#e0a500;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            3–4
+          </span>
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffe300;
+              --ls:9px;
+              --lb:#ddca00;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            2–3
+          </span>
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#fff000;
+              --ls:10px;
+              --lb:#e2d500;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            1–2
+          </span>
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="
+              cloradLightningDot
+              latest
+            "
+            style="
+              --lc:#fff900;
+              --ls:11px;
+              --lb:#ffffff;
+            "
+          ></span>
+
+          <span class="cloradLightningTime">
+            0–1
+          </span>
 
         </div>
 
       </div>
 
+      <div class="cloradLightningUnits">
+        минуты
+      </div>
+
     `;
 
 
-    document.body.appendChild(
-      legend
+    legend.appendChild(
+      lightningView
     );
 
 
     /*
-    ============================================================
-    СТИЛИ ЛЕГЕНДЫ
-    ============================================================
+    ==========================================================
+    CSS
+    ==========================================================
     */
 
     const style =
@@ -1701,55 +1467,32 @@
       );
 
 
+    style.id =
+      "cloradLegendLightningStyle";
+
+
     style.textContent = `
 
-      #cloradLightningLegend{
+      /*
+      ========================================================
+      EXISTING LEGEND
+      ========================================================
+      */
 
-        position:fixed;
+      .legend.cloradLegendReady{
 
-        left:50%;
-
-        bottom:18px;
-
-        transform:
-          translateX(-50%);
-
-        z-index:20;
-
-        width:470px;
-
-        box-sizing:border-box;
-
-        padding:
-          6px 10px 9px;
-
-        border-radius:10px;
-
-        background:
-          rgba(24,32,40,.95);
-
-        border:
-          1px solid #3d4851;
-
-        box-shadow:
-          0 5px 16px rgba(0,0,0,.25);
-
-        color:#fff;
-
-        pointer-events:none;
-
-        user-select:none;
+        position:relative;
 
       }
 
 
       /*
-      ==========================================================
-      КНОПКИ ОЯ / МОЛНИЯ
-      ==========================================================
+      ========================================================
+      BUTTONS
+      ========================================================
       */
 
-      .cloradLightningLegendTabs{
+      #cloradLegendControls{
 
         display:flex;
 
@@ -1759,28 +1502,41 @@
 
         gap:5px;
 
-        height:31px;
+        width:100%;
 
-        margin-bottom:5px;
+        box-sizing:border-box;
+
+        padding-right:38px;
+
+        margin:
+          0 0 8px 0;
+
+        min-height:29px;
 
       }
 
 
-      .cloradLegendTab{
+      .cloradLegendSwitch{
+
+        appearance:none;
+
+        -webkit-appearance:none;
+
+        border:1px solid
+          rgba(255,255,255,.12);
+
+        background:
+          rgba(255,255,255,.035);
+
+        color:#aeb7bd;
 
         width:38px;
 
-        height:28px;
+        height:27px;
 
         padding:0;
 
-        border:1px solid transparent;
-
         border-radius:7px;
-
-        background:transparent;
-
-        color:#aeb7bd;
 
         display:flex;
 
@@ -1788,45 +1544,90 @@
 
         justify-content:center;
 
+        font-family:inherit;
+
         font-size:12px;
 
         font-weight:700;
 
+        line-height:1;
+
+        cursor:pointer;
+
         box-sizing:border-box;
+
+        transition:
+          background .15s ease,
+          border-color .15s ease,
+          color .15s ease;
 
       }
 
 
-      .cloradLegendTab.active{
+      .cloradLegendSwitch.active{
 
-        background:#263139;
+        background:
+          rgba(83,227,155,.10);
 
-        border-color:#3e4a53;
+        border-color:
+          rgba(83,227,155,.35);
 
         color:#53e39b;
 
       }
 
 
+      .cloradLegendSwitch svg{
+
+        display:block;
+
+        width:11px;
+
+        height:18px;
+
+      }
+
+
       /*
-      SVG молния
+      ========================================================
+      LIGHTNING VIEW
+      ========================================================
       */
 
-      .cloradLightningLegendTab svg{
+      #cloradLightningLegendView{
 
-        width:12px;
+        display:none;
 
-        height:19px;
+        width:100%;
+
+        box-sizing:border-box;
+
+      }
+
+
+      .legend.cloradLightningMode
+      #cloradLightningLegendView{
 
         display:block;
 
       }
 
 
+      .legend.cloradLightningMode
+      .legendTitle,
+
+      .legend.cloradLightningMode
+      .li{
+
+        display:none !important;
+
+      }
+
+
       /*
-      ==========================================================
-      ШКАЛА
-      ==========================================================
+      ========================================================
+      SCALE
+      ========================================================
       */
 
       .cloradLightningScale{
@@ -1841,6 +1642,8 @@
 
         gap:1px;
 
+        box-sizing:border-box;
+
       }
 
 
@@ -1849,8 +1652,6 @@
         flex:1;
 
         min-width:0;
-
-        height:38px;
 
         display:flex;
 
@@ -1867,42 +1668,45 @@
 
         display:block;
 
-        flex:none;
-
         width:var(--ls);
 
         height:var(--ls);
 
-        margin-top:2px;
+        flex:none;
 
         border-radius:50%;
+
+        box-sizing:border-box;
 
         background:
           var(--lc);
 
         border:
-          1px solid
-          rgba(255,255,255,.22);
-
-        box-sizing:border-box;
+          1.5px solid
+          var(--lb);
 
         box-shadow:
           0 0 4px
-          var(--lc);
+          rgba(255,180,0,.35);
 
       }
 
+
+      /*
+      Самая свежая точка —
+      белая обводка + внешний ореол.
+      */
 
       .cloradLightningDot.latest{
 
         border:
           1.5px solid
-          rgba(255,255,255,.9);
+          #ffffff;
 
         box-shadow:
 
           0 0 0 1.5px
-          rgba(255,255,255,.18),
+          rgba(255,255,255,.20),
 
           0 0 7px
           rgba(255,235,0,.85);
@@ -1912,56 +1716,68 @@
 
       .cloradLightningTime{
 
+        display:block;
+
         margin-top:5px;
 
         white-space:nowrap;
 
-        color:#dce2e6;
+        color:#cbd3d8;
 
-        font-size:7.5px;
+        font-size:7px;
 
-        line-height:9px;
+        line-height:8px;
 
         font-weight:600;
 
       }
 
 
+      .cloradLightningUnits{
+
+        text-align:center;
+
+        margin-top:6px;
+
+        color:#8f9aa1;
+
+        font-size:7px;
+
+        line-height:8px;
+
+      }
+
+
       /*
-      ==========================================================
-      LIGHT
-      ==========================================================
+      ========================================================
+      LIGHT THEME
+      ========================================================
       */
 
       body.light
-      #cloradLightningLegend{
+      .cloradLegendSwitch{
+
+        color:#69747b;
+
+        border-color:
+          rgba(0,0,0,.10);
 
         background:
-          rgba(246,248,249,.95);
-
-        border-color:#c9d0d5;
-
-        color:#20272c;
+          rgba(0,0,0,.025);
 
       }
 
 
       body.light
-      .cloradLegendTab{
-
-        color:#687177;
-
-      }
-
-
-      body.light
-      .cloradLegendTab.active{
-
-        background:#e1e6e9;
-
-        border-color:#c6ced3;
+      .cloradLegendSwitch.active{
 
         color:#168453;
+
+        background:
+          rgba(22,132,83,.08);
+
+        border-color:
+          rgba(22,132,83,.25);
 
       }
 
@@ -1974,57 +1790,43 @@
       }
 
 
+      body.light
+      .cloradLightningUnits{
+
+        color:#7b858b;
+
+      }
+
+
       /*
-      ==========================================================
+      ========================================================
       MOBILE
-      ==========================================================
+      ========================================================
       */
 
       @media(max-width:600px){
 
-        #cloradLightningLegend{
+        #cloradLegendControls{
 
-          width:
-            calc(100vw - 18px);
+          padding-right:36px;
 
-          bottom:12px;
-
-          padding:
-            5px 5px 8px;
+          margin-bottom:7px;
 
         }
 
 
-        .cloradLightningLegendTabs{
+        .cloradLegendSwitch{
 
-          height:30px;
+          width:35px;
 
-          margin-bottom:4px;
-
-        }
-
-
-        .cloradLegendTab{
-
-          width:36px;
-
-          height:27px;
-
-        }
-
-
-        .cloradLightningScaleItem{
-
-          height:36px;
+          height:26px;
 
         }
 
 
         .cloradLightningTime{
 
-          font-size:7px;
-
-          margin-top:5px;
+          font-size:6.5px;
 
         }
 
@@ -2036,6 +1838,73 @@
     document.head.appendChild(
       style
     );
+
+
+    /*
+    ==========================================================
+    ПЕРЕКЛЮЧЕНИЕ ОЯ / МОЛНИЯ
+    ==========================================================
+    */
+
+    const oyaButton =
+      document.getElementById(
+        "cloradOyaButton"
+      );
+
+    const lightningButton =
+      document.getElementById(
+        "cloradLightningButton"
+      );
+
+
+    function showOya() {
+
+      legend.classList.remove(
+        "cloradLightningMode"
+      );
+
+      oyaButton.classList.add(
+        "active"
+      );
+
+      lightningButton.classList.remove(
+        "active"
+      );
+
+    }
+
+
+    function showLightning() {
+
+      legend.classList.add(
+        "cloradLightningMode"
+      );
+
+      lightningButton.classList.add(
+        "active"
+      );
+
+      oyaButton.classList.remove(
+        "active"
+      );
+
+    }
+
+
+    oyaButton.onclick =
+      showOya;
+
+
+    lightningButton.onclick =
+      showLightning;
+
+
+    /*
+    По умолчанию открывается
+    легенда ОЯ.
+    */
+
+    showOya();
 
   }
 
@@ -2060,7 +1929,6 @@
           viewportTimer
         );
 
-
         viewportTimer =
           setTimeout(
             () => {
@@ -2079,7 +1947,6 @@
             },
             150
           );
-
       };
 
 
@@ -2103,13 +1970,10 @@
   ============================================================
   */
 
-  function setEnabled(
-    value
-  ) {
+  function setEnabled(value) {
 
     enabled =
       !!value;
-
 
     generation++;
 
@@ -2157,7 +2021,6 @@
 
 
       return;
-
     }
 
 
@@ -2214,9 +2077,7 @@
     },
 
 
-    setEnabled(
-      value
-    ) {
+    setEnabled(value) {
 
       setEnabled(
         value
@@ -2235,6 +2096,9 @@
     clear() {
 
       strikes.clear();
+
+
+      activeWaves.clear();
 
 
       if (layer) {
@@ -2286,7 +2150,7 @@
     );
 
 
-    createLightningLegend();
+    setupLegend();
 
 
     setupMapEvents();
@@ -2305,7 +2169,7 @@
 
 
     console.log(
-      "[CLOrad Lightning] Загружен"
+      "[CLOrad Lightning] loaded"
     );
 
   }
