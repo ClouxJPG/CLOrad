@@ -1,731 +1,1577 @@
 (() => {
   "use strict";
 
+  /*
+  ============================================================
+  CLOrad — LIGHTNING
+  ============================================================
+
+  Источник:
+    LightningMaps / Blitzortung live2
+
+  Цвет:
+    свежая молния  → жёлтая
+    старше         → оранжевая
+    старая         → красная
+
+  Размер:
+    0–1 мин    8 px
+    1–2 мин    7 px
+    2–3 мин    6 px
+    3–4 мин    5 px
+    4–5 мин    4.5 px
+    5–6 мин    4 px
+    6–8 мин    3.5 px
+    8–10 мин   3 px
+    10–15 мин  2 px
+    >15 мин    удаляется
+
+  ============================================================
+  */
+
   const WS_URL = "wss://live2.lightningmaps.org/";
+
   const MAX_AGE = 15 * 60 * 1000;
 
-  const map = window.map;
-  const switchEl = document.getElementById("lightningSwitch");
-
-  if (!map || !switchEl) {
-    console.error("[CLOrad Lightning] map или переключатель не найден");
-    return;
-  }
-
-  // =========================================================
-  // STATE
-  // =========================================================
-
-  let enabled = false;
-  let socket = null;
-  let reconnectTimer = null;
-  let generation = 0;
-
   const strikes = new Map();
-  const layer = L.layerGroup();
 
-  // =========================================================
-  // COLORS
-  // =========================================================
+  let socket = null;
+  let enabled = true;
+  let generation = 0;
+  let reconnectTimer = null;
 
-  function lerp(a, b, t) {
-    return Math.round(a + (b - a) * t);
+  let layer = null;
+
+  let animationFrame = null;
+
+
+  /*
+  ============================================================
+  LAYER
+  ============================================================
+  */
+
+  function createLayer() {
+
+    if (layer) return layer;
+
+    layer = L.layerGroup();
+
+    return layer;
   }
 
-  function mix(c1, c2, t) {
-    return [
-      lerp(c1[0], c2[0], t),
-      lerp(c1[1], c2[1], t),
-      lerp(c1[2], c2[2], t)
+
+  /*
+  ============================================================
+  ЦВЕТ МОЛНИИ
+  ============================================================
+  */
+
+  function getLightningColor(age) {
+
+    const minute = age / 60000;
+
+    /*
+    0 мин:
+      #fff700
+
+    1 мин:
+      #ffe600
+
+    3 мин:
+      #ffbd00
+
+    5 мин:
+      #ff8a00
+
+    8 мин:
+      #ff5a00
+
+    10 мин:
+      #ff3200
+
+    15 мин:
+      #ff0000
+    */
+
+    const stops = [
+      { t: 0,  r: 255, g: 247, b: 0   },
+      { t: 1,  r: 255, g: 225, b: 0   },
+      { t: 3,  r: 255, g: 190, b: 0   },
+      { t: 5,  r: 255, g: 135, b: 0   },
+      { t: 8,  r: 255, g: 85,  b: 0   },
+      { t: 10, r: 255, g: 45,  b: 0   },
+      { t: 15, r: 255, g: 0,   b: 0   }
     ];
-  }
 
-  function strikeColor(age) {
-    const min = age / 60000;
-
-    const yellow = [255, 245, 0];
-    const orange = [255, 150, 0];
-    const red = [235, 35, 20];
-    const darkRed = [115, 5, 8];
-
-    let c;
-
-    if (min <= 2) {
-      c = mix(yellow, orange, min / 2);
-    } else if (min <= 5) {
-      c = mix(orange, red, (min - 2) / 3);
-    } else {
-      c = mix(red, darkRed, Math.min(1, (min - 5) / 10));
+    if (minute <= stops[0].t) {
+      return "rgb(255,247,0)";
     }
 
-    return `rgb(${c[0]},${c[1]},${c[2]})`;
-  }
-
-  // =========================================================
-  // SIZE
-  // =========================================================
-
-  function strikeRadius(age) {
-    const min = age / 60000;
-
-    if (min < 1) return 8;
-    if (min < 2) return 7;
-    if (min < 3) return 6;
-    if (min < 4) return 5;
-    if (min < 5) return 4.5;
-    if (min < 6) return 4;
-    if (min < 8) return 3.5;
-    if (min < 10) return 3;
-    return 2;
-  }
-
-  // =========================================================
-  // TIME
-  // =========================================================
-
-  function getStrikeTime(stroke) {
-    if (typeof stroke.time !== "number") {
-      return Date.now();
+    if (minute >= stops[stops.length - 1].t) {
+      return "rgb(255,0,0)";
     }
 
-    // milliseconds
-    if (stroke.time > 100000000000) {
-      return stroke.time;
+    for (let i = 0; i < stops.length - 1; i++) {
+
+      const a = stops[i];
+      const b = stops[i + 1];
+
+      if (
+        minute >= a.t &&
+        minute <= b.t
+      ) {
+
+        const p =
+          (minute - a.t) /
+          (b.t - a.t);
+
+        const r =
+          Math.round(
+            a.r + (b.r - a.r) * p
+          );
+
+        const g =
+          Math.round(
+            a.g + (b.g - a.g) * p
+          );
+
+        const bl =
+          Math.round(
+            a.b + (b.b - a.b) * p
+          );
+
+        return `rgb(${r},${g},${bl})`;
+      }
     }
 
-    // seconds
-    return stroke.time * 1000;
+    return "rgb(255,0,0)";
   }
 
-  // =========================================================
-  // ADD STRIKE
-  // =========================================================
 
-  function addStrike(stroke) {
-    if (!enabled) return;
+  /*
+  ============================================================
+  РАЗМЕР МОЛНИИ
+  ============================================================
+  */
 
-    if (!stroke) return;
+  function getLightningSize(age) {
 
-    const lat = Number(stroke.lat);
-    const lon = Number(stroke.lon);
+    const minute = age / 60000;
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    if (minute < 1)  return 8;
+    if (minute < 2)  return 7;
+    if (minute < 3)  return 6;
+    if (minute < 4)  return 5;
+    if (minute < 5)  return 4.5;
+    if (minute < 6)  return 4;
+    if (minute < 8)  return 3.5;
+    if (minute < 10) return 3;
+    if (minute < 15) return 2;
+
+    return 0;
+  }
+
+
+  /*
+  ============================================================
+  СОЗДАНИЕ ТОЧКИ
+  ============================================================
+  */
+
+  function createStrikeMarker(strike) {
+
+    const color =
+      getLightningColor(
+        Date.now() - strike.time
+      );
+
+    const size =
+      getLightningSize(
+        Date.now() - strike.time
+      );
+
+    if (!size) return null;
+
+
+    /*
+    Круглая молния.
+
+    Самая свежая:
+      жёлтый центр
+      тонкий светлый контур
+      дополнительное внешнее кольцо
+    */
+
+    const marker =
+      L.circleMarker(
+        [strike.lat, strike.lon],
+        {
+          radius:size,
+
+          stroke:true,
+
+          color:color,
+
+          weight:
+            size >= 6
+              ? 2
+              : 1.2,
+
+          opacity:1,
+
+          fillColor:color,
+
+          fillOpacity:1,
+
+          interactive:false
+        }
+      );
+
+
+    /*
+    Внешний ореол только для свежих.
+    */
+
+    if (
+      Date.now() - strike.time <
+      60000
+    ) {
+
+      const halo =
+        L.circleMarker(
+          [strike.lat, strike.lon],
+          {
+            radius:
+              size + 4,
+
+            stroke:true,
+
+            color:"#ffffff",
+
+            weight:2,
+
+            opacity:.75,
+
+            fill:false,
+
+            interactive:false
+          }
+        );
+
+      const group =
+        L.layerGroup([
+          halo,
+          marker
+        ]);
+
+      group._cloradStrikeId =
+        strike.id;
+
+      return group;
+    }
+
+
+    marker._cloradStrikeId =
+      strike.id;
+
+    return marker;
+  }
+
+
+  /*
+  ============================================================
+  ДОБАВЛЕНИЕ МОЛНИИ
+  ============================================================
+  */
+
+  function addStrike(data) {
+
+    if (
+      !data ||
+      typeof data.lat !== "number" ||
+      typeof data.lon !== "number"
+    ) {
       return;
     }
 
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      return;
-    }
 
-    const time = getStrikeTime(stroke);
-    const now = Date.now();
-    const age = now - time;
+    const time =
+      typeof data.time === "number"
+        ? data.time
+        : Date.now();
 
-    // ignore clearly future data
-    if (age < -60000) return;
-
-    // ignore old data
-    if (age > MAX_AGE) return;
 
     const id =
-      stroke.id != null
-        ? String(stroke.id)
-        : `${lat}_${lon}_${time}`;
+      String(
+        data.id ??
+        `${data.lat}_${data.lon}_${time}`
+      );
 
-    // already exists
-    if (strikes.has(id)) {
+
+    strikes.set(
+      id,
+      {
+        id:id,
+        lat:data.lat,
+        lon:data.lon,
+        time:time
+      }
+    );
+
+
+    redrawStrike(id);
+  }
+
+
+  /*
+  ============================================================
+  ОБНОВЛЕНИЕ ОДНОЙ МОЛНИИ
+  ============================================================
+  */
+
+  function redrawStrike(id) {
+
+    if (!layer) return;
+
+    const strike =
+      strikes.get(id);
+
+    if (!strike) return;
+
+
+    /*
+    Старый объект карты.
+    */
+
+    layer.eachLayer(item => {
+
+      if (
+        item._cloradStrikeId === id
+      ) {
+
+        layer.removeLayer(item);
+
+      }
+
+    });
+
+
+    const age =
+      Date.now() - strike.time;
+
+
+    /*
+    Удаляем после 15 минут.
+    */
+
+    if (age >= MAX_AGE) {
+
+      strikes.delete(id);
+
       return;
     }
 
-    const marker = L.circleMarker([lat, lon], {
-      radius: strikeRadius(Math.max(0, age)),
-      color: strikeColor(Math.max(0, age)),
-      weight: 0,
-      fillColor: strikeColor(Math.max(0, age)),
-      fillOpacity: 1,
-      opacity: 1,
-      interactive: false
-    });
 
-    marker.addTo(layer);
+    const marker =
+      createStrikeMarker(strike);
 
-    strikes.set(id, {
-      marker,
-      time
-    });
+
+    if (marker) {
+
+      marker._cloradStrikeId =
+        id;
+
+      layer.addLayer(marker);
+
+    }
   }
 
-  // =========================================================
-  // PROCESS MESSAGE
-  // =========================================================
 
-  function processMessage(raw) {
+  /*
+  ============================================================
+  ОБНОВЛЕНИЕ ВСЕХ МОЛНИЙ
+  ============================================================
+  */
+
+  function updateAllStrikes() {
+
     if (!enabled) return;
 
-    let data;
+
+    const now =
+      Date.now();
+
+
+    strikes.forEach(
+      (strike, id) => {
+
+        if (
+          now - strike.time >=
+          MAX_AGE
+        ) {
+
+          strikes.delete(id);
+
+          return;
+        }
+
+
+        redrawStrike(id);
+
+      }
+    );
+
+
+    animationFrame =
+      requestAnimationFrame(
+        updateAllStrikes
+      );
+  }
+
+
+  function stopAnimation() {
+
+    if (animationFrame) {
+
+      cancelAnimationFrame(
+        animationFrame
+      );
+
+      animationFrame = null;
+
+    }
+
+  }
+
+
+  function startAnimation() {
+
+    stopAnimation();
+
+    animationFrame =
+      requestAnimationFrame(
+        updateAllStrikes
+      );
+
+  }
+
+
+  /*
+  ============================================================
+  LIVE2
+  ============================================================
+  */
+
+  function connect(myGeneration) {
+
+    if (!enabled) return;
+
+    if (
+      myGeneration !== generation
+    ) {
+      return;
+    }
+
 
     try {
-      data = JSON.parse(raw);
-    } catch {
+
+      socket =
+        new WebSocket(
+          WS_URL
+        );
+
+    } catch (error) {
+
+      scheduleReconnect(
+        myGeneration
+      );
+
       return;
     }
 
-    if (Array.isArray(data.strokes)) {
-      for (const stroke of data.strokes) {
-        addStrike(stroke);
+
+    socket.onopen = () => {
+
+      if (
+        myGeneration !== generation ||
+        !enabled
+      ) {
+
+        try {
+          socket.close();
+        } catch {}
+
+        return;
       }
-      return;
-    }
 
-    if (data.lat != null && data.lon != null) {
-      addStrike(data);
-    }
+
+      /*
+      Запрашиваем молнии
+      в пределах текущего
+      окна карты.
+
+      live2 использует:
+        [latN, lonE, latS, lonW]
+      */
+
+      sendViewport();
+    };
+
+
+    socket.onmessage =
+      event => {
+
+        if (
+          myGeneration !== generation ||
+          !enabled
+        ) {
+          return;
+        }
+
+
+        handleMessage(
+          event.data
+        );
+
+      };
+
+
+    socket.onerror = () => {
+
+      /*
+      onclose также будет вызван.
+      */
+
+    };
+
+
+    socket.onclose = () => {
+
+      if (
+        myGeneration !== generation ||
+        !enabled
+      ) {
+        return;
+      }
+
+
+      scheduleReconnect(
+        myGeneration
+      );
+
+    };
+
   }
 
-  // =========================================================
-  // SUBSCRIPTION
-  // =========================================================
 
-  function sendSubscription(ws) {
-    if (!enabled) return;
-    if (ws !== socket) return;
-    if (ws.readyState !== WebSocket.OPEN) return;
+  /*
+  ============================================================
+  ОТПРАВКА VIEWPORT
+  ============================================================
+  */
 
-    const bounds = map.getBounds();
+  function sendViewport() {
 
-    const north = bounds.getNorth();
-    const east = bounds.getEast();
-    const south = bounds.getSouth();
-    const west = bounds.getWest();
+    if (
+      !socket ||
+      socket.readyState !==
+      WebSocket.OPEN ||
+      !window.map
+    ) {
+      return;
+    }
+
+
+    const bounds =
+      window.map.getBounds();
+
+
+    const north =
+      bounds.getNorth();
+
+    const south =
+      bounds.getSouth();
+
+    const east =
+      bounds.getEast();
+
+    const west =
+      bounds.getWest();
+
 
     const message = {
-      v: 24,
-      i: {},
-      s: false,
-      x: 0,
-      w: 0,
-      tx: 0,
-      tw: 1,
-      a: 4,
-      z: map.getZoom(),
-      b: true,
-      h: "",
-      l: 1,
-      t: 1,
-      from_lightningmaps_org: true,
-      p: [
+
+      v:24,
+
+      i:{},
+
+      s:false,
+
+      x:0,
+
+      w:0,
+
+      tx:0,
+
+      tw:1,
+
+      a:4,
+
+      z:5,
+
+      b:true,
+
+      h:"",
+
+      l:1,
+
+      t:1,
+
+      from_lightningmaps_org:true,
+
+      p:[
         north,
         east,
         south,
         west
       ],
-      r: "A"
+
+      r:"A"
+
     };
 
-    try {
-      ws.send(JSON.stringify(message));
-      console.log("[CLOrad Lightning] subscription sent");
-    } catch (e) {
-      console.error("[CLOrad Lightning] subscription error", e);
-    }
-  }
-
-  // =========================================================
-  // DESTROY SOCKET
-  // =========================================================
-
-  function destroySocket() {
-    const old = socket;
-
-    socket = null;
-
-    if (!old) return;
-
-    old.onopen = null;
-    old.onmessage = null;
-    old.onerror = null;
-    old.onclose = null;
 
     try {
-      old.close();
+
+      socket.send(
+        JSON.stringify(message)
+      );
+
     } catch {}
+
   }
 
-  // =========================================================
-  // RECONNECT
-  // =========================================================
 
-  function scheduleReconnect(myGeneration) {
-    if (!enabled) return;
-    if (myGeneration !== generation) return;
+  /*
+  ============================================================
+  ОБРАБОТКА СООБЩЕНИЙ
+  ============================================================
+  */
 
-    clearTimeout(reconnectTimer);
+  function handleMessage(raw) {
 
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-
-      if (!enabled) return;
-      if (myGeneration !== generation) return;
-
-      connect(myGeneration);
-    }, 4000);
-  }
-
-  // =========================================================
-  // CONNECT
-  // =========================================================
-
-  function connect(myGeneration) {
-    if (!enabled) return;
-    if (myGeneration !== generation) return;
-
-    // destroy only the socket belonging to this generation
-    if (socket) {
-      destroySocket();
-    }
-
-    console.log("[CLOrad Lightning] connecting...");
-
-    let ws;
-
-    try {
-      ws = new WebSocket(WS_URL);
-    } catch (e) {
-      console.error("[CLOrad Lightning] WebSocket creation failed", e);
-      scheduleReconnect(myGeneration);
+    if (
+      typeof raw !== "string"
+    ) {
       return;
     }
 
-    socket = ws;
 
-    ws.onopen = () => {
-      // This socket is no longer relevant
-      if (
-        !enabled ||
-        myGeneration !== generation ||
-        socket !== ws
-      ) {
-        try {
-          ws.close();
-        } catch {}
-        return;
+    let data;
+
+    try {
+
+      data =
+        JSON.parse(raw);
+
+    } catch {
+
+      return;
+
+    }
+
+
+    /*
+    Возможные форматы
+    live2:
+
+      {
+        strokes:[...]
       }
 
-      console.log("[CLOrad Lightning] connected");
+    либо массивы strokes
+    */
 
-      sendSubscription(ws);
-    };
+    if (
+      Array.isArray(
+        data.strokes
+      )
+    ) {
 
-    ws.onmessage = event => {
-      if (
-        !enabled ||
-        myGeneration !== generation ||
-        socket !== ws
-      ) {
-        return;
-      }
+      data.strokes.forEach(
+        stroke => {
 
-      processMessage(event.data);
-    };
+          parseStroke(
+            stroke
+          );
 
-    ws.onerror = error => {
-      if (
-        !enabled ||
-        myGeneration !== generation ||
-        socket !== ws
-      ) {
-        return;
-      }
-
-      console.warn("[CLOrad Lightning] WebSocket error", error);
-    };
-
-    ws.onclose = event => {
-      console.log(
-        "[CLOrad Lightning] disconnected",
-        event.code,
-        event.reason || ""
+        }
       );
 
-      if (
-        !enabled ||
-        myGeneration !== generation ||
-        socket !== ws
-      ) {
-        return;
+    }
+
+
+    if (
+      Array.isArray(data)
+    ) {
+
+      data.forEach(item => {
+
+        if (
+          item &&
+          Array.isArray(
+            item.strokes
+          )
+        ) {
+
+          item.strokes.forEach(
+            stroke => {
+
+              parseStroke(
+                stroke
+              );
+
+            }
+          );
+
+        }
+
+      });
+
+    }
+
+
+    /*
+    Иногда strike может прийти
+    напрямую.
+    */
+
+    if (
+      typeof data.lat === "number" &&
+      typeof data.lon === "number"
+    ) {
+
+      parseStroke(data);
+
+    }
+
+  }
+
+
+  /*
+  ============================================================
+  STROKE
+  ============================================================
+  */
+
+  function parseStroke(stroke) {
+
+    if (!stroke) return;
+
+
+    const lat =
+      Number(
+        stroke.lat ??
+        stroke.latitude
+      );
+
+    const lon =
+      Number(
+        stroke.lon ??
+        stroke.lng ??
+        stroke.longitude
+      );
+
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon)
+    ) {
+      return;
+    }
+
+
+    let time =
+      Number(
+        stroke.time ??
+        stroke.timestamp
+      );
+
+
+    /*
+    live2 обычно отдаёт
+    время в миллисекундах.
+    */
+
+    if (
+      Number.isFinite(time)
+    ) {
+
+      if (time < 100000000000) {
+
+        time *= 1000;
+
       }
+
+    } else {
+
+      time =
+        Date.now();
+
+    }
+
+
+    addStrike({
+
+      id:
+        stroke.id ??
+        stroke.ID ??
+        `${lat}_${lon}_${time}`,
+
+      lat:lat,
+
+      lon:lon,
+
+      time:time
+
+    });
+
+  }
+
+
+  /*
+  ============================================================
+  RECONNECT
+  ============================================================
+  */
+
+  function scheduleReconnect(myGeneration) {
+
+    if (
+      !enabled ||
+      myGeneration !== generation
+    ) {
+      return;
+    }
+
+
+    clearTimeout(
+      reconnectTimer
+    );
+
+
+    reconnectTimer =
+      setTimeout(() => {
+
+        if (
+          enabled &&
+          myGeneration === generation
+        ) {
+
+          connect(
+            myGeneration
+          );
+
+        }
+
+      },3000);
+
+  }
+
+
+  /*
+  ============================================================
+  КАРТА
+  ============================================================
+  */
+
+  function attachLayer() {
+
+    createLayer();
+
+
+    if (
+      enabled &&
+      window.map &&
+      !window.map.hasLayer(layer)
+    ) {
+
+      layer.addTo(
+        window.map
+      );
+
+    }
+
+  }
+
+
+  /*
+  ============================================================
+  LEGEND
+  ============================================================
+  */
+
+  function createLightningLegend() {
+
+    if (
+      document.getElementById(
+        "cloradLightningLegend"
+      )
+    ) {
+      return;
+    }
+
+
+    const legend =
+      document.createElement(
+        "div"
+      );
+
+
+    legend.id =
+      "cloradLightningLegend";
+
+
+    legend.innerHTML = `
+
+      <div class="cloradLightningLegendTitle">
+
+        <span class="cloradLightningIcon">
+
+          <svg
+            viewBox="0 0 32 48"
+            aria-hidden="true"
+          >
+            <path
+              d="
+                M18 1
+                L4 27
+                H14
+                L11 47
+                L29 19
+                H19
+                Z
+              "
+              fill="currentColor"
+            />
+          </svg>
+
+        </span>
+
+        <span>Молнии</span>
+
+      </div>
+
+
+      <div class="cloradLightningScale">
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff0000;
+              --ls:6px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff4500;
+              --ls:7px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ff8500;
+              --ls:8px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffb000;
+              --ls:9px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#ffd000;
+              --ls:10px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot"
+            style="
+              --lc:#fff000;
+              --ls:11px;
+            "
+          ></span>
+
+        </div>
+
+
+        <div class="cloradLightningScaleItem">
+
+          <span
+            class="cloradLightningDot latest"
+            style="
+              --lc:#fff900;
+              --ls:13px;
+            "
+          ></span>
+
+        </div>
+
+      </div>
+
+
+      <div class="cloradLightningLegendBottom">
+
+        <span>СТАРЫЕ</span>
+
+        <span>СВЕЖИЕ</span>
+
+      </div>
+
+    `;
+
+
+    document.body.appendChild(
+      legend
+    );
+
+
+    const style =
+      document.createElement(
+        "style"
+      );
+
+
+    style.textContent = `
+
+      #cloradLightningLegend{
+
+        position:fixed;
+
+        left:50%;
+
+        bottom:18px;
+
+        transform:
+          translateX(-50%);
+
+        z-index:20;
+
+        width:360px;
+
+        padding:
+          10px 18px 9px;
+
+        box-sizing:border-box;
+
+        border-radius:10px;
+
+        background:
+          rgba(24,32,40,.95);
+
+        border:
+          1px solid #3d4851;
+
+        box-shadow:
+          0 5px 16px rgba(0,0,0,.25);
+
+        color:#fff;
+
+        pointer-events:none;
+
+        user-select:none;
+
+      }
+
+
+      #cloradLightningLegend
+      .cloradLightningLegendTitle{
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+        gap:9px;
+
+        font-size:16px;
+
+        font-weight:700;
+
+        margin-bottom:8px;
+
+      }
+
+
+      .cloradLightningIcon{
+
+        width:16px;
+
+        height:22px;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+        color:#fff;
+
+      }
+
+
+      .cloradLightningIcon svg{
+
+        width:15px;
+
+        height:22px;
+
+        display:block;
+
+      }
+
+
+      .cloradLightningScale{
+
+        height:28px;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:space-between;
+
+        padding:0 5px;
+
+      }
+
+
+      .cloradLightningScaleItem{
+
+        width:26px;
+
+        height:26px;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+      }
+
+
+      .cloradLightningDot{
+
+        display:block;
+
+        width:var(--ls);
+
+        height:var(--ls);
+
+        border-radius:50%;
+
+        background:
+          var(--lc);
+
+        border:
+          1px solid
+          rgba(255,255,255,.15);
+
+        box-shadow:
+          0 0 5px
+          color-mix(
+            in srgb,
+            var(--lc) 65%,
+            transparent
+          );
+
+      }
+
+
+      .cloradLightningDot.latest{
+
+        border:
+          2px solid
+          rgba(255,255,255,.8);
+
+        box-shadow:
+          0 0 0 2px
+          rgba(255,255,255,.22),
+          0 0 8px
+          rgba(255,230,0,.8);
+
+      }
+
+
+      .cloradLightningLegendBottom{
+
+        display:flex;
+
+        justify-content:space-between;
+
+        padding:
+          2px 3px 0;
+
+        color:#dce2e6;
+
+        font-size:9px;
+
+        font-weight:700;
+
+        letter-spacing:.4px;
+
+      }
+
+
+      body.light
+      #cloradLightningLegend{
+
+        background:
+          rgba(246,248,249,.95);
+
+        border-color:#c9d0d5;
+
+        color:#20272c;
+
+      }
+
+
+      body.light
+      .cloradLightningIcon{
+
+        color:#20272c;
+
+      }
+
+
+      body.light
+      .cloradLightningLegendBottom{
+
+        color:#59636a;
+
+      }
+
+
+      @media(max-width:600px){
+
+        #cloradLightningLegend{
+
+          width:300px;
+
+          bottom:12px;
+
+          padding:
+            8px 12px 7px;
+
+        }
+
+
+        #cloradLightningLegend
+        .cloradLightningLegendTitle{
+
+          font-size:14px;
+
+          margin-bottom:6px;
+
+        }
+
+
+        .cloradLightningScale{
+
+          padding:0 1px;
+
+        }
+
+
+        .cloradLightningScaleItem{
+
+          width:24px;
+
+        }
+
+      }
+
+    `;
+
+
+    document.head.appendChild(
+      style
+    );
+
+  }
+
+
+  /*
+  ============================================================
+  НАСТРОЙКА VIEWPORT
+  ============================================================
+  */
+
+  function setupMapEvents() {
+
+    if (!window.map) return;
+
+
+    const send =
+      () => {
+
+        if (
+          enabled &&
+          socket &&
+          socket.readyState ===
+          WebSocket.OPEN
+        ) {
+
+          sendViewport();
+
+        }
+
+      };
+
+
+    window.map.on(
+      "moveend",
+      send
+    );
+
+
+    window.map.on(
+      "zoomend",
+      send
+    );
+
+  }
+
+
+  /*
+  ============================================================
+  ENABLE
+  ============================================================
+  */
+
+  function setEnabled(value) {
+
+    enabled =
+      !!value;
+
+
+    generation++;
+
+
+    const myGeneration =
+      generation;
+
+
+    clearTimeout(
+      reconnectTimer
+    );
+
+
+    if (!enabled) {
+
+      stopAnimation();
+
+
+      if (
+        socket
+      ) {
+
+        try {
+          socket.close();
+        } catch {}
+
+      }
+
 
       socket = null;
 
-      scheduleReconnect(myGeneration);
-    };
-  }
 
-  // =========================================================
-  // CLEAR
-  // =========================================================
+      if (
+        layer &&
+        window.map &&
+        window.map.hasLayer(layer)
+      ) {
 
-  function clearStrikes() {
-    strikes.forEach(item => {
-      try {
-        item.marker.remove();
-      } catch {}
-    });
+        window.map.removeLayer(
+          layer
+        );
 
-    strikes.clear();
-    layer.clearLayers();
-  }
-
-  // =========================================================
-  // UPDATE AGE
-  // =========================================================
-
-  function updateStrikes() {
-    const now = Date.now();
-
-    strikes.forEach((item, id) => {
-      const age = now - item.time;
-
-      if (age > MAX_AGE) {
-        try {
-          item.marker.remove();
-        } catch {}
-
-        strikes.delete(id);
-        return;
       }
 
-      const safeAge = Math.max(0, age);
-      const color = strikeColor(safeAge);
 
-      item.marker.setStyle({
-        radius: strikeRadius(safeAge),
-        color,
-        fillColor: color,
-        fillOpacity: 1,
-        opacity: 1
-      });
-    });
-  }
-
-  setInterval(updateStrikes, 1000);
-
-  // =========================================================
-  // ENABLE
-  // =========================================================
-
-  function enable() {
-    if (enabled) {
-      // Even if the state somehow stayed enabled,
-      // force a fresh connection.
-      generation++;
-
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-
-      destroySocket();
-
-      clearStrikes();
-
-      connect(generation);
       return;
+
     }
 
-    enabled = true;
 
-    generation++;
+    attachLayer();
 
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+    startAnimation();
 
-    clearStrikes();
+    connect(
+      myGeneration
+    );
 
-    layer.addTo(map);
-
-    switchEl.classList.add("on");
-    switchEl.setAttribute("aria-checked", "true");
-
-    connect(generation);
-
-    console.log("[CLOrad Lightning] ENABLED");
   }
 
-  // =========================================================
-  // DISABLE
-  // =========================================================
 
-  function disable() {
-    enabled = false;
-
-    // Invalidate EVERYTHING belonging to the old connection.
-    generation++;
-
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-
-    destroySocket();
-
-    clearStrikes();
-
-    layer.remove();
-
-    switchEl.classList.remove("on");
-    switchEl.setAttribute("aria-checked", "false");
-
-    console.log("[CLOrad Lightning] DISABLED");
-  }
-
-  // =========================================================
-  // SWITCH
-  // =========================================================
-
-  function setEnabled(value) {
-    if (value) {
-      enable();
-    } else {
-      disable();
-    }
-  }
-
-  switchEl.onclick = function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setEnabled(!enabled);
-  };
-
-  // =========================================================
-  // MAP MOVEMENT
-  // =========================================================
-
-  let refreshTimer = null;
-
-  function refreshSubscription() {
-    if (!enabled) return;
-
-    clearTimeout(refreshTimer);
-
-    refreshTimer = setTimeout(() => {
-      if (!enabled) return;
-
-      const current = socket;
-
-      if (!current || current.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      sendSubscription(current);
-    }, 300);
-  }
-
-  map.on("moveend zoomend", refreshSubscription);
-
-  // =========================================================
-  // LEGEND
-  // =========================================================
-
-  function createLegendControls() {
-    const legend = document.getElementById("legend");
-
-    if (!legend) return;
-    if (legend.querySelector(".cloradLegendSwitch")) return;
-
-    const title = legend.querySelector(".legendTitle");
-    const items = [...legend.querySelectorAll(".li")];
-
-    const switcher = document.createElement("div");
-
-    switcher.className = "cloradLegendSwitch";
-
-    switcher.innerHTML = `
-      <button type="button"
-              class="cloradLegendBtn active"
-              data-legend="oya">
-        ОЯ
-      </button>
-
-      <button type="button"
-              class="cloradLegendBtn"
-              data-legend="lightning"
-              aria-label="Молнии">
-
-        <svg viewBox="0 0 24 24"
-             width="17"
-             height="17"
-             aria-hidden="true">
-          <path
-            d="M13 2L4 14h7l-1 8 10-13h-7z"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linejoin="round"/>
-        </svg>
-
-      </button>
-    `;
-
-    legend.insertBefore(switcher, legend.firstChild);
-
-    const lightningLegend = document.createElement("div");
-
-    lightningLegend.className = "cloradLightningLegend";
-    lightningLegend.style.display = "none";
-
-    lightningLegend.innerHTML = `
-      <div class="cloradLightningGradient"></div>
-
-      <div class="cloradLightningScale">
-        <span>0 мин</span>
-        <span>15 мин</span>
-      </div>
-
-      <div class="cloradLightningNote">
-        Свежие разряды ярко-жёлтые.
-        Старые постепенно становятся красными
-        и исчезают через 15 минут.
-      </div>
-    `;
-
-    legend.appendChild(lightningLegend);
-
-    const oyaBtn = switcher.querySelector('[data-legend="oya"]');
-    const lightningBtn =
-      switcher.querySelector('[data-legend="lightning"]');
-
-    function showOya() {
-      oyaBtn.classList.add("active");
-      lightningBtn.classList.remove("active");
-
-      if (title) title.style.display = "";
-      items.forEach(x => {
-        x.style.display = "";
-      });
-
-      lightningLegend.style.display = "none";
-    }
-
-    function showLightning() {
-      lightningBtn.classList.add("active");
-      oyaBtn.classList.remove("active");
-
-      if (title) title.style.display = "none";
-
-      items.forEach(x => {
-        x.style.display = "none";
-      });
-
-      lightningLegend.style.display = "";
-    }
-
-    oyaBtn.onclick = showOya;
-    lightningBtn.onclick = showLightning;
-
-    const style = document.createElement("style");
-
-    style.textContent = `
-      .cloradLegendSwitch {
-        display:flex;
-        align-items:center;
-        gap:5px;
-        margin-bottom:10px;
-      }
-
-      .cloradLegendBtn {
-        width:34px;
-        height:30px;
-        padding:0;
-        border:0;
-        border-radius:7px;
-        background:rgba(120,120,120,.16);
-        color:inherit;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        cursor:pointer;
-        font-weight:600;
-      }
-
-      .cloradLegendBtn.active {
-        background:rgba(255,255,255,.18);
-      }
-
-      .cloradLightningLegend {
-        padding:4px 2px 2px;
-      }
-
-      .cloradLightningGradient {
-        width:100%;
-        height:12px;
-        border-radius:8px;
-        background:
-          linear-gradient(
-            to right,
-            rgb(255,245,0),
-            rgb(255,150,0),
-            rgb(235,35,20),
-            rgb(115,5,8)
-          );
-      }
-
-      .cloradLightningScale {
-        display:flex;
-        justify-content:space-between;
-        font-size:11px;
-        opacity:.75;
-        margin-top:5px;
-      }
-
-      .cloradLightningNote {
-        font-size:11px;
-        line-height:1.35;
-        opacity:.7;
-        margin-top:10px;
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  // =========================================================
-  // PUBLIC API
-  // =========================================================
+  /*
+  ============================================================
+  PUBLIC API
+  ============================================================
+  */
 
   window.CLOradLightning = {
-    enable,
-    disable,
-    setEnabled,
-    clear: clearStrikes,
 
-    reconnect() {
-      if (!enabled) return;
+    enable() {
 
-      generation++;
-
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-
-      destroySocket();
-      connect(generation);
-    },
-
-    isEnabled() {
-      return enabled;
-    },
-
-    isConnected() {
-      return !!(
-        socket &&
-        socket.readyState === WebSocket.OPEN
+      setEnabled(
+        true
       );
+
+    },
+
+
+    disable() {
+
+      setEnabled(
+        false
+      );
+
+    },
+
+
+    setEnabled(value) {
+
+      setEnabled(
+        value
+      );
+
+    },
+
+
+    getEnabled() {
+
+      return enabled;
+
+    },
+
+
+    clear() {
+
+      strikes.clear();
+
+
+      if (layer) {
+
+        layer.clearLayers();
+
+      }
+
     }
+
   };
 
-  // =========================================================
-  // START
-  // =========================================================
 
-  createLegendControls();
+  /*
+  ============================================================
+  EXPORT LAYER
+  ============================================================
+  */
 
-  enable();
+  createLayer();
+
+
+  window.CLOradLightningLayer =
+    layer;
+
+
+  /*
+  ============================================================
+  ЗАПУСК
+  ============================================================
+  */
+
+  function init() {
+
+    if (!window.map) {
+
+      setTimeout(
+        init,
+        100
+      );
+
+      return;
+
+    }
+
+
+    attachLayer();
+
+    createLightningLegend();
+
+    setupMapEvents();
+
+    startAnimation();
+
+
+    const myGeneration =
+      ++generation;
+
+
+    connect(
+      myGeneration
+    );
+
+
+    console.log(
+      "[CLOrad Lightning] Загружен"
+    );
+
+  }
+
+
+  init();
 
 })();
