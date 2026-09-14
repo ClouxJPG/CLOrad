@@ -1,6 +1,6 @@
 /* =========================================================
    CLOrad — Risks / Warnings
-   EMS / CSF source selector
+   EMS / CSF
    ========================================================= */
 
 (() => {
@@ -9,7 +9,6 @@
   const nav = document.getElementById("nav");
   if (!nav) return;
 
-  // Находим кнопку «Предупр.»
   const warningButton = [...nav.querySelectorAll(".n")].find(
     el => el.textContent.trim() === "Предупр."
   );
@@ -39,6 +38,7 @@
       border-radius: 11px;
 
       background: rgba(25,25,28,.96);
+
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
 
@@ -61,26 +61,26 @@
       pointer-events: auto;
     }
 
+    /* EMS / CSF */
     #risksSourcePanel .risksSources {
       display: flex;
       align-items: center;
-      justify-content: center;
       gap: 5px;
+      width: 100%;
     }
 
     #risksSourcePanel .riskSource {
       flex: 1;
 
       height: 30px;
-      min-width: 0;
 
-      padding: 0 7px;
+      padding: 0;
 
       border: 1px solid rgba(255,255,255,.08);
       border-radius: 7px;
 
       background: rgba(255,255,255,.045);
-      color: rgba(255,255,255,.72);
+      color: rgba(255,255,255,.68);
 
       font-family: inherit;
       font-size: 11px;
@@ -95,24 +95,24 @@
         transform .1s ease;
     }
 
-    #risksSourcePanel .riskSource:active {
-      transform: scale(.96);
-    }
-
     #risksSourcePanel .riskSource.active {
       background: rgba(255,255,255,.13);
       border-color: rgba(255,255,255,.17);
       color: #fff;
     }
 
-    /* =====================================================
-       Нижний переключатель
-       ===================================================== */
+    #risksSourcePanel .riskSource:active {
+      transform: scale(.96);
+    }
+
+    /* =========================================================
+       Переключатель
+       ========================================================= */
 
     #risksSourcePanel .risksToggleRow {
       display: flex;
-      align-items: center;
       justify-content: center;
+      align-items: center;
 
       margin-top: 8px;
       padding-top: 7px;
@@ -123,8 +123,10 @@
     #risksSourcePanel .risksToggle {
       position: relative;
 
-      width: 54px;
-      height: 24px;
+      width: 42px;
+      height: 22px;
+
+      flex-shrink: 0;
 
       border-radius: 999px;
 
@@ -133,17 +135,21 @@
 
       cursor: pointer;
 
-      transition: background .18s ease;
+      transition:
+        background .18s ease,
+        border-color .18s ease;
     }
 
-    #risksSourcePanel .risksToggleKnob {
+    #risksSourcePanel .risksToggle::after {
+      content: "";
+
       position: absolute;
 
-      top: 3px;
-      left: 3px;
+      width: 16px;
+      height: 16px;
 
-      width: 18px;
-      height: 18px;
+      top: 2px;
+      left: 2px;
 
       border-radius: 50%;
 
@@ -156,38 +162,19 @@
         background .18s ease;
     }
 
-    #risksSourcePanel .risksToggle.csF {
-      background: rgba(255,255,255,.16);
+    /* Включено */
+    #risksSourcePanel .risksToggle.on {
+      background: rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.14);
     }
 
-    #risksSourcePanel .risksToggle.csF .risksToggleKnob {
-      transform: translateX(30px);
+    #risksSourcePanel .risksToggle.on::after {
+      transform: translateX(20px);
     }
 
-    #risksSourcePanel .risksToggleLabels {
-      display: flex;
-      align-items: center;
-
-      margin-left: 7px;
-
-      font-size: 9px;
-      font-weight: 600;
-
-      line-height: 1;
-    }
-
-    #risksSourcePanel .risksToggleLabel {
-      color: rgba(255,255,255,.38);
-      transition: color .16s ease;
-    }
-
-    #risksSourcePanel .risksToggleLabel.active {
-      color: rgba(255,255,255,.85);
-    }
-
-    /* =====================================================
+    /* =========================================================
        Светлая тема
-       ===================================================== */
+       ========================================================= */
 
     body.light #risksSourcePanel,
     body[data-theme="light"] #risksSourcePanel {
@@ -224,35 +211,18 @@
       border-color: rgba(0,0,0,.07);
     }
 
-    body.light #risksSourcePanel .risksToggle.csF,
-    body[data-theme="light"] #risksSourcePanel .risksToggle.csF {
-      background: rgba(0,0,0,.15);
+    body.light #risksSourcePanel .risksToggle.on,
+    body[data-theme="light"] #risksSourcePanel .risksToggle.on {
+      background: rgba(0,0,0,.18);
     }
 
-    body.light #risksSourcePanel .risksToggleLabel,
-    body[data-theme="light"] #risksSourcePanel .risksToggleLabel {
-      color: rgba(0,0,0,.35);
-    }
-
-    body.light #risksSourcePanel .risksToggleLabel.active,
-    body[data-theme="light"] #risksSourcePanel .risksToggleLabel.active {
-      color: rgba(0,0,0,.75);
-    }
-
-    /* =====================================================
+    /* =========================================================
        Телефон
-       ===================================================== */
+       ========================================================= */
 
     @media (max-width: 480px) {
       #risksSourcePanel {
-        width: 145px;
-        padding: 7px;
-        border-radius: 10px;
-      }
-
-      #risksSourcePanel .riskSource {
-        height: 29px;
-        font-size: 10.5px;
+        width: 150px;
       }
     }
   `;
@@ -281,88 +251,64 @@
       </div>
 
       <div class="risksToggleRow">
-        <div class="risksToggle" role="switch" aria-label="Источник рисков">
-          <div class="risksToggleKnob"></div>
-        </div>
-
-        <div class="risksToggleLabels">
-          <span class="risksToggleLabel active" data-label="EMS">EMS</span>
-          <span style="margin:0 3px;color:rgba(255,255,255,.25)">/</span>
-          <span class="risksToggleLabel" data-label="CSF">CSF</span>
-        </div>
+        <div
+          class="risksToggle on"
+          role="switch"
+          aria-checked="true"
+        ></div>
       </div>
     `;
 
     document.body.appendChild(panel);
 
-    const sourceButtons = panel.querySelectorAll(".riskSource");
-
-    sourceButtons.forEach(button => {
+    /* Выбор EMS / CSF */
+    panel.querySelectorAll(".riskSource").forEach(button => {
       button.addEventListener("click", event => {
         event.stopPropagation();
 
-        setSource(button.dataset.source);
+        currentSource = button.dataset.source;
 
-        // После выбора сразу закрываем панель
+        panel.querySelectorAll(".riskSource").forEach(btn => {
+          btn.classList.toggle(
+            "active",
+            btn.dataset.source === currentSource
+          );
+        });
+
+        /*
+         * Здесь позже подключается загрузка
+         * соответствующих данных EMS / CSF.
+         */
+
         closePanel();
       });
     });
 
+    /* Переключатель включения / выключения */
     const toggle = panel.querySelector(".risksToggle");
 
     toggle.addEventListener("click", event => {
       event.stopPropagation();
 
-      setSource(currentSource === "EMS" ? "CSF" : "EMS");
+      const enabled = toggle.classList.toggle("on");
+
+      toggle.setAttribute(
+        "aria-checked",
+        enabled ? "true" : "false"
+      );
+
+      /*
+       * Здесь позже:
+       *
+       * enabled === true
+       *  → показывать риски
+       *
+       * enabled === false
+       *  → скрывать риски
+       */
     });
 
     return panel;
-  }
-
-  /* =========================================================
-     Источник
-     ========================================================= */
-
-  function setSource(source) {
-    currentSource = source === "CSF" ? "CSF" : "EMS";
-
-    if (!panel) return;
-
-    panel.querySelectorAll(".riskSource").forEach(button => {
-      button.classList.toggle(
-        "active",
-        button.dataset.source === currentSource
-      );
-    });
-
-    const toggle = panel.querySelector(".risksToggle");
-
-    if (toggle) {
-      toggle.classList.toggle("csF", currentSource === "CSF");
-      toggle.setAttribute(
-        "aria-checked",
-        currentSource === "CSF" ? "true" : "false"
-      );
-    }
-
-    panel.querySelectorAll(".risksToggleLabel").forEach(label => {
-      label.classList.toggle(
-        "active",
-        label.dataset.label === currentSource
-      );
-    });
-
-    /*
-      Здесь позже можно подключить реальные данные:
-
-      if (currentSource === "EMS") {
-        // загрузка EMS
-      }
-
-      if (currentSource === "CSF") {
-        // загрузка CSF
-      }
-    */
   }
 
   /* =========================================================
@@ -373,7 +319,6 @@
     if (!panel || !panel.classList.contains("open")) return;
 
     const rect = warningButton.getBoundingClientRect();
-
     const gap = 6;
 
     let left = rect.left;
@@ -381,17 +326,14 @@
 
     const panelRect = panel.getBoundingClientRect();
 
-    // Не даём панели уйти вправо
     if (left + panelRect.width > window.innerWidth - 8) {
       left = window.innerWidth - panelRect.width - 8;
     }
 
-    // Не даём панели уйти влево
     if (left < 8) {
       left = 8;
     }
 
-    // Если снизу мало места — показываем сверху кнопки
     if (top + panelRect.height > window.innerHeight - 8) {
       top = rect.top - panelRect.height - gap;
     }
@@ -405,7 +347,7 @@
   }
 
   /* =========================================================
-     Открытие / закрытие
+     Открытие
      ========================================================= */
 
   function openPanel() {
@@ -413,12 +355,14 @@
 
     panel.classList.add("open");
 
-    // Сначала ставим примерно на место,
-    // затем уточняем после появления
     positionPanel();
 
     requestAnimationFrame(positionPanel);
   }
+
+  /* =========================================================
+     Закрытие
+     ========================================================= */
 
   function closePanel() {
     if (!panel) return;
@@ -435,7 +379,7 @@
   }
 
   /* =========================================================
-     Клик по «Предупр.»
+     Кнопка «Предупр.»
      ========================================================= */
 
   warningButton.addEventListener(
@@ -467,7 +411,7 @@
   });
 
   /* =========================================================
-     Закрытие при закрытии главного меню
+     Закрытие вместе с главным меню
      ========================================================= */
 
   const observer = new MutationObserver(() => {
@@ -482,7 +426,7 @@
   });
 
   /* =========================================================
-     Перемещение / изменение размера окна
+     Адаптация к экрану
      ========================================================= */
 
   window.addEventListener("resize", positionPanel);
@@ -503,14 +447,28 @@
     close: closePanel,
     toggle: togglePanel,
 
-    setSource: source => {
-      setSource(source);
+    setSource(source) {
+      createPanel();
+
+      currentSource =
+        source === "CSF" ? "CSF" : "EMS";
+
+      panel.querySelectorAll(".riskSource").forEach(button => {
+        button.classList.toggle(
+          "active",
+          button.dataset.source === currentSource
+        );
+      });
     },
 
-    getSource: () => currentSource,
+    getSource() {
+      return currentSource;
+    },
 
-    isOpen: () =>
-      !!panel && panel.classList.contains("open")
+    isOpen() {
+      return !!panel &&
+        panel.classList.contains("open");
+    }
   };
 
 })();
