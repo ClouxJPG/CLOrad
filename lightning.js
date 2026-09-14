@@ -11,8 +11,10 @@
 
   const MAX_AGE = 15 * 60 * 1000;
   const UPDATE_INTERVAL = 250;
-  const WAVE_DURATION = 1000;
+
+  // Волна появляется только у действительно нового удара
   const WAVE_NEW_AGE = 2500;
+  const WAVE_DURATION = 1000;
 
   const strikes = new Map();
 
@@ -38,7 +40,9 @@
 
   function createLayer() {
 
-    if (layer) return layer;
+    if (layer) {
+      return layer;
+    }
 
     layer = L.layerGroup();
 
@@ -48,7 +52,7 @@
 
   /*
   ============================================================
-  ЦВЕТ МОЛНИИ
+  ЦВЕТ
   ============================================================
   */
 
@@ -113,7 +117,7 @@
 
   /*
   ============================================================
-  ОБВОДКА
+  ОБВОДКА МОЛНИЙ
   ============================================================
   */
 
@@ -239,6 +243,7 @@
           strike.lon
         ],
         {
+
           radius:size,
 
           color:stroke.color,
@@ -252,6 +257,7 @@
           fillOpacity:1,
 
           interactive:false
+
         }
       );
 
@@ -345,17 +351,13 @@
 
 
     /*
-    ВАЖНО:
-    Волна создаётся только если
-    удар действительно свежий.
-
-    При подключении сервер может
-    прислать историю за несколько минут,
-    и на неё волны не запускаются.
+    Волна только для свежего удара.
+    История при подключении волн не получает.
     */
 
     const strikeAge =
-      Date.now() - time;
+      Date.now() -
+      time;
 
     if (
       strikeAge >= 0 &&
@@ -372,7 +374,7 @@
 
   /*
   ============================================================
-  АНИМАЦИЯ ВОЛН
+  АНИМАЦИЯ ВОЛНЫ
   ============================================================
   */
 
@@ -550,7 +552,7 @@
 
   /*
   ============================================================
-  ОБНОВЛЕНИЕ МОЛНИЙ
+  ОБНОВЛЕНИЕ
   ============================================================
   */
 
@@ -570,11 +572,6 @@
           now -
           strike.time;
 
-
-        /*
-        Старше 15 минут —
-        удаляем.
-        */
 
         if (
           age >= MAX_AGE
@@ -1052,11 +1049,6 @@
     }
 
 
-    /*
-    Защита от некорректного
-    будущего timestamp.
-    */
-
     if (
       time >
       Date.now() + 5000
@@ -1133,29 +1125,13 @@
   ============================================================
   ЛЕГЕНДА
   ============================================================
+  ВАЖНО:
+  НИГДЕ НИЖЕ НЕ МЕНЯЕТСЯ POSITION ЛЕГЕНДЫ.
+  Мы используем уже существующий .legend.
+  ============================================================
   */
 
   function setupLegend() {
-
-    /*
-    Удаляем нижнюю панель,
-    если она осталась от старой версии.
-    */
-
-    const oldBottom =
-      document.getElementById(
-        "cloradLightningLegend"
-      );
-
-    if (oldBottom) {
-      oldBottom.remove();
-    }
-
-
-    /*
-    Ищем существующую легенду
-    справа по центру.
-    */
 
     const legend =
       document.querySelector(
@@ -1168,7 +1144,8 @@
 
 
     /*
-    Не создаём повторно.
+    Если новая версия уже была создана,
+    повторно ничего не добавляем.
     */
 
     if (
@@ -1187,7 +1164,7 @@
 
     /*
     ==========================================================
-    КНОПКИ
+    КНОПКИ ОЯ / МОЛНИЯ
     ==========================================================
     */
 
@@ -1244,8 +1221,10 @@
 
 
     /*
-    Вставляем внутрь существующей
-    легенды, а не создаём новую.
+    Вставляем кнопки в существующую
+    легенду.
+
+    НИКАКОГО position/fixed/left/bottom.
     */
 
     const closeButton =
@@ -1276,7 +1255,7 @@
 
     /*
     ==========================================================
-    ШКАЛА МОЛНИЙ
+    ЛЕГЕНДА МОЛНИЙ
     ==========================================================
     */
 
@@ -1294,130 +1273,146 @@
       <div class="cloradLightningScale">
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ff0000;
-              --ls:6px;
               --lb:#8f0000;
+              --ls:6px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             10–15
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ff3500;
-              --ls:6.5px;
               --lb:#b51d00;
+              --ls:6.5px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             8–10
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ff6500;
-              --ls:7px;
               --lb:#c84300;
+              --ls:7px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             6–8
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ff9200;
-              --ls:7.5px;
               --lb:#d66300;
+              --ls:7.5px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             5–6
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ffb000;
-              --ls:8px;
               --lb:#df7d00;
+              --ls:8px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             4–5
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ffd000;
-              --ls:8.5px;
               --lb:#e0a500;
+              --ls:8.5px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             3–4
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#ffe300;
-              --ls:9px;
               --lb:#ddca00;
+              --ls:9px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             2–3
           </span>
+
         </div>
 
 
         <div class="cloradLightningScaleItem">
+
           <span
             class="cloradLightningDot"
             style="
               --lc:#fff000;
-              --ls:10px;
               --lb:#e2d500;
+              --ls:10px;
             "
           ></span>
 
           <span class="cloradLightningTime">
             1–2
           </span>
+
         </div>
 
 
@@ -1430,8 +1425,8 @@
             "
             style="
               --lc:#fff900;
-              --ls:11px;
               --lb:#ffffff;
+              --ls:11px;
             "
           ></span>
 
@@ -1442,6 +1437,7 @@
         </div>
 
       </div>
+
 
       <div class="cloradLightningUnits">
         минуты
@@ -1457,7 +1453,7 @@
 
     /*
     ==========================================================
-    CSS
+    CSS ТОЛЬКО ДЛЯ ДОБАВЛЕННЫХ ЭЛЕМЕНТОВ
     ==========================================================
     */
 
@@ -1465,7 +1461,6 @@
       document.createElement(
         "style"
       );
-
 
     style.id =
       "cloradLegendLightningStyle";
@@ -1475,20 +1470,7 @@
 
       /*
       ========================================================
-      EXISTING LEGEND
-      ========================================================
-      */
-
-      .legend.cloradLegendReady{
-
-        position:relative;
-
-      }
-
-
-      /*
-      ========================================================
-      BUTTONS
+      КНОПКИ
       ========================================================
       */
 
@@ -1522,7 +1504,8 @@
 
         -webkit-appearance:none;
 
-        border:1px solid
+        border:
+          1px solid
           rgba(255,255,255,.12);
 
         background:
@@ -1590,7 +1573,7 @@
 
       /*
       ========================================================
-      LIGHTNING VIEW
+      ЛЕГЕНДА МОЛНИЙ
       ========================================================
       */
 
@@ -1626,7 +1609,7 @@
 
       /*
       ========================================================
-      SCALE
+      ШКАЛА
       ========================================================
       */
 
@@ -1693,8 +1676,7 @@
 
 
       /*
-      Самая свежая точка —
-      белая обводка + внешний ореол.
+      Самая свежая молния.
       */
 
       .cloradLightningDot.latest{
@@ -1842,7 +1824,7 @@
 
     /*
     ==========================================================
-    ПЕРЕКЛЮЧЕНИЕ ОЯ / МОЛНИЯ
+    ПЕРЕКЛЮЧЕНИЕ
     ==========================================================
     */
 
@@ -1898,11 +1880,6 @@
     lightningButton.onclick =
       showLightning;
 
-
-    /*
-    По умолчанию открывается
-    легенда ОЯ.
-    */
 
     showOya();
 
@@ -2097,9 +2074,7 @@
 
       strikes.clear();
 
-
       activeWaves.clear();
-
 
       if (layer) {
 
@@ -2119,7 +2094,6 @@
   */
 
   createLayer();
-
 
   window.CLOradLightningLayer =
     layer;
