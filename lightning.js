@@ -9,15 +9,26 @@
   Источник:
     LightningMaps / Blitzortung live2
 
+  Возраст:
+    0–1 мин
+    1–2 мин
+    2–3 мин
+    3–4 мин
+    4–5 мин
+    5–6 мин
+    6–8 мин
+    8–10 мин
+    10–15 мин
+
   Особенности:
-    • реальные молнии в реальном времени
-    • цвет меняется с возрастом
+    • плавный переход цвета
     • размер уменьшается с возрастом
-    • красная обводка у недавних молний
-    • волна только у абсолютно свежего удара
-    • волна живёт около 1 секунды
+    • цветная обводка соответствует возрасту
+    • красно-оранжевая обводка у свежих молний
+    • волна только у нового удара
+    • волна длится 1 секунду
     • старые молнии удаляются
-    • минимальная нагрузка на карту
+    • оптимизированная перерисовка
     • карта визуально не изменяется
   ============================================================
   */
@@ -29,16 +40,8 @@
   const MAX_AGE =
     15 * 60 * 1000;
 
-  /*
-  Как часто обновляем внешний вид
-  существующих молний.
-
-  250 мс достаточно плавно,
-  но намного легче для карты,
-  чем обновление 60 раз/сек.
-  */
-
-  const UPDATE_INTERVAL = 250;
+  const UPDATE_INTERVAL =
+    250;
 
 
   /*
@@ -67,7 +70,7 @@
 
   /*
   ============================================================
-  СОЗДАЁМ СЛОЙ
+  LAYER
   ============================================================
   */
 
@@ -86,7 +89,7 @@
 
   /*
   ============================================================
-  ЦВЕТ ПО ВОЗРАСТУ
+  ЦВЕТ
   ============================================================
   */
 
@@ -95,18 +98,6 @@
     const minute =
       age / 60000;
 
-
-    /*
-    Плавный переход:
-
-      0 мин  — жёлтый
-      1 мин  — жёлтый
-      3 мин  — жёлто-оранжевый
-      5 мин  — оранжевый
-      8 мин  — оранжево-красный
-      10 мин — красный
-      15 мин — красный
-    */
 
     const stops = [
 
@@ -224,13 +215,13 @@
           );
 
 
-        return `
-          rgb(
-            ${r},
-            ${g},
-            ${blue}
-          )
-        `.replace(/\s+/g, " ");
+        return (
+          "rgb(" +
+          r + "," +
+          g + "," +
+          blue +
+          ")"
+        );
 
       }
 
@@ -238,6 +229,122 @@
 
 
     return "rgb(255,0,0)";
+  }
+
+
+  /*
+  ============================================================
+  ОБВОДКА
+  ============================================================
+  */
+
+  function getLightningStroke(age) {
+
+    const minute =
+      age / 60000;
+
+    /*
+    Очень свежие:
+    красно-оранжевая обводка.
+    */
+
+    if (
+      minute < 1
+    ) {
+
+      return {
+        color:"#ff3b00",
+        weight:2.2,
+        opacity:1
+      };
+
+    }
+
+
+    /*
+    1–2 минуты:
+    яркая красная.
+    */
+
+    if (
+      minute < 2
+    ) {
+
+      return {
+        color:"#ff4a00",
+        weight:2,
+        opacity:.98
+      };
+
+    }
+
+
+    /*
+    2–3 минуты:
+    оранжево-красная.
+    */
+
+    if (
+      minute < 3
+    ) {
+
+      return {
+        color:"#ff6500",
+        weight:1.8,
+        opacity:.96
+      };
+
+    }
+
+
+    /*
+    3–4:
+    оранжевая.
+    */
+
+    if (
+      minute < 4
+    ) {
+
+      return {
+        color:"#ff8500",
+        weight:1.6,
+        opacity:.94
+      };
+
+    }
+
+
+    /*
+    4–5:
+    жёлто-оранжевая.
+    */
+
+    if (
+      minute < 5
+    ) {
+
+      return {
+        color:"#ff9d00",
+        weight:1.5,
+        opacity:.92
+      };
+
+    }
+
+
+    /*
+    После 5 минут
+    обводка продолжает
+    плавно следовать цвету.
+    */
+
+    return {
+      color:getLightningColor(age),
+      weight:1.2,
+      opacity:.9
+    };
+
   }
 
 
@@ -295,71 +402,13 @@
 
   /*
   ============================================================
-  КРАСНАЯ ОБВОДКА
-  ============================================================
-
-  Красная обводка только у недавних молний.
-  */
-
-  function getLightningStroke(age) {
-
-    const minute =
-      age / 60000;
-
-
-    /*
-    Первые 3 минуты —
-    заметная красная обводка.
-    */
-
-    if (minute < 3) {
-
-      return {
-        color:"#ff2020",
-        weight:2,
-        opacity:.95
-      };
-
-    }
-
-
-    /*
-    3–5 минут —
-    тоньше и менее заметно.
-    */
-
-    if (minute < 5) {
-
-      return {
-        color:"#ff3b24",
-        weight:1.4,
-        opacity:.8
-      };
-
-    }
-
-
-    /*
-    После 5 минут
-    обычная обводка.
-    */
-
-    return {
-      color:getLightningColor(age),
-      weight:1,
-      opacity:.9
-    };
-
-  }
-
-
-  /*
-  ============================================================
   СОЗДАНИЕ ТОЧКИ
   ============================================================
   */
 
-  function createStrikeMarker(strike) {
+  function createStrikeMarker(
+    strike
+  ) {
 
     const age =
       Date.now() -
@@ -367,7 +416,9 @@
 
 
     const size =
-      getLightningSize(age);
+      getLightningSize(
+        age
+      );
 
 
     if (!size) {
@@ -375,8 +426,16 @@
     }
 
 
+    const color =
+      getLightningColor(
+        age
+      );
+
+
     const stroke =
-      getLightningStroke(age);
+      getLightningStroke(
+        age
+      );
 
 
     const marker =
@@ -399,7 +458,7 @@
             stroke.opacity,
 
           fillColor:
-            getLightningColor(age),
+            color,
 
           fillOpacity:1,
 
@@ -413,29 +472,51 @@
       strike.id;
 
 
+    /*
+    Запоминаем параметры,
+    чтобы не перерисовывать
+    точку без необходимости.
+    */
+
+    strike.lastSize =
+      size;
+
+    strike.lastColor =
+      color;
+
+    strike.lastStroke =
+      stroke;
+
+
     return marker;
   }
 
 
   /*
   ============================================================
-  ДОБАВЛЕНИЕ МОЛНИИ
+  ДОБАВЛЕНИЕ STRIKE
   ============================================================
   */
 
-  function addStrike(data) {
+  function addStrike(
+    data
+  ) {
 
     if (
       !data ||
-      typeof data.lat !== "number" ||
-      typeof data.lon !== "number"
+      typeof data.lat !==
+        "number" ||
+      typeof data.lon !==
+        "number"
     ) {
       return;
     }
 
 
     const time =
-      Number.isFinite(data.time)
+      Number.isFinite(
+        data.time
+      )
         ? data.time
         : Date.now();
 
@@ -448,8 +529,8 @@
 
 
     /*
-    Не добавляем один и тот же удар
-    повторно.
+    Не добавляем
+    дубликаты.
     */
 
     if (
@@ -471,13 +552,13 @@
 
       marker:null,
 
+      wave:null,
+
       lastSize:null,
 
       lastColor:null,
 
-      lastStroke:null,
-
-      wave:null
+      lastStroke:null
 
     };
 
@@ -489,7 +570,7 @@
 
 
     /*
-    Создаём основную точку.
+    Основная точка.
     */
 
     const marker =
@@ -511,10 +592,7 @@
 
 
     /*
-    Волна запускается
-    только один раз —
-    непосредственно при
-    получении нового удара.
+    И запускаем волну.
     */
 
     createStrikeWave(
@@ -530,7 +608,9 @@
   ============================================================
   */
 
-  function createStrikeWave(strike) {
+  function createStrikeWave(
+    strike
+  ) {
 
     if (
       !enabled ||
@@ -539,12 +619,6 @@
       return;
     }
 
-
-    /*
-    Отдельный круг.
-    Он не заменяет основную
-    молнию.
-    */
 
     const wave =
       L.circleMarker(
@@ -579,10 +653,6 @@
     );
 
 
-    /*
-    Анимация ровно около 1 секунды.
-    */
-
     const start =
       performance.now();
 
@@ -591,12 +661,9 @@
       1000;
 
 
-    function animateWave(now) {
-
-      /*
-      Если слой выключили —
-      сразу прекращаем.
-      */
+    function animateWave(
+      now
+    ) {
 
       if (
         !enabled ||
@@ -605,7 +672,9 @@
 
         if (
           layer &&
-          layer.hasLayer(wave)
+          layer.hasLayer(
+            wave
+          )
         ) {
 
           layer.removeLayer(
@@ -615,7 +684,6 @@
         }
 
         return;
-
       }
 
 
@@ -628,7 +696,9 @@
 
 
       /*
-      Плавное расширение.
+      Ease-out:
+      быстро стартует,
+      затем плавно затухает.
       */
 
       const eased =
@@ -639,23 +709,13 @@
         );
 
 
-      /*
-      Круг идёт от точки
-      наружу.
-      */
-
       const radius =
         2 +
         eased * 24;
 
 
-      /*
-      Постепенно исчезает.
-      */
-
       const opacity =
-        1 -
-        eased;
+        1 - eased;
 
 
       wave.setRadius(
@@ -697,6 +757,7 @@
 
         }
 
+
         strike.wave =
           null;
 
@@ -714,7 +775,7 @@
 
   /*
   ============================================================
-  ОБНОВЛЕНИЕ МОЛНИЙ
+  ОБНОВЛЕНИЕ ТОЧЕК
   ============================================================
   */
 
@@ -738,7 +799,7 @@
 
 
         /*
-        Удаляем старые.
+        Удаляем после 15 минут.
         */
 
         if (
@@ -777,7 +838,6 @@
             id
           );
 
-
           return;
         }
 
@@ -788,12 +848,6 @@
           return;
         }
 
-
-        /*
-        Не трогаем маркер,
-        если его визуальные
-        параметры ещё не изменились.
-        */
 
         const size =
           getLightningSize(
@@ -813,61 +867,66 @@
           );
 
 
-        const sizeChanged =
-          strike.lastSize !== size;
+        /*
+        Обновляем только тогда,
+        когда визуальные параметры
+        действительно изменились.
+        */
 
+        const changed =
 
-        const colorChanged =
-          strike.lastColor !== color;
+          strike.lastSize !==
+            size ||
 
+          strike.lastColor !==
+            color ||
 
-        const strokeChanged =
           !strike.lastStroke ||
+
           strike.lastStroke.color !==
             stroke.color ||
+
           strike.lastStroke.weight !==
             stroke.weight ||
+
           strike.lastStroke.opacity !==
             stroke.opacity;
 
 
-        if (
-          sizeChanged ||
-          colorChanged ||
-          strokeChanged
-        ) {
-
-          strike.marker.setStyle({
-
-            radius:size,
-
-            color:
-              stroke.color,
-
-            weight:
-              stroke.weight,
-
-            opacity:
-              stroke.opacity,
-
-            fillColor:
-              color,
-
-            fillOpacity:1
-
-          });
-
-
-          strike.lastSize =
-            size;
-
-          strike.lastColor =
-            color;
-
-          strike.lastStroke =
-            stroke;
-
+        if (!changed) {
+          return;
         }
+
+
+        strike.marker.setStyle({
+
+          radius:size,
+
+          color:
+            stroke.color,
+
+          weight:
+            stroke.weight,
+
+          opacity:
+            stroke.opacity,
+
+          fillColor:
+            color,
+
+          fillOpacity:1
+
+        });
+
+
+        strike.lastSize =
+          size;
+
+        strike.lastColor =
+          color;
+
+        strike.lastStroke =
+          stroke;
 
       }
     );
@@ -877,7 +936,7 @@
 
   /*
   ============================================================
-  ЗАПУСК ОБНОВЛЕНИЯ
+  UPDATE LOOP
   ============================================================
   */
 
@@ -915,7 +974,7 @@
 
   /*
   ============================================================
-  LIVE2 — CONNECT
+  WEBSOCKET
   ============================================================
   */
 
@@ -926,7 +985,7 @@
     if (
       !enabled ||
       myGeneration !==
-      generation
+        generation
     ) {
       return;
     }
@@ -956,7 +1015,7 @@
         if (
           !enabled ||
           myGeneration !==
-          generation
+            generation
         ) {
 
           try {
@@ -979,7 +1038,7 @@
         if (
           !enabled ||
           myGeneration !==
-          generation
+            generation
         ) {
           return;
         }
@@ -993,14 +1052,7 @@
 
 
     socket.onerror =
-      () => {
-
-        /*
-        onclose сам выполнит
-        переподключение.
-        */
-
-      };
+      () => {};
 
 
     socket.onclose =
@@ -1009,7 +1061,7 @@
         if (
           !enabled ||
           myGeneration !==
-          generation
+            generation
         ) {
           return;
         }
@@ -1035,7 +1087,7 @@
     if (
       !socket ||
       socket.readyState !==
-      WebSocket.OPEN ||
+        WebSocket.OPEN ||
       !window.map
     ) {
       return;
@@ -1049,11 +1101,14 @@
     const north =
       bounds.getNorth();
 
+
     const south =
       bounds.getSouth();
 
+
     const east =
       bounds.getEast();
+
 
     const west =
       bounds.getWest();
@@ -1116,15 +1171,17 @@
 
   /*
   ============================================================
-  ОБРАБОТКА СООБЩЕНИЙ
+  MESSAGE
   ============================================================
   */
 
-  function handleMessage(raw) {
+  function handleMessage(
+    raw
+  ) {
 
     if (
       typeof raw !==
-      "string"
+        "string"
     ) {
       return;
     }
@@ -1147,14 +1204,6 @@
     }
 
 
-    /*
-    Формат:
-
-      {
-        strokes:[...]
-      }
-    */
-
     if (
       Array.isArray(
         data.strokes
@@ -1175,17 +1224,13 @@
     }
 
 
-    /*
-    Иногда приходит массив
-    сообщений.
-    */
-
     if (
       Array.isArray(data)
     ) {
 
       for (
-        const item of data
+        const item of
+        data
       ) {
 
         if (
@@ -1212,10 +1257,6 @@
 
     }
 
-
-    /*
-    Прямой strike.
-    */
 
     if (
       typeof data.lat ===
@@ -1278,12 +1319,6 @@
       );
 
 
-    /*
-    live2 может отдавать
-    timestamp в секундах
-    или миллисекундах.
-    */
-
     if (
       Number.isFinite(time)
     ) {
@@ -1305,12 +1340,6 @@
     }
 
 
-    /*
-    Если сервер прислал
-    слишком старое время,
-    не даём отрицательный возраст.
-    */
-
     if (
       time >
       Date.now() + 5000
@@ -1321,6 +1350,29 @@
 
     }
 
+
+    parseAndAddStrike(
+      stroke,
+      lat,
+      lon,
+      time
+    );
+
+  }
+
+
+  /*
+  ============================================================
+  ДОБАВЛЕНИЕ ПОСЛЕ PARSE
+  ============================================================
+  */
+
+  function parseAndAddStrike(
+    stroke,
+    lat,
+    lon,
+    time
+  ) {
 
     addStrike({
 
@@ -1353,7 +1405,7 @@
     if (
       !enabled ||
       myGeneration !==
-      generation
+        generation
     ) {
       return;
     }
@@ -1371,7 +1423,7 @@
           if (
             enabled &&
             myGeneration ===
-            generation
+              generation
           ) {
 
             connect(
@@ -1415,20 +1467,36 @@
 
 
     /*
-    В легенде каждый цвет
-    имеет собственный возраст.
+    Именно кнопки легенды:
+      ОЯ
+      SVG-молния
     */
 
     legend.innerHTML = `
 
-      <div class="cloradLightningLegendTitle">
+      <div
+        class="cloradLightningLegendTabs"
+      >
 
-        <span class="cloradLightningIcon">
+        <button
+          type="button"
+          class="cloradLegendTab cloradOyaLegendTab"
+        >
+          ОЯ
+        </button>
+
+
+        <button
+          type="button"
+          class="cloradLegendTab cloradLightningLegendTab active"
+          aria-label="Молнии"
+        >
 
           <svg
             viewBox="0 0 32 48"
             aria-hidden="true"
           >
+
             <path
               d="
                 M18 1
@@ -1441,170 +1509,175 @@
               "
               fill="currentColor"
             />
+
           </svg>
 
-        </span>
-
-        <span>Молнии</span>
+        </button>
 
       </div>
 
 
-      <div class="cloradLightningScale">
+      <div
+        class="cloradLightningLegendContent"
+      >
+
+        <div
+          class="cloradLightningScale"
+        >
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ff0000;
+                --ls:6px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              10–15 мин
+            </span>
+
+          </div>
 
 
-        <div class="cloradLightningScaleItem">
+          <div class="cloradLightningScaleItem">
 
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ff0000;
-              --ls:7px;
-            "
-          ></span>
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ff3500;
+                --ls:6.5px;
+              "
+            ></span>
 
-          <span class="cloradLightningTime">
-            10–15 мин
-          </span>
+            <span class="cloradLightningTime">
+              8–10 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ff6500;
+                --ls:7px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              6–8 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ff9200;
+                --ls:7.5px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              5–6 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ffb000;
+                --ls:8px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              4–5 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ffd000;
+                --ls:8.5px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              3–4 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#ffe300;
+                --ls:9px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              2–3 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot"
+              style="
+                --lc:#fff000;
+                --ls:10px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              1–2 мин
+            </span>
+
+          </div>
+
+
+          <div class="cloradLightningScaleItem">
+
+            <span
+              class="cloradLightningDot latest"
+              style="
+                --lc:#fff900;
+                --ls:11px;
+              "
+            ></span>
+
+            <span class="cloradLightningTime">
+              0–1 мин
+            </span>
+
+          </div>
 
         </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ff3500;
-              --ls:7.5px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            8–10 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ff6500;
-              --ls:8px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            6–8 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ff9200;
-              --ls:8.5px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            5–6 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ffb000;
-              --ls:9px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            4–5 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ffd000;
-              --ls:10px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            3–4 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#ffe300;
-              --ls:11px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            2–3 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot"
-            style="
-              --lc:#fff000;
-              --ls:12px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            1–2 мин
-          </span>
-
-        </div>
-
-
-        <div class="cloradLightningScaleItem">
-
-          <span
-            class="cloradLightningDot latest"
-            style="
-              --lc:#fff900;
-              --ls:13px;
-            "
-          ></span>
-
-          <span class="cloradLightningTime">
-            0–1 мин
-          </span>
-
-        </div>
-
 
       </div>
 
@@ -1645,10 +1718,10 @@
 
         width:470px;
 
-        padding:
-          9px 13px 8px;
-
         box-sizing:border-box;
+
+        padding:
+          6px 10px 9px;
 
         border-radius:10px;
 
@@ -1671,11 +1744,12 @@
 
 
       /*
-      Заголовок
+      ==========================================================
+      КНОПКИ ОЯ / МОЛНИЯ
+      ==========================================================
       */
 
-      #cloradLightningLegend
-      .cloradLightningLegendTitle{
+      .cloradLightningLegendTabs{
 
         display:flex;
 
@@ -1683,45 +1757,66 @@
 
         justify-content:center;
 
-        gap:8px;
+        gap:5px;
 
-        height:24px;
+        height:31px;
 
-        font-size:16px;
+        margin-bottom:5px;
+
+      }
+
+
+      .cloradLegendTab{
+
+        width:38px;
+
+        height:28px;
+
+        padding:0;
+
+        border:1px solid transparent;
+
+        border-radius:7px;
+
+        background:transparent;
+
+        color:#aeb7bd;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+        font-size:12px;
 
         font-weight:700;
 
-        margin-bottom:6px;
+        box-sizing:border-box;
+
+      }
+
+
+      .cloradLegendTab.active{
+
+        background:#263139;
+
+        border-color:#3e4a53;
+
+        color:#53e39b;
 
       }
 
 
       /*
-      SVG-молния
+      SVG молния
       */
 
-      .cloradLightningIcon{
+      .cloradLightningLegendTab svg{
 
-        width:16px;
+        width:12px;
 
-        height:22px;
-
-        display:flex;
-
-        align-items:center;
-
-        justify-content:center;
-
-        color:#fff;
-
-      }
-
-
-      .cloradLightningIcon svg{
-
-        width:15px;
-
-        height:22px;
+        height:19px;
 
         display:block;
 
@@ -1729,7 +1824,9 @@
 
 
       /*
-      Шкала
+      ==========================================================
+      ШКАЛА
+      ==========================================================
       */
 
       .cloradLightningScale{
@@ -1742,14 +1839,10 @@
 
         justify-content:space-between;
 
-        gap:2px;
+        gap:1px;
 
       }
 
-
-      /*
-      Один цвет + его время
-      */
 
       .cloradLightningScaleItem{
 
@@ -1757,7 +1850,7 @@
 
         min-width:0;
 
-        height:39px;
+        height:38px;
 
         display:flex;
 
@@ -1769,10 +1862,6 @@
 
       }
 
-
-      /*
-      Цветная точка
-      */
 
       .cloradLightningDot{
 
@@ -1793,63 +1882,55 @@
 
         border:
           1px solid
-          rgba(255,255,255,.18);
+          rgba(255,255,255,.22);
 
         box-sizing:border-box;
 
         box-shadow:
-          0 0 5px
+          0 0 4px
           var(--lc);
 
       }
 
 
-      /*
-      Самая свежая точка
-      */
-
       .cloradLightningDot.latest{
 
         border:
-          2px solid
+          1.5px solid
           rgba(255,255,255,.9);
 
         box-shadow:
 
-          0 0 0 2px
+          0 0 0 1.5px
           rgba(255,255,255,.18),
 
-          0 0 8px
-          rgba(255,235,0,.9);
+          0 0 7px
+          rgba(255,235,0,.85);
 
       }
 
 
-      /*
-      Время под каждым цветом
-      */
-
       .cloradLightningTime{
 
-        margin-top:6px;
+        margin-top:5px;
 
         white-space:nowrap;
 
         color:#dce2e6;
 
-        font-size:8px;
+        font-size:7.5px;
 
-        line-height:10px;
+        line-height:9px;
 
         font-weight:600;
-
-        letter-spacing:.05px;
 
       }
 
 
       /*
-      Светлая тема
+      ==========================================================
+      LIGHT
+      ==========================================================
       */
 
       body.light
@@ -1866,9 +1947,21 @@
 
 
       body.light
-      .cloradLightningIcon{
+      .cloradLegendTab{
 
-        color:#20272c;
+        color:#687177;
+
+      }
+
+
+      body.light
+      .cloradLegendTab.active{
+
+        background:#e1e6e9;
+
+        border-color:#c6ced3;
+
+        color:#168453;
 
       }
 
@@ -1882,7 +1975,9 @@
 
 
       /*
-      Телефон
+      ==========================================================
+      MOBILE
+      ==========================================================
       */
 
       @media(max-width:600px){
@@ -1895,26 +1990,25 @@
           bottom:12px;
 
           padding:
-            8px 7px 7px;
+            5px 5px 8px;
 
         }
 
 
-        #cloradLightningLegend
-        .cloradLightningLegendTitle{
+        .cloradLightningLegendTabs{
 
-          font-size:14px;
+          height:30px;
 
-          height:22px;
-
-          margin-bottom:5px;
+          margin-bottom:4px;
 
         }
 
 
-        .cloradLightningScale{
+        .cloradLegendTab{
 
-          gap:0;
+          width:36px;
+
+          height:27px;
 
         }
 
@@ -1948,7 +2042,7 @@
 
   /*
   ============================================================
-  VIEWPORT EVENTS
+  MAP EVENTS
   ============================================================
   */
 
@@ -2009,7 +2103,9 @@
   ============================================================
   */
 
-  function setEnabled(value) {
+  function setEnabled(
+    value
+  ) {
 
     enabled =
       !!value;
@@ -2029,9 +2125,8 @@
 
     if (!enabled) {
 
-      /*
-      Закрываем WebSocket.
-      */
+      stopUpdateLoop();
+
 
       if (socket) {
 
@@ -2045,10 +2140,6 @@
       socket =
         null;
 
-
-      /*
-      Убираем слой.
-      */
 
       if (
         layer &&
@@ -2070,10 +2161,6 @@
     }
 
 
-    /*
-    Возвращаем слой.
-    */
-
     createLayer();
 
 
@@ -2091,16 +2178,8 @@
     }
 
 
-    /*
-    Запускаем обновление.
-    */
-
     startUpdateLoop();
 
-
-    /*
-    Новое соединение.
-    */
 
     connect(
       myGeneration
@@ -2135,7 +2214,9 @@
     },
 
 
-    setEnabled(value) {
+    setEnabled(
+      value
+    ) {
 
       setEnabled(
         value
@@ -2169,7 +2250,7 @@
 
   /*
   ============================================================
-  EXPORT LAYER
+  EXPORT
   ============================================================
   */
 
@@ -2200,39 +2281,19 @@
     }
 
 
-    /*
-    Слой.
-    */
-
     layer.addTo(
       window.map
     );
 
 
-    /*
-    Легенда.
-    */
-
     createLightningLegend();
 
-
-    /*
-    Карта.
-    */
 
     setupMapEvents();
 
 
-    /*
-    Обновление.
-    */
-
     startUpdateLoop();
 
-
-    /*
-    WebSocket.
-    */
 
     const myGeneration =
       ++generation;
