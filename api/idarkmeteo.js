@@ -1,201 +1,210 @@
 export default async function handler(req) {
+  const UPSTREAM = "https://idarkmeteo.host/api/v1/";
+  const key = process.env.IDARKMETEO_KEY;
 
-  const upstream =
-    "https://idarkmeteo.host/api/v1/";
-
-  const key =
-    process.env.IDARKMETEO_KEY;
+  const responseHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-store, no-cache, must-revalidate"
+  };
 
   if (!key) {
     return new Response(
       "IDARKMETEO_KEY is not configured",
       {
-        status:500,
-        headers:{
-          "Content-Type":
-            "text/plain; charset=utf-8"
+        status: 500,
+        headers: {
+          ...responseHeaders,
+          "Content-Type": "text/plain; charset=utf-8"
         }
       }
     );
   }
 
-  const url =
-    new URL(req.url);
+  const url = new URL(req.url);
 
-  const originalPath =
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...responseHeaders,
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    });
+  }
+
+  const requestedPath =
     url.searchParams.get("path");
 
-  if (!originalPath) {
+  if (!requestedPath) {
     return new Response(
       "Missing path",
       {
-        status:400
+        status: 400,
+        headers: {
+          ...responseHeaders,
+          "Content-Type": "text/plain; charset=utf-8"
+        }
       }
     );
   }
 
   /*
-   * =========================================================
+   * ---------------------------------------------------------
    * SECURITY
-   * =========================================================
+   * ---------------------------------------------------------
    */
 
   if (
-    originalPath.startsWith("/") ||
-    originalPath.includes("..") ||
-    originalPath.includes("\\")
+    requestedPath.startsWith("/") ||
+    requestedPath.includes("..") ||
+    requestedPath.includes("\\") ||
+    requestedPath.includes("\0")
   ) {
     return new Response(
       "Invalid Idarkmeteo path",
       {
-        status:400
+        status: 400,
+        headers: {
+          ...responseHeaders,
+          "Content-Type": "text/plain; charset=utf-8"
+        }
       }
     );
   }
 
   /*
-   * =========================================================
-   * FRAMES JSON
-   * =========================================================
-   *
-   * Например:
+   * ---------------------------------------------------------
+   * Разрешённые metadata-файлы
    *
    * frames/rain/wide.json
-   *
+   * frames/phenomena/dmrl.json
+   * frames/cloudphase/swath.json
+   * frames/smoke/swath.json
+   * frames/satrain/coarse.json
+   * ---------------------------------------------------------
    */
 
-  const isFramesJson =
+  const isFrameIndex =
     /^frames\/[a-z]+\/[a-z0-9_-]+\.json$/i
-      .test(originalPath);
+      .test(requestedPath);
 
   /*
-   * =========================================================
+   * ---------------------------------------------------------
    * Обычные PNG
-   * =========================================================
+   * ---------------------------------------------------------
    */
 
   const isPng =
     /^(data|latest|archive|day)\/[a-z]+\/[a-z0-9_-]+\/.+\.png$/i
-      .test(originalPath);
+      .test(requestedPath);
 
   /*
-   * =========================================================
-   * RDR → ARCHIVE PNG
-   * =========================================================
-   *
-   * Живой frames.json сейчас может отдавать:
+   * ---------------------------------------------------------
+   * Живой frames.json может содержать .rdr:
    *
    * data/rain/wide/20260915/0700.rdr
    *
-   * Для отображения превращаем его в:
+   * Для отображения используем соответствующий
+   * архивный PNG:
    *
    * archive/rain/wide/20260915/0700.png
-   *
+   * ---------------------------------------------------------
    */
 
-  let path =
-    originalPath;
-
   const rdrMatch =
-    originalPath.match(
+    requestedPath.match(
       /^data\/([a-z]+)\/([a-z0-9_-]+)\/(\d{8})\/(\d{4})\.rdr$/i
     );
 
+  let upstreamPath =
+    requestedPath;
+
   if (rdrMatch) {
-
-    const product =
-      rdrMatch[1];
-
-    const mosaic =
-      rdrMatch[2];
-
-    const date =
-      rdrMatch[3];
-
-    const time =
-      rdrMatch[4];
-
-    path =
-      `archive/${product}/${mosaic}/${date}/${time}.png`;
+    upstreamPath =
+      "archive/" +
+      rdrMatch[1] +
+      "/" +
+      rdrMatch[2] +
+      "/" +
+      rdrMatch[3] +
+      "/" +
+      rdrMatch[4] +
+      ".png";
   }
 
-  /*
-   * После преобразования проверяем,
-   * что путь действительно разрешён.
-   */
-
   const allowed =
-    isFramesJson ||
+    isFrameIndex ||
     isPng ||
-    rdrMatch !== null;
+    !!rdrMatch;
 
   if (!allowed) {
-
     return new Response(
       "Invalid Idarkmeteo path",
       {
-        status:400,
-        headers:{
-          "Content-Type":
-            "text/plain; charset=utf-8"
+        status: 400,
+        headers: {
+          ...responseHeaders,
+          "Content-Type": "text/plain; charset=utf-8"
         }
       }
     );
   }
 
-  /*
-   * =========================================================
-   * REQUEST
-   * =========================================================
-   */
-
   const target =
-    upstream +
-    path;
+    UPSTREAM +
+    upstreamPath;
+
+  console.log(
+    "Idarkmeteo:",
+    requestedPath,
+    "=>",
+    upstreamPath
+  );
 
   try {
-
-    const response =
+    const upstreamResponse =
       await fetch(
         target,
         {
-          method:"GET",
-
-          headers:{
-            "X-API-Key":
-              key,
-
+          method: "GET",
+          headers: {
+            "X-API-Key": key,
             "Accept":
-              path.endsWith(".json")
+              upstreamPath.endsWith(".json")
                 ? "application/json"
                 : "image/png"
           },
-
-          cache:"no-store"
+          cache: "no-store"
         }
       );
 
-    /*
-     * =======================================================
-     * UPSTREAM ERROR
-     * =======================================================
-     */
-
-    if (!response.ok) {
-
+    if (!upstreamResponse.ok) {
       const text =
-        await response.text();
+        await upstreamResponse.text();
+
+      console.error(
+        "Idarkmeteo upstream error:",
+        upstreamResponse.status,
+        requestedPath,
+        upstreamPath,
+        text
+      );
 
       return new Response(
         text ||
-        "Upstream error",
+          (
+            "Idarkmeteo HTTP " +
+            upstreamResponse.status
+          ),
         {
           status:
-            response.status,
+            upstreamResponse.status,
 
-          headers:{
+          headers: {
+            ...responseHeaders,
             "Content-Type":
-              response.headers.get(
+              upstreamResponse.headers.get(
                 "content-type"
               ) ||
               "text/plain; charset=utf-8"
@@ -204,57 +213,44 @@ export default async function handler(req) {
       );
     }
 
-    /*
-     * =========================================================
-     * RESPONSE
-     * =========================================================
-     */
-
     const headers =
-      new Headers();
-
-    headers.set(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate"
-    );
-
-    headers.set(
-      "Access-Control-Allow-Origin",
-      "*"
-    );
+      new Headers(
+        responseHeaders
+      );
 
     headers.set(
       "Content-Type",
-      response.headers.get(
+      upstreamResponse.headers.get(
         "content-type"
       ) ||
       (
-        path.endsWith(".json")
+        upstreamPath.endsWith(".json")
           ? "application/json"
           : "image/png"
       )
     );
 
     return new Response(
-      response.body,
+      upstreamResponse.body,
       {
-        status:200,
+        status: 200,
         headers
       }
     );
 
-  } catch(error) {
+  } catch (error) {
 
     console.error(
-      "Idarkmeteo proxy:",
+      "Idarkmeteo proxy failed:",
       error
     );
 
     return new Response(
       "Upstream fetch failed",
       {
-        status:502,
-        headers:{
+        status: 502,
+        headers: {
+          ...responseHeaders,
           "Content-Type":
             "text/plain; charset=utf-8"
         }
