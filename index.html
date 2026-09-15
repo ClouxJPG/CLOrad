@@ -4,41 +4,50 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
+
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   crossorigin=""
 >
+
 <style>
 *{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent
 }
+
 html,body,#map{
   margin:0;
   width:100%;
   height:100%;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
 }
+
 body{
   overflow:hidden;
   background:#edf0f2;
   color:#eef1f3
 }
+
 button{
   font:inherit;
   cursor:pointer
 }
+
 #map{
   position:fixed;
   inset:0;
   z-index:0
 }
+
 .leaflet-control-attribution{
   font-size:9px!important;
   background:#ffffffaa!important
 }
+
 /* HEADER */
+
 .header{
   position:fixed;
   z-index:20;
@@ -51,17 +60,20 @@ button{
   align-items:center;
   padding:0 20px
 }
+
 .brand{
   display:flex;
   align-items:center;
   gap:10px
 }
+
 .name{
   font-size:34px;
   font-weight:800;
   letter-spacing:-2px;
   color:#f5f6f7
 }
+
 .radarLogo{
   width:49px;
   height:49px;
@@ -75,6 +87,7 @@ button{
   place-items:center;
   box-shadow:0 0 10px #51e29a22
 }
+
 .radarLogo svg{
   width:43px;
   height:43px;
@@ -84,15 +97,18 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
+
 .radarLogo .radarDot{
   fill:#51e29a;
   stroke:none
 }
+
 .head{
   margin-left:auto;
   display:flex;
   gap:5px
 }
+
 .h{
   width:51px;
   height:51px;
@@ -104,10 +120,12 @@ button{
   place-items:center;
   position:relative
 }
+
 .h.active{
   background:#222b34;
   border:1px solid #35404a
 }
+
 .h svg{
   width:29px;
   height:29px;
@@ -117,11 +135,14 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
+
 .settingsIcon{
   width:29px;
   height:29px
 }
+
 /* NAV */
+
 .nav{
   position:fixed;
   z-index:19;
@@ -140,14 +161,17 @@ button{
   -webkit-overflow-scrolling:touch;
   transition:transform .25s ease,opacity .2s ease
 }
+
 .nav::-webkit-scrollbar{
   display:none
 }
+
 .nav.closed{
   transform:translateY(-100%);
   opacity:0;
   pointer-events:none
 }
+
 .n{
   min-width:88px;
   height:85px;
@@ -168,6 +192,7 @@ button{
   touch-action:pan-x;
   padding:0 7px
 }
+
 .n svg{
   width:30px;
   height:30px;
@@ -178,9 +203,11 @@ button{
   stroke-linejoin:round;
   flex:none
 }
+
 .n.active{
   color:#53e39b
 }
+
 .n.active:after{
   content:"";
   position:absolute;
@@ -190,29 +217,37 @@ button{
   left:8px;
   right:8px
 }
-/* Длины пунктов навигации */
+
 .n:nth-child(1){
   min-width:88px
 }
+
 .n:nth-child(2){
   min-width:125px
 }
+
 .n:nth-child(3){
   min-width:170px
 }
+
 .n:nth-child(4){
   min-width:105px
 }
+
 .n:nth-child(5){
   min-width:125px
 }
+
 .n:nth-child(6){
   min-width:125px
 }
+
 .n:nth-child(7){
   min-width:88px
 }
+
 /* MAP TOOLS */
+
 .tools{
   position:fixed;
   z-index:8;
@@ -222,6 +257,7 @@ button{
   flex-direction:column;
   gap:7px
 }
+
 .tool{
   width:56px;
   height:56px;
@@ -233,6 +269,7 @@ button{
   place-items:center;
   box-shadow:0 3px 9px #0002
 }
+
 .tool svg{
   width:30px;
   height:30px;
@@ -242,13 +279,16 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
+
 .geoTool svg{
   width:35px;
   height:35px;
   fill:currentColor;
   stroke:none
 }
+
 /* LAYERS */
+
 .layers{
   position:fixed;
   z-index:8;
@@ -263,11 +303,13 @@ button{
   box-shadow:0 4px 14px #0003;
   transition:left .25s,opacity .2s
 }
+
 .layers.hidden{
   left:-210px;
   opacity:0;
   pointer-events:none
 }
+
 .layer{
   height:56px;
   display:grid;
@@ -275,6 +317,7 @@ button{
   align-items:center;
   gap:7px
 }
+
 .layer svg{
   width:27px;
   height:27px;
@@ -285,12 +328,15 @@ button{
   stroke-linejoin:round;
   flex:none
 }
+
 .layer:nth-child(2) svg{
   stroke:#50aaff
 }
+
 .layer:nth-child(3) svg{
   stroke:#ff777e
 }
+
 .layer span{
   font-size:13px;
   line-height:15px;
@@ -298,6 +344,7 @@ button{
   overflow-wrap:break-word;
   word-break:normal
 }
+
 .switch{
   width:46px;
   height:26px;
@@ -308,6 +355,7 @@ button{
   padding:0;
   flex:none
 }
+
 .switch i{
   position:absolute;
   width:20px;
@@ -318,13 +366,17 @@ button{
   background:#f6f7f7;
   transition:.2s
 }
+
 .switch.on{
   background:#43d58d
 }
+
 .switch.on i{
   left:23px
 }
+
 /* LEGEND */
+
 .legendTab{
   position:fixed;
   z-index:13;
@@ -345,9 +397,11 @@ button{
   justify-content:center;
   box-shadow:0 3px 12px #0003
 }
+
 .legendTab.hidden{
   display:none
 }
+
 .legend{
   position:fixed;
   z-index:12;
@@ -364,14 +418,17 @@ button{
   overflow:auto;
   box-shadow:0 5px 18px #0004
 }
+
 .legend.open{
   right:0
 }
+
 .legendTitle{
   font-size:16px;
   font-weight:700;
   margin:0 28px 7px 2px
 }
+
 .legendClose{
   position:absolute;
   right:9px;
@@ -384,6 +441,7 @@ button{
   font-size:23px;
   line-height:28px
 }
+
 .li{
   height:23px;
   display:flex;
@@ -392,12 +450,14 @@ button{
   font-size:12px;
   color:#e4e7e9
 }
+
 .box{
   width:21px;
   height:18px;
   border-radius:2px;
   flex:none
 }
+
 .l1{background:#b9c1c7}
 .l2{background:#a9c7f4}
 .l3{background:#63eda5}
@@ -417,7 +477,9 @@ button{
 .l17{background:#e85ae7}
 .l18{background:#ca3cc7}
 .l19{background:#777c91}
+
 /* DATA */
+
 .data{
   position:fixed;
   z-index:7;
@@ -433,6 +495,7 @@ button{
   grid-template-columns:1.25fr 1fr 1fr;
   box-shadow:0 4px 14px #0003
 }
+
 .cell{
   padding:9px 15px;
   border-right:1px solid #303a43;
@@ -440,20 +503,25 @@ button{
   flex-direction:column;
   justify-content:center
 }
+
 .cell:last-child{
   border:0
 }
+
 .lab{
   font-size:10px;
   color:#858e95;
   letter-spacing:.5px
 }
+
 .val{
   font-size:16px;
   font-weight:700;
   margin-top:4px
 }
+
 /* TIMELINE */
+
 .timeline{
   position:fixed;
   z-index:12;
@@ -467,18 +535,21 @@ button{
   padding:8px 14px;
   box-shadow:0 5px 18px #0004
 }
+
 .thead{
   text-align:center;
   font-size:14px;
   height:27px;
   line-height:24px
 }
+
 .trow{
   height:61px;
   display:flex;
   align-items:center;
   gap:12px
 }
+
 .play{
   width:44px;
   height:44px;
@@ -492,15 +563,18 @@ button{
   box-shadow:0 2px 5px #0002;
   transform:translateY(-4px)
 }
+
 .play svg{
   width:25px;
   height:25px;
   fill:currentColor
 }
+
 .slider{
   flex:1;
   min-width:0
 }
+
 .slider input{
   width:100%;
   display:block;
@@ -510,6 +584,7 @@ button{
   border-radius:8px;
   margin:0
 }
+
 .slider input::-webkit-slider-thumb{
   appearance:none;
   width:30px;
@@ -518,6 +593,7 @@ button{
   background:#fff;
   box-shadow:0 1px 5px #0004
 }
+
 .times{
   display:flex;
   justify-content:space-between;
@@ -525,7 +601,9 @@ button{
   font-size:10px;
   margin-top:8px
 }
+
 /* SEARCH */
+
 .popup{
   position:fixed;
   z-index:30;
@@ -535,15 +613,18 @@ button{
   border-radius:9px;
   box-shadow:0 10px 30px #0008
 }
+
 .popup.open{
   display:block
 }
+
 .search{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
+
 .search input{
   width:100%;
   height:42px;
@@ -555,24 +636,29 @@ button{
   font-size:16px;
   outline:none
 }
+
 /* SETTINGS */
+
 .settings{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
+
 .settingsTitle{
   font-size:17px;
   font-weight:700;
   padding:7px 7px 10px
 }
+
 .setting{
   border:1px solid #3d4851;
   border-radius:8px;
   overflow:hidden;
   background:#202930
 }
+
 .settingHead{
   width:100%;
   height:48px;
@@ -586,30 +672,37 @@ button{
   font-size:15px;
   text-align:left
 }
+
 .settingArrow{
   font-size:21px;
   transition:transform .2s
 }
+
 .setting.open .settingArrow{
   transform:rotate(90deg)
 }
+
 .settingBody{
   display:none;
   padding:0 12px 12px
 }
+
 .setting.open .settingBody{
   display:block
 }
+
 .framesInfo{
   font-size:11px;
   color:#8f999f;
   margin-bottom:8px
 }
+
 .frameControls{
   display:flex;
   align-items:center;
   gap:7px
 }
+
 .frameBtn{
   width:42px;
   height:38px;
@@ -621,6 +714,7 @@ button{
   display:grid;
   place-items:center
 }
+
 .frameInput{
   flex:1;
   min-width:0;
@@ -634,6 +728,7 @@ button{
   font-size:15px;
   outline:none
 }
+
 .loadingFrames{
   margin-top:9px;
   height:3px;
@@ -642,9 +737,11 @@ button{
   overflow:hidden;
   display:none
 }
+
 .loadingFrames.show{
   display:block
 }
+
 .loadingFrames i{
   display:block;
   width:35%;
@@ -652,30 +749,39 @@ button{
   background:#51e29a;
   animation:loadingMove 1s infinite ease-in-out
 }
+
 @keyframes loadingMove{
   0%{transform:translateX(-120%)}
   100%{transform:translateX(350%)}
 }
+
 /* LIGHT */
+
 body.light .header{
   background:#f5f6f7
 }
+
 body.light .name{
   color:#171b1e
 }
+
 body.light .h{
   color:#4f575d
 }
+
 body.light .h.active{
   background:#e1e5e8
 }
+
 body.light .nav{
   background:#f5f6f7;
   border-color:#d4d9dd
 }
+
 body.light .n{
   color:#687177
 }
+
 body.light .layers,
 body.light .tool,
 body.light .legend,
@@ -684,100 +790,129 @@ body.light .legendTab{
   color:#252b2f;
   border-color:#c9d0d5
 }
+
 body.light .layer span{
   color:#252b2f
 }
+
 body.light .tool{
   color:#30383d
 }
+
 body.light .data,
 body.light .timeline{
   background:#f5f7f8ee;
   color:#22292d;
   border-color:#cbd2d6
 }
+
 body.light .lab,
 body.light .times{
   color:#70797f
 }
+
 body.light .timeline input{
   background:#a2a9ad
 }
+
 body.light .settings{
   background:#f6f8f9;
   color:#20272b;
   border-color:#c9d0d5
 }
+
 body.light .setting{
   background:#edf1f3;
   border-color:#c9d0d5
 }
+
 body.light .settingHead{
   color:#20272b
 }
+
 body.light .frameBtn,
 body.light .frameInput{
   background:#fff;
   color:#20272b;
   border-color:#c5cdd2
 }
+
 /* MOBILE */
+
 @media(max-width:600px){
+
   .header{
     height:80px;
     padding:0 17px
   }
+
   .name{
     font-size:29px
   }
+
   .head{
     gap:0
   }
+
   .h{
     width:46px
   }
+
   .nav{
     top:80px;
     height:85px
   }
+
   .n{
     min-width:88px;
   }
+
   .tools{
     left:17px;
     top:177px
   }
+
   .layers{
     left:17px;
     width:190px
   }
+
   .data{
     bottom:120px
   }
+
   .timeline{
     bottom:8px
   }
 }
+
 @media(max-width:430px){
+
   .name{
     font-size:27px
   }
+
   .radarLogo{
     width:46px;
     height:46px
   }
+
   .h:nth-child(2){
     display:grid
   }
+
   .layers{
     width:190px
   }
+
   .data{
     width:calc(100% - 34px)
   }
+
   .legend{
     width:220px
   }
+
   .settings{
     right:8px;
     width:calc(100% - 16px)
@@ -814,77 +949,171 @@ body.light .frameInput{
 }
 </style>
 </head>
+
 <body>
+
 <div id="map"></div>
 
 <header class="header">
+
   <div class="brand">
+
     <div class="radarLogo" aria-hidden="true">
+
       <svg viewBox="0 0 48 48">
+
         <circle cx="24" cy="24" r="20"/>
         <circle cx="24" cy="24" r="13"/>
         <circle cx="24" cy="24" r="6"/>
+
         <path d="M24 4v40"/>
         <path d="M4 24h40"/>
-        <circle class="radarDot" cx="31.5" cy="15.5" r="2.3"/>
-        <circle class="radarDot" cx="16" cy="31" r="1.8"/>
+
+        <circle
+          class="radarDot"
+          cx="31.5"
+          cy="15.5"
+          r="2.3"
+        />
+
+        <circle
+          class="radarDot"
+          cx="16"
+          cy="31"
+          r="1.8"
+        />
+
       </svg>
+
     </div>
-    <div class="name">CLOrad</div>
+
+    <div class="name">
+      CLOrad
+    </div>
+
   </div>
 
   <div class="head">
-    <button class="h active" id="searchBtn" aria-label="Поиск">
+
+    <button
+      class="h active"
+      id="searchBtn"
+      aria-label="Поиск"
+    >
+
       <svg viewBox="0 0 24 24">
         <circle cx="10.5" cy="10.5" r="6.5"/>
         <path d="M16 16l5 5"/>
       </svg>
+
     </button>
 
-    <button class="h" id="themeBtn" aria-label="Тема">
+    <button
+      class="h"
+      id="themeBtn"
+      aria-label="Тема"
+    >
+
       <svg viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4"/>
         <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/>
       </svg>
+
     </button>
 
-    <button class="h" id="settingsBtn" aria-label="Настройки">
-      <svg class="settingsIcon" viewBox="0 0 24 24">
+    <button
+      class="h"
+      id="settingsBtn"
+      aria-label="Настройки"
+    >
+
+      <svg
+        class="settingsIcon"
+        viewBox="0 0 24 24"
+      >
+
         <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
+
         <path d="M19.4 15.1a1.8 1.8 0 0 0 .35 1.98l.05.05a1.8 1.8 0 1 1-2.55 2.55l-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V21a1.8 1.8 0 1 1-3.6 0v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05A1.8 1.8 0 1 1 4.84 17.1l.05-.05a1.8 1.8 0 0 0 .35-1.98A1.8 1.8 0 0 0 3.6 14H3.5a1.8 1.8 0 1 1 0-3.6h.1a1.8 1.8 0 0 0 1.64-1.1 1.8 1.8 0 0 0-.35-1.98l-.05-.05a1.8 1.8 0 1 1 2.55-2.55l.05.05a1.8 1.8 0 0 0 1.98.35A1.8 1.8 0 0 0 10.5 3.5V3.4a1.8 1.8 0 1 1 3.6 0v.1a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 1.98-.35l.05-.05a1.8 1.8 0 1 1 2.55 2.55l-.05.05a1.8 1.8 0 0 0-.35 1.98A1.8 1.8 0 0 0 21 10.4h.1a1.8 1.8 0 1 1 0 3.6H21a1.8 1.8 0 0 0-1.6 1.1Z"/>
+
       </svg>
+
     </button>
 
-    <button class="h" id="menuBtn" aria-label="Меню">
+    <button
+      class="h"
+      id="menuBtn"
+      aria-label="Меню"
+    >
+
       <svg viewBox="0 0 24 24">
         <path d="M4 6h16M4 12h16M4 18h16"/>
       </svg>
+
     </button>
+
   </div>
+
 </header>
 
-<div class="popup search" id="search">
-  <input id="searchInput" placeholder="Поиск города...">
+<div
+  class="popup search"
+  id="search"
+>
+
+  <input
+    id="searchInput"
+    placeholder="Поиск города..."
+  >
+
 </div>
 
-<div class="popup settings" id="settings">
+<div
+  class="popup settings"
+  id="settings"
+>
+
   <div class="settingsTitle">
     Настройки
   </div>
 
-  <div class="setting" id="framesSetting">
-    <button class="settingHead" id="framesHead">
-      <span>Кол. кадров</span>
-      <span class="settingArrow">›</span>
+  <div
+    class="setting"
+    id="framesSetting"
+  >
+
+    <button
+      class="settingHead"
+      id="framesHead"
+    >
+
+      <span>
+        Кол. кадров
+      </span>
+
+      <span class="settingArrow">
+        ›
+      </span>
+
     </button>
 
     <div class="settingBody">
-      <div class="framesInfo" id="framesInfo">
+
+      <div
+        class="framesInfo"
+        id="framesInfo"
+      >
         Радар пока не подключён
       </div>
 
       <div class="frameControls">
-        <button class="frameBtn" id="frameMinus">−</button>
+
+        <button
+          class="frameBtn"
+          id="frameMinus"
+        >
+          −
+        </button>
 
         <input
           class="frameInput"
@@ -895,166 +1124,327 @@ body.light .frameInput{
           inputmode="numeric"
         >
 
-        <button class="frameBtn" id="framePlus">+</button>
+        <button
+          class="frameBtn"
+          id="framePlus"
+        >
+          +
+        </button>
+
       </div>
 
-      <div class="loadingFrames" id="loadingFrames">
+      <div
+        class="loadingFrames"
+        id="loadingFrames"
+      >
         <i></i>
       </div>
+
     </div>
+
   </div>
+
 </div>
 
-<nav class="nav" id="nav">
+<nav
+  class="nav"
+  id="nav"
+>
 
   <!-- КАРТА -->
+
   <button class="n active">
+
     <svg viewBox="0 0 24 24">
+
       <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
+
+      <circle
+        cx="12"
+        cy="12"
+        r="7"
+      />
+
+      <circle
+        cx="12"
+        cy="12"
+        r="3"
+      />
+
     </svg>
+
     Карта
+
   </button>
 
   <!-- ДЫМ / ПЕПЕЛ -->
+
   <button class="n">
+
     <svg viewBox="0 0 70 45">
+
       <path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/>
+
     </svg>
+
     Дым/пепел
+
   </button>
 
   <!-- СПУТНИКОВЫЕ ОСАДКИ -->
+
   <button class="n">
-    <svg viewBox="0 0 36 30" aria-hidden="true">
 
-      <!-- Корпус спутника -->
-      <rect x="13" y="9" width="9" height="9" rx="1.8"/>
+    <svg
+      viewBox="0 0 36 30"
+      aria-hidden="true"
+    >
 
-      <!-- Антенна -->
+      <rect
+        x="13"
+        y="9"
+        width="9"
+        height="9"
+        rx="1.8"
+      />
+
       <path d="M17.5 9V5"/>
       <path d="M15.5 5h4"/>
 
-      <!-- Левая солнечная панель -->
       <path d="M13 11H5v7h8"/>
       <path d="M9 11v7"/>
 
-      <!-- Правая солнечная панель -->
       <path d="M22 11h8v7h-8"/>
       <path d="M26 11v7"/>
 
-      <!-- Нижняя опора -->
       <path d="M15 18v5"/>
       <path d="M20 18v5"/>
 
-      <!-- Сигнал -->
       <path d="M9 6c1.5-1.3 3-2 4.5-2"/>
       <path d="M26 6c-1.5-1.3-3-2-4.5-2"/>
 
-      <!-- Капля -->
       <path d="M28 21.5c0 2.1-1.35 3.5-3 3.5s-3-1.4-3-3.5c0-1.7 1.6-3.7 3-5.5 1.4 1.8 3 3.8 3 5.5Z"/>
+
     </svg>
+
     Спутниковые осадки
+
   </button>
 
   <!-- ПРЕДУПРЕЖДЕНИЯ -->
+
   <button class="n">
+
     <svg viewBox="0 0 24 24">
+
       <path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/>
+
     </svg>
+
     Предупр.
+
   </button>
 
   <!-- ФАЗА ОБЛАКА -->
+
   <button class="n">
-    <svg viewBox="0 0 32 30" aria-hidden="true">
 
-      <!-- Облако -->
-      <path d="M8 22h16.5a5.5 5.5 0 0 0 .4-11
-               8 8 0 0 0-15.3-1.9
-               A6.3 6.3 0 0 0 8 22Z"/>
+    <svg
+      viewBox="0 0 32 30"
+      aria-hidden="true"
+    >
 
-      <!-- Стрелка вверх внутри облака -->
+      <path d="M8 22h16.5a5.5 5.5 0 0 0 .4-11 8 8 0 0 0-15.3-1.9 A6.3 6.3 0 0 0 8 22Z"/>
+
       <path d="M16 20V12"/>
       <path d="M12.8 15.2 16 12l3.2 3.2"/>
+
     </svg>
+
     Фаза облака
+
   </button>
 
   <!-- ОСАДКИ ММ/Ч -->
-  <button class="n">
+
+  <button
+    class="n"
+    id="rainProduct"
+  >
+
     <svg viewBox="0 0 24 24">
+
       <path d="M5 20V11M12 20V6M19 20V3"/>
+
     </svg>
+
     Осадки-мм/ч
+
   </button>
 
   <!-- СЛОИ -->
-  <button class="n active" id="layersNav">
+
+  <button
+    class="n active"
+    id="layersNav"
+  >
+
     <svg viewBox="0 0 24 24">
+
       <path d="M4 7h16M4 12h16M4 17h16"/>
+
     </svg>
+
     Слои
+
   </button>
 
 </nav>
 
 <div class="tools">
-  <button class="tool" id="plus" aria-label="Увеличить">
+
+  <button
+    class="tool"
+    id="plus"
+    aria-label="Увеличить"
+  >
+
     <svg viewBox="0 0 24 24">
       <path d="M12 5v14M5 12h14"/>
     </svg>
+
   </button>
 
-  <button class="tool" id="minus" aria-label="Уменьшить">
+  <button
+    class="tool"
+    id="minus"
+    aria-label="Уменьшить"
+  >
+
     <svg viewBox="0 0 24 24">
       <path d="M5 12h14"/>
     </svg>
+
   </button>
 
-  <button class="tool geoTool" id="geo" aria-label="Моё местоположение">
+  <button
+    class="tool geoTool"
+    id="geo"
+    aria-label="Моё местоположение"
+  >
+
     <svg viewBox="0 0 24 24">
+
       <path d="M20.2 3.8 4.1 10.7c-.72.31-.67 1.35.08 1.57l6.05 1.76 1.76 6.05c.22.75 1.26.8 1.57.08l6.91-16.1c.29-.67-.27-1.23-.94-.94Z"/>
+
     </svg>
+
   </button>
+
 </div>
 
-<div class="layers" id="layers">
+<div
+  class="layers"
+  id="layers"
+>
+
   <div class="layer">
+
     <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
+
+      <circle
+        cx="12"
+        cy="12"
+        r="7"
+      />
+
+      <circle
+        cx="12"
+        cy="12"
+        r="3"
+      />
+
       <path d="M12 2v3"/>
+
     </svg>
-    <span>Опасные явления</span>
-    <button class="switch on" id="oyaSwitch"><i></i></button>
+
+    <span>
+      Опасные явления
+    </span>
+
+    <button
+      class="switch on"
+      id="oyaSwitch"
+    >
+      <i></i>
+    </button>
+
   </div>
 
   <div class="layer">
+
     <svg viewBox="0 0 24 24">
+
       <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/>
+
       <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/>
+
     </svg>
-    <span>Отражаемость</span>
-    <button class="switch" id="reflectivitySwitch"><i></i></button>
+
+    <span>
+      Отражаемость
+    </span>
+
+    <button
+      class="switch"
+      id="reflectivitySwitch"
+    >
+      <i></i>
+    </button>
+
   </div>
 
   <div class="layer">
+
     <svg viewBox="0 0 24 24">
+
       <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
+
     </svg>
-    <span>Молнии</span>
-    <button class="switch on" id="lightningSwitch"><i></i></button>
+
+    <span>
+      Молнии
+    </span>
+
+    <button
+      class="switch on"
+      id="lightningSwitch"
+    >
+      <i></i>
+    </button>
+
   </div>
+
 </div>
 
-<button class="legendTab" id="legendTab">
+<button
+  class="legendTab"
+  id="legendTab"
+>
   Легенда
 </button>
 
-<div class="legend" id="legend">
-  <button class="legendClose" id="legendClose">×</button>
+<div
+  class="legend"
+  id="legend"
+>
+
+  <button
+    class="legendClose"
+    id="legendClose"
+  >
+    ×
+  </button>
 
   <div class="legendTitle">
     Условные обозначения
@@ -1079,38 +1469,76 @@ body.light .frameInput{
   <div class="li"><i class="box l17"></i>шквал умеренный</div>
   <div class="li"><i class="box l18"></i>шквал сильный</div>
   <div class="li"><i class="box l19"></i>смерч</div>
+
 </div>
 
 <div class="data">
+
   <div class="cell">
-    <div class="lab">ИНТЕНСИВНОСТЬ:</div>
-    <div class="val" id="intensityValue">Нет данных</div>
+
+    <div class="lab">
+      ИНТЕНСИВНОСТЬ:
+    </div>
+
+    <div
+      class="val"
+      id="intensityValue"
+    >
+      Нет данных
+    </div>
+
   </div>
 
   <div class="cell">
-    <div class="lab">ГРОЗА</div>
-    <div class="val">—</div>
+
+    <div class="lab">
+      ГРОЗА
+    </div>
+
+    <div class="val">
+      —
+    </div>
+
   </div>
 
   <div class="cell">
-    <div class="lab">СКОРОСТЬ:</div>
-    <div class="val">—</div>
+
+    <div class="lab">
+      СКОРОСТЬ:
+    </div>
+
+    <div class="val">
+      —
+    </div>
+
   </div>
+
 </div>
 
 <div class="timeline">
-  <div class="thead" id="timeLabel">
+
+  <div
+    class="thead"
+    id="timeLabel"
+  >
     Радар не подключён
   </div>
 
   <div class="trow">
-    <button class="play" id="play">
+
+    <button
+      class="play"
+      id="play"
+    >
+
       <svg viewBox="0 0 24 24">
         <path d="M7 4l13 8-13 8z"/>
       </svg>
+
     </button>
 
     <div class="slider">
+
       <input
         id="range"
         type="range"
@@ -1119,37 +1547,47 @@ body.light .frameInput{
         step="1"
         value="0"
       >
-      <div class="times" id="times"></div>
+
+      <div
+        class="times"
+        id="times"
+      ></div>
+
     </div>
+
   </div>
+
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-/* =========================
-   MAP
-========================= */
-const map = L.map("map",{
-  zoomControl:false,
-  attributionControl:true,
-  preferCanvas:false,
-  zoomAnimation:true,
-  fadeAnimation:false,
-  markerZoomAnimation:false,
-  worldCopyJump:false,
-  minZoom:2,
-  maxZoom:14
-}).setView(
-  [55.75,37.62],
-  5
-);
 
-/*
-   ВАЖНО:
-   Передаём карту внешним JS-файлам.
-*/
-window.map = map;
+/* =========================================================
+   MAP
+========================================================= */
+
+const map =
+  L.map(
+    "map",
+    {
+      zoomControl:false,
+      attributionControl:true,
+      preferCanvas:false,
+      zoomAnimation:true,
+      fadeAnimation:false,
+      markerZoomAnimation:false,
+      worldCopyJump:false,
+      minZoom:2,
+      maxZoom:14
+    }
+  ).setView(
+    [55.75,37.62],
+    5
+  );
+
+window.map =
+  map;
 
 L.tileLayer(
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -1163,17 +1601,23 @@ L.tileLayer(
   }
 ).addTo(map);
 
-/* =========================
+
+/* =========================================================
    HELPERS
-========================= */
+========================================================= */
+
 const $ =
-  id => document.getElementById(id);
+  id =>
+    document.getElementById(id);
+
 
 function msg(text){
+
   const x =
     document.createElement("div");
 
-  x.textContent = text;
+  x.textContent =
+    text;
 
   x.style =
     "position:fixed;" +
@@ -1186,33 +1630,47 @@ function msg(text){
     "padding:9px 14px;" +
     "border-radius:8px;" +
     "border:1px solid #3d4850;" +
-    "white-space:nowrap";
+    "white-space:nowrap;" +
+    "max-width:calc(100% - 30px);" +
+    "overflow:hidden;" +
+    "text-overflow:ellipsis;";
 
   document.body.appendChild(x);
 
   setTimeout(
     () => x.remove(),
-    1300
+    1800
   );
 }
 
-/* =========================
-   MAP CONTROLS
-========================= */
-$("plus").onclick = () =>
-  map.zoomIn();
 
-$("minus").onclick = () =>
-  map.zoomOut();
+/* =========================================================
+   MAP CONTROLS
+========================================================= */
+
+$("plus").onclick =
+  () =>
+    map.zoomIn();
+
+$("minus").onclick =
+  () =>
+    map.zoomOut();
 
 $("geo").onclick = () => {
+
   if(!navigator.geolocation){
-    msg("Геолокация недоступна");
+
+    msg(
+      "Геолокация недоступна"
+    );
+
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
+
     position => {
+
       map.setView(
         [
           position.coords.latitude,
@@ -1221,11 +1679,18 @@ $("geo").onclick = () => {
         9
       );
 
-      msg("Местоположение найдено");
+      msg(
+        "Местоположение найдено"
+      );
+
     },
 
     () => {
-      msg("Не удалось определить местоположение");
+
+      msg(
+        "Не удалось определить местоположение"
+      );
+
     },
 
     {
@@ -1233,12 +1698,16 @@ $("geo").onclick = () => {
       timeout:10000,
       maximumAge:60000
     }
+
   );
+
 };
 
-/* =========================
+
+/* =========================================================
    LAYERS
-========================= */
+========================================================= */
+
 const layers =
   $("layers");
 
@@ -1251,21 +1720,28 @@ const reflectivitySwitch =
 const lightningSwitch =
   $("lightningSwitch");
 
-$("layersNav").onclick = () => {
+$("layersNav").onclick = event => {
+
+  event.stopPropagation();
+
   layers.classList.toggle(
     "hidden"
   );
+
 };
 
 oyaSwitch.onclick = event => {
+
   event.stopPropagation();
 
   oyaSwitch.classList.toggle(
     "on"
   );
+
 };
 
 reflectivitySwitch.onclick = event => {
+
   event.stopPropagation();
 
   reflectivitySwitch.classList.toggle(
@@ -1277,19 +1753,16 @@ reflectivitySwitch.onclick = event => {
       ? "Отражаемость"
       : "Отражаемость выключена"
   );
+
 };
 
-/*
-   ПЕРЕКЛЮЧАТЕЛЬ МОЛНИЙ
-   Управляется lightning.js.
-   Здесь специально НЕ назначаем onclick,
-   чтобы два обработчика не конфликтовали.
-*/
 
-/* =========================
+/* =========================================================
    LEGEND
-========================= */
+========================================================= */
+
 $("legendTab").onclick = () => {
+
   $("legend").classList.add(
     "open"
   );
@@ -1297,9 +1770,11 @@ $("legendTab").onclick = () => {
   $("legendTab").classList.add(
     "hidden"
   );
+
 };
 
 $("legendClose").onclick = () => {
+
   $("legend").classList.remove(
     "open"
   );
@@ -1307,22 +1782,32 @@ $("legendClose").onclick = () => {
   $("legendTab").classList.remove(
     "hidden"
   );
+
 };
 
-/* =========================
-   NAV
-========================= */
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
+
 const nav =
   $("nav");
 
-let dragging = false;
-let dragStartX = 0;
-let dragScroll = 0;
+let dragging =
+  false;
+
+let dragStartX =
+  0;
+
+let dragScroll =
+  0;
 
 nav.addEventListener(
   "pointerdown",
   event => {
-    dragging = true;
+
+    dragging =
+      true;
 
     dragStartX =
       event.clientX;
@@ -1333,12 +1818,14 @@ nav.addEventListener(
     nav.setPointerCapture?.(
       event.pointerId
     );
+
   }
 );
 
 nav.addEventListener(
   "pointermove",
   event => {
+
     if(!dragging){
       return;
     }
@@ -1349,253 +1836,291 @@ nav.addEventListener(
         event.clientX -
         dragStartX
       );
+
   }
 );
 
 nav.addEventListener(
   "pointerup",
   () => {
-    dragging = false;
+
+    dragging =
+      false;
+
   }
 );
 
 nav.addEventListener(
   "pointercancel",
   () => {
-    dragging = false;
+
+    dragging =
+      false;
+
   }
 );
 
-document
-  .querySelectorAll(
-    ".n:not(#layersNav)"
-  )
-  .forEach(
-    button => {
-      button.onclick = () => {
 
-        document
-          .querySelectorAll(
-            ".n:not(#layersNav)"
-          )
-          .forEach(
-            item =>
-              item.classList.remove(
-                "active"
-              )
-          );
-
-        button.classList.add(
-          "active"
-        );
-
-        msg(
-          button.textContent.trim()
-        );
-      };
-    }
-  );
-
-/* =========================
+/* =========================================================
    SEARCH
-========================= */
+========================================================= */
+
 const cities = {
+
   "москва":[55.75,37.62],
+
   "уфа":[54.74,55.97],
+
   "казань":[55.79,49.12],
+
   "самара":[53.20,50.10],
+
   "нижний новгород":[56.33,44.01],
+
   "санкт-петербург":[59.93,30.31],
+
   "екатеринбург":[56.84,60.61],
+
   "омск":[54.99,73.37],
+
   "новосибирск":[55.03,82.92],
+
   "челябинск":[55.16,61.40],
+
   "пермь":[58.01,56.25],
+
   "воронеж":[51.67,39.18],
+
   "ростов":[47.23,39.70]
+
 };
 
-$("searchBtn").onclick = () => {
-  $("search").classList.toggle(
-    "open"
-  );
+$("searchBtn").onclick =
+  () => {
 
-  $("settings").classList.remove(
-    "open"
-  );
-
-  if(
-    $("search").classList.contains(
+    $("search").classList.toggle(
       "open"
-    )
-  ){
-    setTimeout(
-      () =>
-        $("searchInput").focus(),
-      50
     );
-  }
-};
 
-$("searchInput").onkeydown = event => {
+    $("settings").classList.remove(
+      "open"
+    );
 
-  if(
-    event.key !== "Enter"
-  ){
-    return;
-  }
+    if(
+      $("search").classList.contains(
+        "open"
+      )
+    ){
 
-  const query =
-    event.target.value
-      .toLowerCase()
-      .trim();
-
-  const city =
-    Object.keys(cities)
-      .find(
-        name =>
-          name.includes(query)
+      setTimeout(
+        () =>
+          $("searchInput").focus(),
+        50
       );
 
-  if(!city){
+    }
+
+  };
+
+$("searchInput").onkeydown =
+  event => {
+
+    if(
+      event.key !== "Enter"
+    ){
+      return;
+    }
+
+    const query =
+      event.target.value
+        .toLowerCase()
+        .trim();
+
+    const city =
+      Object.keys(cities)
+        .find(
+          name =>
+            name.includes(query)
+        );
+
+    if(!city){
+
+      msg(
+        "Город не найден"
+      );
+
+      return;
+    }
+
+    map.setView(
+      cities[city],
+      9
+    );
+
+    $("search").classList.remove(
+      "open"
+    );
+
     msg(
-      "Город не найден"
+      city.charAt(0).toUpperCase() +
+      city.slice(1)
     );
-    return;
-  }
 
-  map.setView(
-    cities[city],
-    9
-  );
+  };
 
-  $("search").classList.remove(
-    "open"
-  );
 
-  msg(
-    city.charAt(0).toUpperCase() +
-    city.slice(1)
-  );
-};
-
-/* =========================
+/* =========================================================
    SETTINGS
-========================= */
-$("settingsBtn").onclick = () => {
+========================================================= */
 
-  $("settings").classList.toggle(
-    "open"
-  );
+$("settingsBtn").onclick =
+  () => {
 
-  $("search").classList.remove(
-    "open"
-  );
-};
-
-$("framesHead").onclick = () => {
-
-  $("framesSetting").classList.toggle(
-    "open"
-  );
-};
-
-let frameCount = 24;
-
-$("frameMinus").onclick = () => {
-
-  frameCount =
-    Math.max(
-      1,
-      frameCount - 1
+    $("settings").classList.toggle(
+      "open"
     );
 
-  $("frameInput").value =
-    frameCount;
-};
-
-$("framePlus").onclick = () => {
-
-  frameCount++;
-
-  $("frameInput").value =
-    frameCount;
-};
-
-$("frameInput").onchange = () => {
-
-  let value =
-    parseInt(
-      $("frameInput").value,
-      10
+    $("search").classList.remove(
+      "open"
     );
 
-  if(
-    !Number.isFinite(value) ||
-    value < 1
-  ){
-    value = 1;
-  }
+  };
 
-  frameCount = value;
+$("framesHead").onclick =
+  () => {
 
-  $("frameInput").value =
-    value;
-};
+    $("framesSetting").classList.toggle(
+      "open"
+    );
 
-/* =========================
+  };
+
+let frameCount =
+  24;
+
+$("frameMinus").onclick =
+  () => {
+
+    frameCount =
+      Math.max(
+        1,
+        frameCount - 1
+      );
+
+    $("frameInput").value =
+      frameCount;
+
+    if(activeProduct){
+      loadProduct(
+        activeProduct,
+        true
+      );
+    }
+
+  };
+
+$("framePlus").onclick =
+  () => {
+
+    frameCount++;
+
+    $("frameInput").value =
+      frameCount;
+
+    if(activeProduct){
+      loadProduct(
+        activeProduct,
+        true
+      );
+    }
+
+  };
+
+$("frameInput").onchange =
+  () => {
+
+    let value =
+      parseInt(
+        $("frameInput").value,
+        10
+      );
+
+    if(
+      !Number.isFinite(value) ||
+      value < 1
+    ){
+      value = 1;
+    }
+
+    frameCount =
+      value;
+
+    $("frameInput").value =
+      value;
+
+    if(activeProduct){
+      loadProduct(
+        activeProduct,
+        true
+      );
+    }
+
+  };
+
+
+/* =========================================================
    MENU
-========================= */
-$("menuBtn").onclick = () => {
+========================================================= */
 
-  nav.classList.toggle(
-    "closed"
-  );
+$("menuBtn").onclick =
+  () => {
 
-  $("search").classList.remove(
-    "open"
-  );
+    nav.classList.toggle(
+      "closed"
+    );
 
-  $("settings").classList.remove(
-    "open"
-  );
-};
+    $("search").classList.remove(
+      "open"
+    );
 
-/* =========================
+    $("settings").classList.remove(
+      "open"
+    );
+
+  };
+
+
+/* =========================================================
    THEME
-========================= */
-let darkMode = true;
+========================================================= */
 
-$("themeBtn").onclick = () => {
+let darkMode =
+  true;
 
-  darkMode =
-    !darkMode;
+$("themeBtn").onclick =
+  () => {
 
-  document.body.classList.toggle(
-    "light",
-    !darkMode
-  );
+    darkMode =
+      !darkMode;
 
-  msg(
-    darkMode
-      ? "Тёмная тема"
-      : "Светлая тема"
-  );
-};
+    document.body.classList.toggle(
+      "light",
+      !darkMode
+    );
 
-/* =========================
-   PLAY BUTTON
-========================= */
-$("play").onclick = () => {
+    msg(
+      darkMode
+        ? "Тёмная тема"
+        : "Светлая тема"
+    );
 
-  msg(
-    "Радар пока не подключён"
-  );
-};
+  };
 
-/* =========================
+
+/* =========================================================
    CLOSE POPUPS
-========================= */
+========================================================= */
+
 document.addEventListener(
   "click",
   event => {
@@ -1604,34 +2129,1136 @@ document.addEventListener(
       !event.target.closest(".search") &&
       !event.target.closest("#searchBtn")
     ){
+
       $("search").classList.remove(
         "open"
       );
+
     }
 
     if(
       !event.target.closest(".settings") &&
       !event.target.closest("#settingsBtn")
     ){
+
       $("settings").classList.remove(
         "open"
       );
+
     }
+
   }
 );
 
-/* =========================
-   INITIALIZE
-========================= */
+
+/* =========================================================
+   IDARKMETEO
+========================================================= */
+
+const IDARK_PROXY =
+  "/api/idarkmeteo?path=";
+
+
+/*
+   ВАЖНО:
+
+   При загрузке страницы activeProduct = null.
+
+   Поэтому никакой продукт автоматически
+   не включается.
+*/
+
+let activeProduct =
+  null;
+
+let activeFrames =
+  [];
+
+let activeLayer =
+  null;
+
+let activeRequest =
+  0;
+
+
+/* =========================================================
+   PRODUCT CONFIG
+========================================================= */
+
+const products = {
+
+  rain: {
+    button:"rainProduct",
+    framePath:"frames/rain/wide.json",
+    title:"Осадки",
+    units:"мм/ч"
+  },
+
+  smoke: {
+    button:null,
+    framePath:"frames/smoke/swath.json",
+    title:"Дым/пепел",
+    units:""
+  },
+
+  satrain: {
+    button:null,
+    framePath:"frames/satrain/coarse.json",
+    title:"Спутниковые осадки",
+    units:"мм/ч"
+  },
+
+  cloudphase: {
+    button:null,
+    framePath:"frames/cloudphase/swath.json",
+    title:"Фаза облака",
+    units:""
+  }
+
+};
+
+
+/* =========================================================
+   PRODUCT BUTTONS
+========================================================= */
+
+function setActiveNav(button){
+
+  document
+    .querySelectorAll(".n")
+    .forEach(
+      item =>
+        item.classList.remove(
+          "active"
+        )
+    );
+
+  button.classList.add(
+    "active"
+  );
+
+}
+
+
+function stopRadar(){
+
+  activeProduct =
+    null;
+
+  activeFrames =
+    [];
+
+  activeRequest++;
+
+  if(activeLayer){
+
+    map.removeLayer(
+      activeLayer
+    );
+
+    activeLayer =
+      null;
+
+  }
+
+  $("range").max =
+    0;
+
+  $("range").value =
+    0;
+
+  $("times").textContent =
+    "";
+
+  $("timeLabel").textContent =
+    "Радар не подключён";
+
+  $("framesInfo").textContent =
+    "Радар пока не подключён";
+
+  $("loadingFrames").classList.remove(
+    "show"
+  );
+
+  $("intensityValue").textContent =
+    "Нет данных";
+
+}
+
+
+/* =========================================================
+   HARD TIMEOUT
+========================================================= */
+
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeout = 12000
+){
+
+  const controller =
+    new AbortController();
+
+  const timer =
+    setTimeout(
+      () =>
+        controller.abort(),
+      timeout
+    );
+
+  try{
+
+    return await fetch(
+      url,
+      {
+        ...options,
+        signal:
+          controller.signal
+      }
+    );
+
+  }finally{
+
+    clearTimeout(
+      timer
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   PROXY URL
+========================================================= */
+
+function proxyUrl(path){
+
+  return (
+    IDARK_PROXY +
+    encodeURIComponent(path)
+  );
+
+}
+
+
+/* =========================================================
+   EPSG:3857 → LEAFLET BOUNDS
+========================================================= */
+
+function makeBounds(box){
+
+  if(
+    !Array.isArray(box) ||
+    box.length < 4
+  ){
+
+    throw new Error(
+      "Некорректный box"
+    );
+
+  }
+
+  const back =
+    (x,y) =>
+      L.Projection
+        .SphericalMercator
+        .unproject(
+          L.point(
+            x,
+            y
+          )
+        );
+
+  return L.latLngBounds(
+
+    back(
+      Number(box[0]),
+      Number(box[1])
+    ),
+
+    back(
+      Number(box[2]),
+      Number(box[3])
+    )
+
+  );
+
+}
+
+
+/* =========================================================
+   FORMAT TIME
+========================================================= */
+
+function formatFrameTime(value){
+
+  if(!value){
+    return "—";
+  }
+
+  const date =
+    new Date(value);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+
+    return String(
+      value
+    );
+
+  }
+
+  return date.toLocaleTimeString(
+    "ru-RU",
+    {
+      hour:"2-digit",
+      minute:"2-digit",
+      timeZone:"Europe/Moscow"
+    }
+  );
+
+}
+
+
+/* =========================================================
+   LOAD FRAME
+========================================================= */
+
+async function loadFrame(
+  frame,
+  requestId
+){
+
+  if(
+    requestId !== activeRequest
+  ){
+    return;
+  }
+
+  if(activeLayer){
+
+    map.removeLayer(
+      activeLayer
+    );
+
+    activeLayer =
+      null;
+
+  }
+
+  if(
+    !frame ||
+    !frame.path
+  ){
+
+    throw new Error(
+      "У кадра отсутствует path"
+    );
+
+  }
+
+
+  /*
+     В API сейчас metadata возвращает
+     пути вида:
+
+     data/rain/wide/20260915/0700.rdr
+
+     Передаём именно этот путь
+     прокси без подмены.
+  */
+
+  const url =
+    proxyUrl(
+      frame.path
+    );
+
+
+  /*
+     Если сервер отдаёт PNG,
+     Leaflet сможет показать его.
+
+     Если сервер отдаёт .rdr,
+     этот этап специально сообщит
+     об ошибке вместо бесконечной загрузки.
+  */
+
+  if(
+    /\.rdr$/i.test(
+      frame.path
+    )
+  ){
+
+    throw new Error(
+      "Idarkmeteo вернул .rdr: формат кадра ещё нужно декодировать"
+    );
+
+  }
+
+
+  const image =
+    await new Promise(
+      (resolve,reject) => {
+
+        const img =
+          new Image();
+
+        img.crossOrigin =
+          "anonymous";
+
+        const timer =
+          setTimeout(
+            () => {
+
+              img.onload =
+                null;
+
+              img.onerror =
+                null;
+
+              reject(
+                new Error(
+                  "Таймаут загрузки кадра"
+                )
+              );
+
+            },
+            12000
+          );
+
+        img.onload =
+          () => {
+
+            clearTimeout(
+              timer
+            );
+
+            resolve(
+              img
+            );
+
+          };
+
+        img.onerror =
+          () => {
+
+            clearTimeout(
+              timer
+            );
+
+            reject(
+              new Error(
+                "Не удалось загрузить кадр"
+              )
+            );
+
+          };
+
+        img.src =
+          url;
+
+      }
+    );
+
+
+  if(
+    requestId !== activeRequest
+  ){
+    return;
+  }
+
+
+  const bounds =
+    makeBounds(
+      activeMetadata.box
+    );
+
+
+  activeLayer =
+    L.imageOverlay(
+      image.src,
+      bounds,
+      {
+        opacity:1,
+        interactive:false,
+        crossOrigin:true
+      }
+    ).addTo(
+      map
+    );
+
+
+  $("timeLabel").textContent =
+    formatFrameTime(
+      frame.t
+    );
+
+}
+
+
+/* =========================================================
+   ACTIVE METADATA
+========================================================= */
+
+let activeMetadata =
+  null;
+
+
+/* =========================================================
+   LOAD PRODUCT
+========================================================= */
+
+async function loadProduct(
+  productName,
+  keepCurrentFrame = false
+){
+
+  const product =
+    products[
+      productName
+    ];
+
+  if(!product){
+
+    return;
+
+  }
+
+
+  const requestId =
+    ++activeRequest;
+
+  activeProduct =
+    productName;
+
+  activeMetadata =
+    null;
+
+  $("loadingFrames").classList.add(
+    "show"
+  );
+
+  $("framesInfo").textContent =
+    "Подключение к радару…";
+
+  $("timeLabel").textContent =
+    "Подключение к радару…";
+
+
+  try{
+
+    const response =
+      await fetchWithTimeout(
+        proxyUrl(
+          product.framePath
+        ),
+        {
+          method:"GET",
+          cache:"no-store",
+          headers:{
+            "Accept":
+              "application/json"
+          }
+        },
+        12000
+      );
+
+
+    if(
+      requestId !== activeRequest
+    ){
+      return;
+    }
+
+
+    if(!response.ok){
+
+      let detail =
+        "";
+
+      try{
+
+        const errorJson =
+          await response.json();
+
+        detail =
+          errorJson.message ||
+          errorJson.error ||
+          "";
+
+      }catch{
+
+        detail =
+          await response
+            .text()
+            .catch(
+              () => ""
+            );
+
+      }
+
+
+      throw new Error(
+
+        "HTTP " +
+        response.status +
+        (
+          detail
+            ? ": " + detail
+            : ""
+        )
+
+      );
+
+    }
+
+
+    const metadata =
+      await response.json();
+
+
+    if(
+      !metadata ||
+      !Array.isArray(
+        metadata.frames
+      )
+    ){
+
+      throw new Error(
+        "Idarkmeteo вернул некорректные frames"
+      );
+
+    }
+
+
+    activeMetadata =
+      metadata;
+
+
+    let frames =
+      metadata.frames
+        .filter(
+          frame =>
+            frame &&
+            frame.path
+        )
+        .slice(
+          0,
+          frameCount
+        );
+
+
+    /*
+       API отдаёт:
+
+       newest → oldest
+
+       Для таймлайна делаем:
+
+       oldest → newest
+    */
+
+    frames =
+      frames.reverse();
+
+
+    activeFrames =
+      frames;
+
+
+    $("range").max =
+      Math.max(
+        0,
+        frames.length - 1
+      );
+
+
+    $("range").value =
+      keepCurrentFrame
+        ? Math.min(
+            Number(
+              $("range").value
+            ),
+            Math.max(
+              0,
+              frames.length - 1
+            )
+          )
+        : Math.max(
+            0,
+            frames.length - 1
+          );
+
+
+    $("framesInfo").textContent =
+      "Загружено кадров: " +
+      frames.length;
+
+
+    if(
+      frames.length === 0
+    ){
+
+      throw new Error(
+        "Кадры отсутствуют"
+      );
+
+    }
+
+
+    const firstTime =
+      formatFrameTime(
+        frames[0].t
+      );
+
+    const lastTime =
+      formatFrameTime(
+        frames[
+          frames.length - 1
+        ].t
+      );
+
+
+    $("times").innerHTML =
+      "<span>" +
+      firstTime +
+      "</span>" +
+      "<span>" +
+      lastTime +
+      "</span>";
+
+
+    const selectedIndex =
+      Number(
+        $("range").value
+      );
+
+
+    const selectedFrame =
+      frames[
+        selectedIndex
+      ];
+
+
+    /*
+       На этом месте .rdr пока
+       намеренно не отображаем.
+    */
+
+    if(
+      /\.rdr$/i.test(
+        selectedFrame.path
+      )
+    ){
+
+      $("timeLabel").textContent =
+        "Данные получены";
+
+      $("framesInfo").textContent =
+        "Получено кадров: " +
+        frames.length;
+
+      $("intensityValue").textContent =
+        "Формат .rdr";
+
+      $("loadingFrames").classList.remove(
+        "show"
+      );
+
+      return;
+
+    }
+
+
+    await loadFrame(
+      selectedFrame,
+      requestId
+    );
+
+
+    if(
+      requestId !== activeRequest
+    ){
+      return;
+    }
+
+
+    $("loadingFrames").classList.remove(
+      "show"
+    );
+
+
+  }catch(error){
+
+    if(
+      requestId !== activeRequest
+    ){
+      return;
+    }
+
+
+    console.error(
+      "CLOrad Idarkmeteo:",
+      error
+    );
+
+
+    $("loadingFrames").classList.remove(
+      "show"
+    );
+
+
+    activeMetadata =
+      null;
+
+    activeFrames =
+      [];
+
+
+    $("range").max =
+      0;
+
+    $("range").value =
+      0;
+
+    $("times").textContent =
+      "";
+
+    $("timeLabel").textContent =
+      "Ошибка подключения";
+
+    $("framesInfo").textContent =
+      error?.name === "AbortError"
+        ? "Таймаут подключения"
+        : (
+            error?.message ||
+            "Неизвестная ошибка"
+          );
+
+    $("intensityValue").textContent =
+      "Нет данных";
+
+
+    msg(
+      error?.message ||
+      "Ошибка подключения"
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   RAIN BUTTON
+========================================================= */
+
+$("rainProduct").onclick =
+  event => {
+
+    event.stopPropagation();
+
+    setActiveNav(
+      $("rainProduct")
+    );
+
+    loadProduct(
+      "rain"
+    );
+
+  };
+
+
+/* =========================================================
+   OTHER PRODUCT BUTTONS
+========================================================= */
+
+const navButtons =
+  document.querySelectorAll(
+    ".n"
+  );
+
+
+/*
+   Кнопки без подключённого
+   продукта пока сохраняют
+   обычное поведение интерфейса.
+*/
+
+navButtons.forEach(
+  button => {
+
+    if(
+      button.id === "layersNav" ||
+      button.id === "rainProduct"
+    ){
+
+      return;
+
+    }
+
+    button.addEventListener(
+      "click",
+      () => {
+
+        setActiveNav(
+          button
+        );
+
+        msg(
+          button.textContent.trim()
+        );
+
+      }
+    );
+
+  }
+);
+
+
+/* =========================================================
+   TIMELINE
+========================================================= */
+
+$("range").oninput =
+  async () => {
+
+    if(
+      !activeProduct ||
+      !activeFrames.length ||
+      !activeMetadata
+    ){
+
+      return;
+
+    }
+
+
+    const index =
+      Number(
+        $("range").value
+      );
+
+    const frame =
+      activeFrames[
+        index
+      ];
+
+
+    if(!frame){
+      return;
+    }
+
+
+    $("timeLabel").textContent =
+      formatFrameTime(
+        frame.t
+      );
+
+
+    if(
+      /\.rdr$/i.test(
+        frame.path
+      )
+    ){
+
+      $("intensityValue").textContent =
+        "Формат .rdr";
+
+      return;
+
+    }
+
+
+    try{
+
+      await loadFrame(
+        frame,
+        activeRequest
+      );
+
+    }catch(error){
+
+      console.error(
+        error
+      );
+
+      msg(
+        error?.message ||
+        "Ошибка кадра"
+      );
+
+    }
+
+  };
+
+
+/* =========================================================
+   PLAY
+========================================================= */
+
+let playing =
+  false;
+
+let playTimer =
+  null;
+
+$("play").onclick =
+  () => {
+
+    if(
+      !activeFrames.length
+    ){
+
+      msg(
+        "Радар пока не подключён"
+      );
+
+      return;
+
+    }
+
+
+    playing =
+      !playing;
+
+
+    if(!playing){
+
+      clearInterval(
+        playTimer
+      );
+
+      playTimer =
+        null;
+
+      $("play").innerHTML =
+        '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+
+      return;
+
+    }
+
+
+    $("play").innerHTML =
+      '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+
+
+    playTimer =
+      setInterval(
+        () => {
+
+          if(
+            !activeFrames.length
+          ){
+
+            playing =
+              false;
+
+            clearInterval(
+              playTimer
+            );
+
+            return;
+
+          }
+
+
+          let index =
+            Number(
+              $("range").value
+            );
+
+
+          index++;
+
+
+          if(
+            index >=
+            activeFrames.length
+          ){
+
+            index =
+              0;
+
+          }
+
+
+          $("range").value =
+            index;
+
+          $("range").dispatchEvent(
+            new Event(
+              "input"
+            )
+          );
+
+        },
+        700
+      );
+
+  };
+
+
+/* =========================================================
+   INITIAL STATE
+========================================================= */
+
+/*
+   Специально НЕ вызываем loadProduct().
+   Поэтому после открытия сайта:
+
+   Радар не подключён
+*/
+
+activeProduct =
+  null;
+
+activeFrames =
+  [];
+
+activeLayer =
+  null;
+
+$("timeLabel").textContent =
+  "Радар не подключён";
+
+$("framesInfo").textContent =
+  "Радар пока не подключён";
+
+$("range").max =
+  0;
+
+$("range").value =
+  0;
+
+$("times").textContent =
+  "";
+
+$("intensityValue").textContent =
+  "Нет данных";
+
+
+/* =========================================================
+   MAP RESIZE
+========================================================= */
+
 setTimeout(
-  () => map.invalidateSize(),
+  () =>
+    map.invalidateSize(),
   100
 );
 
 setTimeout(
-  () => map.invalidateSize(),
+  () =>
+    map.invalidateSize(),
   700
 );
+
 </script>
 
 <!-- CLOrad Lightning -->
@@ -1639,6 +3266,5 @@ setTimeout(
 
 <script src="risks.js"></script>
 
-<script src="idarkmeteo.js"></script>  
 </body>
 </html>
