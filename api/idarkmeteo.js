@@ -1,4 +1,5 @@
 export default async function handler(req) {
+
   const upstream =
     "https://idarkmeteo.host/api/v1/";
 
@@ -11,7 +12,8 @@ export default async function handler(req) {
       {
         status:500,
         headers:{
-          "Content-Type":"text/plain; charset=utf-8"
+          "Content-Type":
+            "text/plain; charset=utf-8"
         }
       }
     );
@@ -20,31 +22,132 @@ export default async function handler(req) {
   const url =
     new URL(req.url);
 
-  const path =
+  const originalPath =
     url.searchParams.get("path");
 
-  if (!path) {
+  if (!originalPath) {
     return new Response(
       "Missing path",
-      {status:400}
+      {
+        status:400
+      }
     );
   }
 
   /*
-     Разрешаем только файлы внутри API.
-  */
+   * =========================================================
+   * SECURITY
+   * =========================================================
+   */
 
   if (
-    path.startsWith("/") ||
-    path.includes("..") ||
-    path.includes("\\") ||
-    !/^(frames|data|latest|archive|day)\/[a-z]+\/[a-z0-9_-]+\/.+\.(json|png)$/i.test(path)
+    originalPath.startsWith("/") ||
+    originalPath.includes("..") ||
+    originalPath.includes("\\")
   ) {
     return new Response(
       "Invalid Idarkmeteo path",
-      {status:400}
+      {
+        status:400
+      }
     );
   }
+
+  /*
+   * =========================================================
+   * FRAMES JSON
+   * =========================================================
+   *
+   * Например:
+   *
+   * frames/rain/wide.json
+   *
+   */
+
+  const isFramesJson =
+    /^frames\/[a-z]+\/[a-z0-9_-]+\.json$/i
+      .test(originalPath);
+
+  /*
+   * =========================================================
+   * Обычные PNG
+   * =========================================================
+   */
+
+  const isPng =
+    /^(data|latest|archive|day)\/[a-z]+\/[a-z0-9_-]+\/.+\.png$/i
+      .test(originalPath);
+
+  /*
+   * =========================================================
+   * RDR → ARCHIVE PNG
+   * =========================================================
+   *
+   * Живой frames.json сейчас может отдавать:
+   *
+   * data/rain/wide/20260915/0700.rdr
+   *
+   * Для отображения превращаем его в:
+   *
+   * archive/rain/wide/20260915/0700.png
+   *
+   */
+
+  let path =
+    originalPath;
+
+  const rdrMatch =
+    originalPath.match(
+      /^data\/([a-z]+)\/([a-z0-9_-]+)\/(\d{8})\/(\d{4})\.rdr$/i
+    );
+
+  if (rdrMatch) {
+
+    const product =
+      rdrMatch[1];
+
+    const mosaic =
+      rdrMatch[2];
+
+    const date =
+      rdrMatch[3];
+
+    const time =
+      rdrMatch[4];
+
+    path =
+      `archive/${product}/${mosaic}/${date}/${time}.png`;
+  }
+
+  /*
+   * После преобразования проверяем,
+   * что путь действительно разрешён.
+   */
+
+  const allowed =
+    isFramesJson ||
+    isPng ||
+    rdrMatch !== null;
+
+  if (!allowed) {
+
+    return new Response(
+      "Invalid Idarkmeteo path",
+      {
+        status:400,
+        headers:{
+          "Content-Type":
+            "text/plain; charset=utf-8"
+        }
+      }
+    );
+  }
+
+  /*
+   * =========================================================
+   * REQUEST
+   * =========================================================
+   */
 
   const target =
     upstream +
@@ -57,16 +160,26 @@ export default async function handler(req) {
         target,
         {
           method:"GET",
+
           headers:{
-            "X-API-Key":key,
+            "X-API-Key":
+              key,
+
             "Accept":
               path.endsWith(".json")
                 ? "application/json"
                 : "image/png"
           },
+
           cache:"no-store"
         }
       );
+
+    /*
+     * =======================================================
+     * UPSTREAM ERROR
+     * =======================================================
+     */
 
     if (!response.ok) {
 
@@ -74,20 +187,28 @@ export default async function handler(req) {
         await response.text();
 
       return new Response(
-        text || "Upstream error",
+        text ||
+        "Upstream error",
         {
-          status:response.status,
+          status:
+            response.status,
+
           headers:{
             "Content-Type":
               response.headers.get(
                 "content-type"
               ) ||
-              "text/plain"
+              "text/plain; charset=utf-8"
           }
         }
       );
-
     }
+
+    /*
+     * =========================================================
+     * RESPONSE
+     * =========================================================
+     */
 
     const headers =
       new Headers();
@@ -139,7 +260,5 @@ export default async function handler(req) {
         }
       }
     );
-
   }
-
 }
