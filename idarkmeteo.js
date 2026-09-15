@@ -8,14 +8,23 @@
 
   "use strict";
 
-  const API = "/api/idarkmeteo?path=";
+  const API =
+    "/api/idarkmeteo?path=";
 
-  const map = window.map;
+  const map =
+    window.map;
 
   if(!map){
-    console.error("CLOrad: карта не найдена");
+    console.error(
+      "CLOrad: карта не найдена"
+    );
     return;
   }
+
+
+  /* =========================================================
+     DOM
+  ========================================================= */
 
   const range =
     document.getElementById("range");
@@ -38,10 +47,29 @@
   const frameInput =
     document.getElementById("frameInput");
 
-  /*
-     Соответствие кнопок навигации
-     продуктам Idarkmeteo.
-  */
+  const frameMinus =
+    document.getElementById("frameMinus");
+
+  const framePlus =
+    document.getElementById("framePlus");
+
+
+  if(
+    !range ||
+    !timeLabel ||
+    !times ||
+    !play
+  ){
+    console.error(
+      "CLOrad: элементы таймлайна не найдены"
+    );
+    return;
+  }
+
+
+  /* =========================================================
+     ПРОДУКТЫ IDARKMETEO
+  ========================================================= */
 
   const PRODUCTS = {
 
@@ -74,6 +102,11 @@
     }
 
   };
+
+
+  /* =========================================================
+     СОСТОЯНИЕ
+  ========================================================= */
 
   let activeProduct = null;
 
@@ -130,7 +163,7 @@
 
 
   /* =========================================================
-     OVERLAY
+     УДАЛЕНИЕ КАДРА
   ========================================================= */
 
   function removeOverlay(){
@@ -140,7 +173,9 @@
     }
 
     try{
-      map.removeLayer(overlay);
+      map.removeLayer(
+        overlay
+      );
     }catch(error){}
 
     overlay = null;
@@ -149,26 +184,7 @@
 
 
   /* =========================================================
-     PLAY
-  ========================================================= */
-
-  function stopPlayback(){
-
-    playing = false;
-
-    if(playTimer){
-
-      clearTimeout(playTimer);
-
-      playTimer = null;
-
-    }
-
-  }
-
-
-  /* =========================================================
-     LOADING
+     ЗАГРУЗКА
   ========================================================= */
 
   function setLoading(state){
@@ -186,7 +202,7 @@
 
 
   /* =========================================================
-     ВРЕМЯ
+     ФОРМАТ ВРЕМЕНИ
   ========================================================= */
 
   function formatTime(value){
@@ -237,10 +253,8 @@
       times.innerHTML = "";
 
       if(framesInfo){
-
         framesInfo.textContent =
           "Радар пока не подключён";
-
       }
 
       return;
@@ -266,10 +280,17 @@
       frames[currentFrame];
 
 
+    if(!current){
+      return;
+    }
+
+
     timeLabel.textContent =
       activeProduct.title +
       " · " +
-      formatTime(current.t);
+      formatTime(
+        current.t
+      );
 
 
     const newest =
@@ -285,7 +306,6 @@
       "<span>" +
       formatTime(oldest.t) +
       "</span>" +
-
       "<span>" +
       formatTime(newest.t) +
       "</span>";
@@ -305,6 +325,26 @@
         " мин";
 
     }
+
+  }
+
+
+  /* =========================================================
+     СОЗДАНИЕ URL КАДРА
+  ========================================================= */
+
+  function frameUrl(path){
+
+    if(!path){
+      return null;
+    }
+
+    return (
+      API +
+      encodeURIComponent(
+        path
+      )
+    );
 
   }
 
@@ -333,10 +373,8 @@
       );
 
 
-    currentFrame = index;
-
-
-    removeOverlay();
+    currentFrame =
+      index;
 
 
     const frame =
@@ -352,22 +390,79 @@
 
 
     const url =
-      API +
-      encodeURIComponent(
+      frameUrl(
         frame.path
       );
 
 
-    overlay =
+    if(!url){
+      return;
+    }
+
+
+    removeOverlay();
+
+
+    const image =
       L.imageOverlay(
         url,
         bounds,
         {
           opacity:1,
           interactive:false,
-          zIndex:35
+          zIndex:35,
+          crossOrigin:true
         }
       );
+
+
+    overlay =
+      image;
+
+
+    /*
+       Если PNG не загрузился,
+       удаляем битый прямоугольник.
+    */
+
+    overlay.once(
+      "error",
+      function(){
+
+        if(
+          overlay === image
+        ){
+
+          try{
+            map.removeLayer(
+              image
+            );
+          }catch(error){}
+
+          overlay = null;
+
+        }
+
+        console.error(
+          "CLOrad Idarkmeteo: PNG не загрузился",
+          url
+        );
+
+      }
+    );
+
+
+    overlay.once(
+      "load",
+      function(){
+
+        console.log(
+          "CLOrad Idarkmeteo: кадр загружен",
+          frame.t
+        );
+
+      }
+    );
 
 
     overlay.addTo(map);
@@ -378,6 +473,77 @@
 
 
     updateTimeline();
+
+  }
+
+
+  /* =========================================================
+     ПОЛУЧЕНИЕ BOX
+  ========================================================= */
+
+  function makeBounds(box){
+
+    if(
+      !Array.isArray(box) ||
+      box.length < 4
+    ){
+      throw new Error(
+        "У API отсутствует корректный box"
+      );
+    }
+
+
+    const west =
+      Number(box[0]);
+
+    const south =
+      Number(box[1]);
+
+    const east =
+      Number(box[2]);
+
+    const north =
+      Number(box[3]);
+
+
+    if(
+      !Number.isFinite(west) ||
+      !Number.isFinite(south) ||
+      !Number.isFinite(east) ||
+      !Number.isFinite(north)
+    ){
+      throw new Error(
+        "Некорректные координаты box"
+      );
+    }
+
+
+    const southWest =
+      L.Projection
+        .SphericalMercator
+        .unproject(
+          L.point(
+            west,
+            south
+          )
+        );
+
+
+    const northEast =
+      L.Projection
+        .SphericalMercator
+        .unproject(
+          L.point(
+            east,
+            north
+          )
+        );
+
+
+    return L.latLngBounds(
+      southWest,
+      northEast
+    );
 
   }
 
@@ -412,15 +578,27 @@
 
 
     activeProduct = {
+
       product:product,
+
       title:config.title,
+
       units:config.units,
+
       mosaic:config.mosaic,
+
       step:null
+
     };
 
 
     try{
+
+      /*
+         Например:
+
+         frames/rain/wide.json
+      */
 
       const path =
         "frames/" +
@@ -430,12 +608,29 @@
         ".json";
 
 
+      const url =
+        API +
+        encodeURIComponent(
+          path
+        );
+
+
+      console.log(
+        "CLOrad Idarkmeteo: запрос",
+        url
+      );
+
+
       const response =
         await fetch(
-          API +
-          encodeURIComponent(path),
+          url,
           {
-            cache:"no-store"
+            method:"GET",
+            cache:"no-store",
+            headers:{
+              "Accept":
+                "application/json"
+            }
           }
         );
 
@@ -443,7 +638,7 @@
       if(!response.ok){
 
         throw new Error(
-          "HTTP " +
+          "Metadata HTTP " +
           response.status
         );
 
@@ -474,68 +669,22 @@
       }
 
 
-      /*
-         box:
-
-         [запад, юг, восток, север]
-
-         Координаты EPSG:3857.
-      */
-
-      if(
-        !Array.isArray(data.box) ||
-        data.box.length < 4
-      ){
-
-        throw new Error(
-          "У API отсутствует box"
-        );
-
-      }
-
-
-      const southWest =
-        L.Projection
-          .SphericalMercator
-          .unproject(
-            L.point(
-              data.box[0],
-              data.box[1]
-            )
-          );
-
-
-      const northEast =
-        L.Projection
-          .SphericalMercator
-          .unproject(
-            L.point(
-              data.box[2],
-              data.box[3]
-            )
-          );
-
-
       bounds =
-        L.latLngBounds(
-          southWest,
-          northEast
+        makeBounds(
+          data.box
         );
 
 
       activeProduct.step =
-        data.step_minutes ||
-        null;
+        Number(
+          data.step_minutes
+        ) || null;
 
-
-      /*
-         Количество кадров берём
-         из существующей настройки.
-      */
 
       let count =
         parseInt(
-          frameInput?.value || "24",
+          frameInput?.value ||
+          "24",
           10
         );
 
@@ -544,28 +693,38 @@
         !Number.isFinite(count) ||
         count < 1
       ){
-
         count = 1;
-
       }
 
 
       /*
-         API отдаёт:
-         свежий → старый.
+         Idarkmeteo отдаёт:
+
+         свежий → старый
       */
 
       frames =
-        data.frames.slice(
-          0,
-          count
+        data.frames
+          .filter(
+            frame =>
+              frame &&
+              frame.path &&
+              frame.t
+          )
+          .slice(
+            0,
+            count
+          );
+
+
+      if(!frames.length){
+
+        throw new Error(
+          "После проверки кадров ничего не осталось"
         );
 
+      }
 
-      /*
-         Сохраняем текущую позицию
-         при автоматическом обновлении.
-      */
 
       let newIndex =
         frames.length - 1;
@@ -594,10 +753,19 @@
 
       updateTimeline();
 
-      showFrame(currentFrame);
+
+      /*
+         Показываем кадр только после
+         успешной загрузки метаданных.
+      */
+
+      showFrame(
+        currentFrame
+      );
 
 
       scheduleRefresh();
+
 
     }catch(error){
 
@@ -651,9 +819,7 @@
     }finally{
 
       if(id === requestId){
-
         setLoading(false);
-
       }
 
     }
@@ -683,9 +849,7 @@
           refreshTimer = null;
 
 
-          if(
-            activeProduct
-          ){
+          if(activeProduct){
 
             await loadProduct(
               activeProduct.product,
@@ -704,108 +868,26 @@
 
 
   /* =========================================================
-     ВЫБОР СЛОЯ
+     PLAY
   ========================================================= */
 
-  function selectProduct(product){
+  function stopPlayback(){
 
-    const button =
-      buttons.find(
-        button =>
-          getProductFromButton(
-            button
-          ) === product
+    playing = false;
+
+
+    if(playTimer){
+
+      clearTimeout(
+        playTimer
       );
 
+      playTimer = null;
 
-    if(!button){
-      return;
     }
-
-
-    buttons.forEach(
-      item =>
-        item.classList.remove(
-          "active"
-        )
-    );
-
-
-    button.classList.add(
-      "active"
-    );
-
-
-    loadProduct(
-      product
-    );
 
   }
 
-
-  /* =========================================================
-     ПЕРЕХВАТ НАВИГАЦИИ
-  ========================================================= */
-
-  buttons.forEach(
-    button => {
-
-      const product =
-        getProductFromButton(
-          button
-        );
-
-
-      if(!product){
-        return;
-      }
-
-
-      button.onclick =
-        function(event){
-
-          event.preventDefault();
-
-          event.stopPropagation();
-
-
-          selectProduct(
-            product
-          );
-
-        };
-
-    }
-  );
-
-
-  /* =========================================================
-     СЛАЙДЕР
-  ========================================================= */
-
-  range.addEventListener(
-    "input",
-    function(){
-
-      if(!activeProduct){
-        return;
-      }
-
-
-      showFrame(
-        parseInt(
-          range.value,
-          10
-        ) || 0
-      );
-
-    }
-  );
-
-
-  /* =========================================================
-     PLAY
-  ========================================================= */
 
   play.onclick =
     function(){
@@ -875,42 +957,62 @@
 
 
   /* =========================================================
-     НАСТРОЙКА КОЛИЧЕСТВА КАДРОВ
+     СЛАЙДЕР
   ========================================================= */
 
-  const frameMinus =
-    document.getElementById(
-      "frameMinus"
+  range.addEventListener(
+    "input",
+    function(){
+
+      if(!activeProduct){
+        return;
+      }
+
+
+      showFrame(
+        parseInt(
+          range.value,
+          10
+        ) || 0
+      );
+
+    }
+  );
+
+
+  /* =========================================================
+     КОЛИЧЕСТВО КАДРОВ
+  ========================================================= */
+
+  function reloadCurrentProduct(){
+
+    if(!activeProduct){
+      return;
+    }
+
+
+    setTimeout(
+      function(){
+
+        loadProduct(
+          activeProduct.product,
+          {
+            keepFrame:true
+          }
+        );
+
+      },
+      0
     );
 
-  const framePlus =
-    document.getElementById(
-      "framePlus"
-    );
+  }
 
 
   if(frameMinus){
 
     frameMinus.addEventListener(
       "click",
-      function(){
-
-        if(activeProduct){
-
-          setTimeout(
-            () =>
-              loadProduct(
-                activeProduct.product,
-                {
-                  keepFrame:true
-                }
-              ),
-            0
-          );
-
-        }
-
-      }
+      reloadCurrentProduct
     );
 
   }
@@ -920,84 +1022,67 @@
 
     framePlus.addEventListener(
       "click",
-      function(){
-
-        if(activeProduct){
-
-          setTimeout(
-            () =>
-              loadProduct(
-                activeProduct.product,
-                {
-                  keepFrame:true
-                }
-              ),
-            0
-          );
-
-        }
-
-      }
-    );
-
-  }
-
-
-  if(frameInput){
-
-    frameInput.addEventListener(
-      "change",
-      function(){
-
-        if(activeProduct){
-
-          loadProduct(
-            activeProduct.product,
-            {
-              keepFrame:true
-            }
-          );
-
-        }
-
-      }
+      reloadCurrentProduct
     );
 
   }
 
 
   /* =========================================================
-     ПУБЛИЧНЫЙ API ДЛЯ БУДУЩИХ СЛОЁВ
+     НАВИГАЦИЯ ПРОДУКТОВ
   ========================================================= */
 
-  window.CLOradIdarkmeteo = {
+  buttons.forEach(
+    button => {
 
-    load:loadProduct,
-
-    reload:function(){
-
-      if(activeProduct){
-
-        loadProduct(
-          activeProduct.product,
-          {
-            keepFrame:true
-          }
+      const product =
+        getProductFromButton(
+          button
         );
 
+
+      if(!product){
+        return;
       }
 
-    },
 
-    getActive:function(){
+      button.onclick =
+        function(event){
 
-      return activeProduct
-        ? activeProduct.product
-        : null;
+          event.preventDefault();
+
+          event.stopPropagation();
+
+
+          buttons.forEach(
+            item =>
+              item.classList.remove(
+                "active"
+              )
+          );
+
+
+          button.classList.add(
+            "active"
+          );
+
+
+          loadProduct(
+            product
+          );
+
+        };
 
     }
+  );
 
-  };
 
+  /* =========================================================
+     ГОТОВО
+  ========================================================= */
+
+  console.log(
+    "CLOrad: Idarkmeteo подключён"
+  );
 
 })();
