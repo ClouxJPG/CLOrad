@@ -1,86 +1,63 @@
-export default async function handler(req) {
+module.exports = async function handler(req, res) {
   const UPSTREAM = "https://idarkmeteo.host/api/v1/";
   const key = process.env.IDARKMETEO_KEY;
 
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
-    "Cache-Control": "no-store, no-cache, must-revalidate",
-    "Pragma": "no-cache"
-  };
+  // CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-API-Key"
+  );
 
-  // CORS preflight
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate"
+  );
+
+  res.setHeader("Pragma", "no-cache");
+
+  // OPTIONS
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers
-    });
+    return res.status(204).end();
   }
 
-  // API key
+  // API KEY
   if (!key) {
     console.error("CLOrad: IDARKMETEO_KEY is missing");
 
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "IDARKMETEO_KEY is not configured"
-      }),
-      {
-        status: 500,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+    return res.status(500).json({
+      ok: false,
+      error: "IDARKMETEO_KEY is not configured"
+    });
   }
 
-  // Read requested path
-  const url = new URL(req.url);
-  const path = url.searchParams.get("path");
+  // PATH
+  const path = req.query?.path;
 
-  if (!path) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Missing path"
-      }),
-      {
-        status: 400,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+  if (!path || typeof path !== "string") {
+    return res.status(400).json({
+      ok: false,
+      error: "Missing path"
+    });
   }
 
-  // Basic path protection
+  // SECURITY
   if (
     path.startsWith("/") ||
     path.includes("..") ||
     path.includes("\\") ||
     path.includes("\0")
   ) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Invalid Idarkmeteo path",
-        path
-      }),
-      {
-        status: 400,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid Idarkmeteo path",
+      path
+    });
   }
 
-  // Allowed endpoints
+  // ALLOWED PATHS
+
   const isFrameJson =
     /^frames\/[a-z]+\/[a-z0-9_-]+\.json$/i.test(path);
 
@@ -91,20 +68,11 @@ export default async function handler(req) {
     /^data\/[a-z]+\/[a-z0-9_-]+\/\d{8}\/\d{4}\.rdr$/i.test(path);
 
   if (!isFrameJson && !isPng && !isRdr) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Invalid Idarkmeteo path",
-        path
-      }),
-      {
-        status: 400,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid Idarkmeteo path",
+      path
+    });
   }
 
   const target = UPSTREAM + path;
@@ -122,9 +90,7 @@ export default async function handler(req) {
         "Accept": isFrameJson
           ? "application/json"
           : "*/*"
-      },
-
-      cache: "no-store"
+      }
     });
   } catch (error) {
     console.error(
@@ -132,24 +98,16 @@ export default async function handler(req) {
       error
     );
 
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Upstream fetch failed",
-        path,
-        message: error?.message || String(error)
-      }),
-      {
-        status: 502,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+    return res.status(502).json({
+      ok: false,
+      error: "Upstream fetch failed",
+      path,
+      message: error?.message || String(error)
+    });
   }
 
-  // Upstream returned an error
+  // UPSTREAM ERROR
+
   if (!response.ok) {
     let body = "";
 
@@ -166,53 +124,43 @@ export default async function handler(req) {
       body
     );
 
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Idarkmeteo upstream error",
-        status: response.status,
-        path,
-        message: body || `HTTP ${response.status}`
-      }),
-      {
-        status: response.status,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    );
+    return res.status(response.status).json({
+      ok: false,
+      error: "Idarkmeteo upstream error",
+      status: response.status,
+      path,
+      message: body || `HTTP ${response.status}`
+    });
   }
 
-  // Preserve upstream content type
+  // CONTENT TYPE
+
   const contentType =
     response.headers.get("content-type") ||
-    (isFrameJson
-      ? "application/json"
-      : "application/octet-stream");
+    (
+      isFrameJson
+        ? "application/json"
+        : "application/octet-stream"
+    );
 
-  const responseHeaders = new Headers(headers);
-
-  responseHeaders.set(
+  res.setHeader(
     "Content-Type",
     contentType
   );
 
-  // JSON metadata
+  // JSON
+
   if (isFrameJson) {
     const text = await response.text();
 
-    return new Response(text, {
-      status: 200,
-      headers: responseHeaders
-    });
+    return res.status(200).send(text);
   }
 
-  // PNG / RDR / binary data
-  const buffer = await response.arrayBuffer();
+  // BINARY: PNG / RDR
 
-  return new Response(buffer, {
-    status: 200,
-    headers: responseHeaders
-  });
-}
+  const buffer = Buffer.from(
+    await response.arrayBuffer()
+  );
+
+  return res.status(200).send(buffer);
+};
