@@ -28,7 +28,7 @@
   if(!map){
 
     console.error(
-      "CLOrad Idarkmeteo: window.map не найден"
+      "CLOrad Idarkmeteo: карта не найдена"
     );
 
     return;
@@ -75,7 +75,7 @@
   ){
 
     console.error(
-      "CLOrad Idarkmeteo: элементы таймлайна не найдены"
+      "CLOrad Idarkmeteo: таймлайн не найден"
     );
 
     return;
@@ -143,7 +143,7 @@
 
 
   /* =========================================================
-     НАВИГАЦИЯ
+     КНОПКИ
   ========================================================= */
 
   const buttons =
@@ -169,7 +169,6 @@
       if(
         PRODUCTS[key].button === text
       ){
-
         return key;
       }
 
@@ -213,6 +212,17 @@
       "show",
       !!state
     );
+  }
+
+
+  /* =========================================================
+     СТАТУС
+  ========================================================= */
+
+  function setStatus(text){
+
+    timeLabel.textContent =
+      text;
   }
 
 
@@ -263,8 +273,9 @@
       range.max = "0";
       range.value = "0";
 
-      timeLabel.textContent =
-        "Радар не подключён";
+      setStatus(
+        "Радар не подключён"
+      );
 
       times.innerHTML = "";
 
@@ -303,12 +314,13 @@
     }
 
 
-    timeLabel.textContent =
+    setStatus(
       activeProduct.title +
       " · " +
       formatTime(
         current.t
-      );
+      )
+    );
 
 
     const oldest =
@@ -323,10 +335,14 @@
 
     times.innerHTML =
       "<span>" +
-      formatTime(oldest.t) +
+      formatTime(
+        oldest.t
+      ) +
       "</span>" +
       "<span>" +
-      formatTime(newest.t) +
+      formatTime(
+        newest.t
+      ) +
       "</span>";
 
 
@@ -344,7 +360,6 @@
               " мин"
             : ""
         );
-
     }
   }
 
@@ -360,16 +375,6 @@
     }
 
 
-    /*
-     * Idarkmeteo сейчас может возвращать:
-     *
-     * data/rain/wide/20260915/0700.rdr
-     *
-     * API proxy сам преобразует .rdr → archive PNG.
-     *
-     * Поэтому здесь путь НЕ меняем.
-     */
-
     return (
       API +
       encodeURIComponent(
@@ -380,7 +385,7 @@
 
 
   /* =========================================================
-     BOX → LEAFLET BOUNDS
+     BOX
   ========================================================= */
 
   function makeBounds(box){
@@ -391,7 +396,7 @@
     ){
 
       throw new Error(
-        "API не вернул корректный box"
+        "API не вернул box"
       );
     }
 
@@ -461,7 +466,6 @@
       !frames.length ||
       !bounds
     ){
-
       return;
     }
 
@@ -489,6 +493,11 @@
       !frame.path
     ){
 
+      console.error(
+        "CLOrad: неправильный кадр",
+        frame
+      );
+
       return;
     }
 
@@ -508,8 +517,7 @@
 
 
     console.log(
-      "CLOrad Idarkmeteo: загружаю кадр",
-      frame.t,
+      "CLOrad: загружаю кадр:",
       frame.path
     );
 
@@ -536,7 +544,7 @@
       function(){
 
         console.log(
-          "CLOrad Idarkmeteo: PNG загружен",
+          "CLOrad: кадр загружен:",
           frame.path
         );
 
@@ -549,11 +557,8 @@
       function(){
 
         console.error(
-          "CLOrad Idarkmeteo: ошибка загрузки кадра",
-          {
-            path:frame.path,
-            url:url
-          }
+          "CLOrad: кадр не загрузился:",
+          url
         );
 
 
@@ -570,17 +575,16 @@
           overlay = null;
         }
 
+
+        setStatus(
+          "Ошибка загрузки кадра"
+        );
+
       }
     );
 
 
     image.addTo(map);
-
-
-    range.value =
-      String(
-        currentFrame
-      );
 
 
     updateTimeline();
@@ -608,7 +612,8 @@
   }
 
 
-  play.onclick =
+  play.addEventListener(
+    "click",
     function(){
 
       if(
@@ -645,7 +650,6 @@
           !playing ||
           !activeProduct
         ){
-
           return;
         }
 
@@ -671,7 +675,8 @@
 
 
       tick();
-    };
+    }
+  );
 
 
   /* =========================================================
@@ -686,7 +691,6 @@
         !activeProduct ||
         !frames.length
       ){
-
         return;
       }
 
@@ -740,6 +744,43 @@
 
 
   /* =========================================================
+     АВТООБНОВЛЕНИЕ
+  ========================================================= */
+
+  function scheduleRefresh(){
+
+    if(refreshTimer){
+
+      clearTimeout(
+        refreshTimer
+      );
+    }
+
+
+    refreshTimer =
+      setTimeout(
+        function(){
+
+          refreshTimer = null;
+
+
+          if(activeProduct){
+
+            loadProduct(
+              activeProduct.product,
+              {
+                keepFrame:true
+              }
+            );
+          }
+
+        },
+        10 * 60 * 1000
+      );
+  }
+
+
+  /* =========================================================
      ЗАГРУЗКА ПРОДУКТА
   ========================================================= */
 
@@ -782,7 +823,32 @@
     };
 
 
+    frames = [];
+
+    bounds = null;
+
+    currentFrame = 0;
+
+
+    setStatus(
+      "Подключение к радару…"
+    );
+
+
+    if(framesInfo){
+
+      framesInfo.textContent =
+        "Получение данных…";
+    }
+
+
     try{
+
+      /*
+       * -----------------------------------------------------
+       * METADATA
+       * -----------------------------------------------------
+       */
 
       const path =
         "frames/" +
@@ -800,7 +866,7 @@
 
 
       console.log(
-        "CLOrad Idarkmeteo: metadata",
+        "CLOrad: metadata:",
         url
       );
 
@@ -821,7 +887,7 @@
 
       if(!response.ok){
 
-        const errorText =
+        const text =
           await response.text()
             .catch(
               () => ""
@@ -832,11 +898,11 @@
           "Metadata HTTP " +
           response.status +
           (
-            errorText
+            text
               ? " · " +
-                errorText.slice(
+                text.slice(
                   0,
-                  180
+                  200
                 )
               : ""
           )
@@ -854,7 +920,7 @@
 
 
       console.log(
-        "CLOrad Idarkmeteo: metadata получена",
+        "CLOrad: metadata:",
         data
       );
 
@@ -868,10 +934,16 @@
       ){
 
         throw new Error(
-          "API не вернул кадры"
+          "В metadata нет кадров"
         );
       }
 
+
+      /*
+       * -----------------------------------------------------
+       * BOUNDS
+       * -----------------------------------------------------
+       */
 
       bounds =
         makeBounds(
@@ -879,11 +951,23 @@
         );
 
 
+      /*
+       * -----------------------------------------------------
+       * STEP
+       * -----------------------------------------------------
+       */
+
       activeProduct.step =
         Number(
           data.step_minutes
         ) || null;
 
+
+      /*
+       * -----------------------------------------------------
+       * КОЛИЧЕСТВО КАДРОВ
+       * -----------------------------------------------------
+       */
 
       let count =
         parseInt(
@@ -907,7 +991,7 @@
        *
        * новый → старый
        *
-       * Интерфейс:
+       * интерфейс:
        *
        * старый → новый
        */
@@ -917,8 +1001,12 @@
           .filter(
             frame =>
               frame &&
-              frame.path &&
-              frame.t
+              typeof frame.path ===
+                "string" &&
+              frame.path.length > 0 &&
+              typeof frame.t ===
+                "string" &&
+              frame.t.length > 0
           )
           .slice(
             0,
@@ -930,33 +1018,33 @@
       if(!frames.length){
 
         throw new Error(
-          "Корректных кадров нет"
+          "После фильтрации кадров нет"
         );
       }
 
 
-      let newIndex =
-        frames.length - 1;
-
+      /*
+       * -----------------------------------------------------
+       * ПОКАЗЫВАЕМ НОВЕЙШИЙ
+       * -----------------------------------------------------
+       */
 
       if(
         options &&
         options.keepFrame
       ){
 
-        newIndex =
+        currentFrame =
           Math.min(
             currentFrame,
             frames.length - 1
           );
+
+      }else{
+
+        currentFrame =
+          frames.length - 1;
       }
-
-
-      currentFrame =
-        Math.max(
-          0,
-          newIndex
-        );
 
 
       updateTimeline();
@@ -978,7 +1066,7 @@
 
 
       console.error(
-        "CLOrad Idarkmeteo:",
+        "CLOrad Idarkmeteo ERROR:",
         error
       );
 
@@ -992,11 +1080,17 @@
       removeOverlay();
 
 
-      timeLabel.textContent =
-        "Слой недоступен";
+      setStatus(
+        "Радар не подключён"
+      );
 
 
       times.innerHTML = "";
+
+
+      range.min = "0";
+      range.max = "0";
+      range.value = "0";
 
 
       if(framesInfo){
@@ -1012,7 +1106,7 @@
       ){
 
         window.msg(
-          "Ошибка подключения к радару"
+          "Не удалось подключить радар"
         );
       }
 
@@ -1027,44 +1121,13 @@
 
 
   /* =========================================================
-     АВТООБНОВЛЕНИЕ
-  ========================================================= */
-
-  function scheduleRefresh(){
-
-    if(refreshTimer){
-
-      clearTimeout(
-        refreshTimer
-      );
-    }
-
-
-    refreshTimer =
-      setTimeout(
-        function(){
-
-          refreshTimer = null;
-
-
-          if(activeProduct){
-
-            loadProduct(
-              activeProduct.product,
-              {
-                keepFrame:true
-              }
-            );
-          }
-
-        },
-        10 * 60 * 1000
-      );
-  }
-
-
-  /* =========================================================
      КНОПКИ ПРОДУКТОВ
+     
+     ВАЖНО:
+     НЕТ АВТОЗАПУСКА.
+     
+     При открытии сайта:
+     ни один продукт не выбран.
   ========================================================= */
 
   buttons.forEach(
@@ -1081,7 +1144,8 @@
       }
 
 
-      button.onclick =
+      button.addEventListener(
+        "click",
         function(event){
 
           event.preventDefault();
@@ -1104,62 +1168,42 @@
           loadProduct(
             product
           );
-        };
+
+        },
+        true
+      );
+
     }
   );
 
 
   /* =========================================================
-     АВТОЗАПУСК РАДАРА
+     НАЧАЛЬНОЕ СОСТОЯНИЕ
   ========================================================= */
 
-  /*
-   * Сразу загружаем отражаемость/осадки,
-   * чтобы после открытия сайта не было
-   * вечного «Радар не подключён».
-   */
-
-  const rainButton =
-    buttons.find(
-      button =>
-        getProductFromButton(
-          button
-        ) === "rain"
-    );
+  buttons.forEach(
+    button =>
+      button.classList.remove(
+        "active"
+      )
+  );
 
 
-  if(rainButton){
+  setStatus(
+    "Радар не подключён"
+  );
 
-    rainButton.classList.add(
-      "active"
-    );
+
+  if(framesInfo){
+
+    framesInfo.textContent =
+      "Радар пока не подключён";
   }
 
 
-  /*
-   * Небольшая задержка нужна,
-   * чтобы Leaflet успел полностью
-   * инициализировать карту.
-   */
-
-  setTimeout(
-    function(){
-
-      loadProduct(
-        "rain"
-      );
-
-    },
-    0
-  );
-
-
-  /* =========================================================
-     READY
-  ========================================================= */
-
   console.log(
-    "CLOrad: Idarkmeteo подключён"
+    "CLOrad: Idarkmeteo готов"
   );
+
 
 })();
