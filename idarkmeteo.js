@@ -1,25 +1,18 @@
 /* =========================================================
-   CLOrad — IDARKMETEO
-   Управление продуктами IDARKMETEO.
-
-   Продукт загружается только после нажатия
-   соответствующей кнопки.
-========================================================= */
+   CLOrad — iDarkMeteo
+   ========================================================= */
 
 (function () {
   "use strict";
 
-  const API =
-    "/api/idarkmeteo?path=";
+  const API = "/api/idarkmeteo?path=";
 
-  const map =
-    window.map;
+  const map = window.map;
 
   if (!map) {
     console.error(
-      "CLOrad: window.map не найден"
+      "[CLOrad] Leaflet map was not found"
     );
-
     return;
   }
 
@@ -46,581 +39,703 @@
     },
 
     satrain: {
-      button:
-        "Спутниковые осадки",
+      button: "Спутниковые осадки",
       mosaic: "coarse",
-      title:
-        "Спутниковые осадки",
+      title: "Спутниковые осадки",
       units: "мм/ч"
     }
   };
 
-  let activeProduct =
-    null;
+  let currentProduct = null;
+  let currentData = null;
 
-  let activeLayer =
-    null;
+  let overlay = null;
+  let overlayUrl = null;
 
-  let frames = [];
-
-  let bounds =
-    null;
-
-  let frameIndex =
-    0;
-
-  let rasterWidth =
-    0;
-
-  let rasterHeight =
-    0;
-
-  let refreshTimer =
-    null;
-
-  let loading =
-    false;
-
-  /* -------------------------------------------------------
-     API
-  ------------------------------------------------------- */
+  let loading = false;
+  let refreshTimer = null;
 
   function api(path) {
-    return (
-      API +
-      encodeURIComponent(path)
+    return API + encodeURIComponent(path);
+  }
+
+  function msg(text) {
+    if (typeof window.msg === "function") {
+      window.msg(text);
+    }
+  }
+
+  function getButton(product) {
+    const p = PRODUCTS[product];
+
+    if (!p) return null;
+
+    return Array.from(
+      document.querySelectorAll(".n")
+    ).find(el =>
+      el.textContent.trim() === p.button
     );
   }
 
-  /* -------------------------------------------------------
-     Bounds
-  ------------------------------------------------------- */
+  function setActive(product) {
+    const target = getButton(product);
+
+    document
+      .querySelectorAll(".n")
+      .forEach(el => {
+        el.classList.remove("active");
+      });
+
+    if (target) {
+      target.classList.add("active");
+    }
+  }
 
   function makeBounds(box) {
     if (
       !Array.isArray(box) ||
-      box.length !== 4
+      box.length < 4
     ) {
       throw new Error(
-        "Некорректный box"
+        "Invalid EPSG:3857 box"
       );
     }
 
-    const back =
-      (x, y) =>
-        L.Projection
-          .SphericalMercator
-          .unproject(
-            L.point(
-              x,
-              y
-            )
-          );
+    const unproject = (x, y) =>
+      L.Projection.SphericalMercator.unproject(
+        L.point(x, y)
+      );
+
+    const southWest = unproject(
+      box[0],
+      box[1]
+    );
+
+    const northEast = unproject(
+      box[2],
+      box[3]
+    );
 
     return L.latLngBounds(
-      back(
-        box[0],
-        box[1]
-      ),
-      back(
-        box[2],
-        box[3]
-      )
+      southWest,
+      northEast
     );
   }
 
-  /* -------------------------------------------------------
-     Кнопки
-  ------------------------------------------------------- */
+  async function getJSON(path) {
+    const r = await fetch(api(path), {
+      cache: "no-store"
+    });
 
-  function getButton(
-    product
-  ) {
-    const cfg =
-      PRODUCTS[product];
-
-    if (!cfg) {
-      return null;
+    if (!r.ok) {
+      throw new Error(
+        "HTTP " + r.status
+      );
     }
 
-    return [
-      ...document.querySelectorAll(
-        ".n"
-      )
-    ].find(
-      element =>
-        element.textContent.trim() ===
-        cfg.button
+    return await r.json();
+  }
+
+  function updateTimeline() {
+    const range = document.getElementById("range");
+    const times = document.getElementById("times");
+    const label = document.getElementById("timeLabel");
+
+    if (!range || !times || !currentData) {
+      return;
+    }
+
+    const frames = currentData.frames || [];
+
+    range.min = "0";
+    range.max = String(
+      Math.max(0, frames.length - 1)
     );
-  }
-
-  function setButtonState(
-    product
-  ) {
-    document
-      .querySelectorAll(
-        ".n"
-      )
-      .forEach(
-        element => {
-          element.classList.toggle(
-            "active",
-            element ===
-              getButton(
-                product
-              )
-          );
-        }
-      );
-  }
-
-  /* -------------------------------------------------------
-     Таймлайн
-  ------------------------------------------------------- */
-
-  function setTimeLabel(
-    text
-  ) {
-    const element =
-      document.getElementById(
-        "timeLabel"
-      );
-
-    if (element) {
-      element.textContent =
-        text;
-    }
-  }
-
-  function setTimeline() {
-    const range =
-      document.getElementById(
-        "range"
-      );
-
-    const times =
-      document.getElementById(
-        "times"
-      );
-
-    if (range) {
-      range.min = 0;
-
-      range.max =
-        Math.max(
-          0,
-          frames.length - 1
-        );
-
-      range.value =
-        frameIndex;
-    }
-
-    if (times) {
-      times.textContent =
-        frames.length
-          ? `${frameIndex + 1} / ${frames.length}`
-          : "";
-    }
-  }
-
-  function formatTime(
-    value
-  ) {
-    if (!value) {
-      return "";
-    }
-
-    const date =
-      new Date(value);
 
     if (
-      Number.isNaN(
-        date.getTime()
-      )
+      range.value === "" ||
+      Number(range.value) >= frames.length
     ) {
-      return value;
+      range.value = "0";
     }
 
-    return date.toLocaleString(
+    times.innerHTML = "";
+
+    frames.forEach((frame, i) => {
+      const d = document.createElement("span");
+
+      d.textContent = formatTime(
+        frame.t
+      );
+
+      if (
+        i === Number(range.value)
+      ) {
+        d.classList.add("active");
+      }
+
+      times.appendChild(d);
+    });
+
+    const index = Number(range.value) || 0;
+
+    if (frames[index] && label) {
+      label.textContent =
+        formatFullTime(frames[index].t);
+    }
+  }
+
+  function formatTime(t) {
+    if (!t) return "--:--";
+
+    const d = new Date(t);
+
+    if (Number.isNaN(d.getTime())) {
+      return "--:--";
+    }
+
+    return d.toLocaleTimeString(
+      "ru-RU",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }
+    );
+  }
+
+  function formatFullTime(t) {
+    if (!t) return "Радар";
+
+    const d = new Date(t);
+
+    if (Number.isNaN(d.getTime())) {
+      return "Радар";
+    }
+
+    return d.toLocaleString(
       "ru-RU",
       {
         day: "2-digit",
         month: "2-digit",
         hour: "2-digit",
-        minute: "2-digit"
+        minute: "2-digit",
+        hour12: false
       }
     );
   }
 
-  /* -------------------------------------------------------
-     Показ кадра
-  ------------------------------------------------------- */
+  function removeOverlay() {
+    if (overlay) {
+      try {
+        map.removeLayer(overlay);
+      } catch (_) {}
 
-  async function showFrame(
-    index
-  ) {
+      overlay = null;
+    }
+
+    if (overlayUrl) {
+      try {
+        URL.revokeObjectURL(
+          overlayUrl
+        );
+      } catch (_) {}
+
+      overlayUrl = null;
+    }
+  }
+
+  async function showFrame(index) {
     if (
-      !frames[index] ||
-      !bounds ||
-      !activeProduct
+      !currentData ||
+      !currentProduct ||
+      !window.CLOIdarkRaster
     ) {
       return;
     }
 
-    if (loading) {
-      return;
+    const frames =
+      currentData.frames || [];
+
+    if (!frames.length) {
+      throw new Error(
+        "No radar frames"
+      );
+    }
+
+    index = Math.max(
+      0,
+      Math.min(
+        frames.length - 1,
+        Number(index) || 0
+      )
+    );
+
+    const frame = frames[index];
+
+    if (!frame || !frame.path) {
+      throw new Error(
+        "Frame path missing"
+      );
     }
 
     loading = true;
 
     try {
-      const frame =
-        frames[index];
-
-      /*
-         Получаем готовый URL
-         изображения от raster-модуля.
-      */
-
-      const imageUrl =
-        await window
-          .CLOIdarkRaster
-          .frameToImageUrl(
-            frame.path,
-            activeProduct,
-            rasterWidth,
-            rasterHeight
-          );
-
-      /*
-         Удаляем предыдущий слой.
-      */
-
-      if (activeLayer) {
-        map.removeLayer(
-          activeLayer
+      const url =
+        await window.CLOIdarkRaster.frameToImageUrl(
+          frame.path,
+          currentProduct,
+          currentData.width,
+          currentData.height
         );
 
-        activeLayer =
-          null;
+      if (
+        currentData !==
+        window.__CLOCurrentDarkData
+      ) {
+        URL.revokeObjectURL(url);
+        return;
       }
 
-      /*
-         Новый слой.
-      */
+      const bounds =
+        currentData.bounds;
 
-      activeLayer =
+      const newOverlay =
         L.imageOverlay(
-          imageUrl,
+          url,
           bounds,
           {
             opacity: 1,
             interactive: false,
-            zIndex: 35
+            zIndex: 35,
+            crossOrigin: true
           }
         );
 
-      activeLayer.addTo(
-        map
+      removeOverlay();
+
+      overlay = newOverlay;
+      overlayUrl = url;
+
+      overlay.addTo(map);
+
+      rangeSet(index);
+
+      updateTimeline();
+
+      console.log(
+        "[CLOrad] Frame displayed:",
+        frame.t
       );
-
-      frameIndex =
-        index;
-
-      setTimeline();
-
-      setTimeLabel(
-        `${PRODUCTS[activeProduct].title} • ${formatTime(frame.t)}`
-      );
-
-    } catch (error) {
-      console.error(
-        "CLOrad IDARKMETEO frame:",
-        error
-      );
-
-      setTimeLabel(
-        "Ошибка загрузки радара"
-      );
-
     } finally {
       loading = false;
     }
   }
 
-  /* -------------------------------------------------------
-     Загрузка продукта
-  ------------------------------------------------------- */
+  function rangeSet(index) {
+    const range =
+      document.getElementById("range");
+
+    if (range) {
+      range.value = String(index);
+    }
+  }
 
   async function loadProduct(
-    product
+    product,
+    options
   ) {
-    const cfg =
-      PRODUCTS[product];
-
-    if (!cfg) {
+    if (!PRODUCTS[product]) {
       return;
     }
 
-    clearTimeout(
-      refreshTimer
+    options =
+      options || {};
+
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+
+    currentProduct = product;
+
+    setActive(product);
+
+    msg(
+      "Загрузка " +
+      PRODUCTS[product].title +
+      "…"
     );
 
     try {
-      setTimeLabel(
-        "Загрузка радара..."
-      );
+      const p =
+        PRODUCTS[product];
 
-      const response =
-        await fetch(
-          api(
-            `frames/${product}/${cfg.mosaic}.json`
-          ),
-          {
-            cache: "no-store"
-          }
-        );
-
-      if (!response.ok) {
-        throw new Error(
-          "frames JSON HTTP " +
-          response.status
-        );
-      }
+      const path =
+        "frames/" +
+        product +
+        "/" +
+        p.mosaic +
+        ".json";
 
       const data =
-        await response.json();
-
-      /*
-         Геометрия из frames JSON.
-      */
-
-      bounds =
-        makeBounds(
-          data.box
-        );
-
-      /*
-         Размер raster из frames JSON.
-      */
-
-      rasterWidth =
-        Number(
-          data.width
-        );
-
-      rasterHeight =
-        Number(
-          data.height
-        );
+        await getJSON(path);
 
       if (
-        !rasterWidth ||
-        !rasterHeight
+        !data ||
+        !Array.isArray(data.frames)
       ) {
         throw new Error(
-          "В frames JSON нет width/height"
+          "Invalid frames response"
         );
       }
-
-      /*
-         Список кадров.
-         API отдаёт свежий → старый.
-      */
-
-      frames =
-        Array.isArray(
-          data.frames
-        )
-          ? data.frames
-          : [];
-
-      activeProduct =
-        product;
-
-      /*
-         Первый кадр —
-         самый свежий.
-      */
-
-      frameIndex = 0;
-
-      setButtonState(
-        product
-      );
-
-      setTimeline();
 
       if (
-        frames.length
+        !Array.isArray(data.box) ||
+        data.box.length < 4
       ) {
-        await showFrame(
-          0
-        );
-      } else {
-        setTimeLabel(
-          "Кадров нет"
+        throw new Error(
+          "Radar box missing"
         );
       }
 
+      data.bounds =
+        makeBounds(data.box);
+
       /*
-         Список обновляем
-         раз в 10 минут.
+        API отдаёт frames от newest к oldest
+        в нормальном случае.
+
+        На всякий случай сортируем по времени
+        и показываем самый новый.
       */
+      data.frames =
+        data.frames
+          .filter(f =>
+            f &&
+            f.path &&
+            f.t
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.t) -
+              new Date(a.t)
+          );
 
-      refreshTimer =
-        setTimeout(
-          () => {
-            loadProduct(
-              product
-            );
-          },
-          10 * 60 * 1000
+      if (!data.frames.length) {
+        throw new Error(
+          "No valid frames"
         );
+      }
 
-    } catch (error) {
-      console.error(
-        "CLOrad IDARKMETEO:",
-        error
+      currentData = data;
+
+      window.__CLOCurrentDarkData =
+        data;
+
+      updateTimeline();
+
+      const initialIndex =
+        options.index != null
+          ? options.index
+          : 0;
+
+      await showFrame(
+        initialIndex
       );
 
-      setTimeLabel(
-        "Данные радара недоступны"
+      msg(
+        PRODUCTS[product].title +
+        " подключены"
+      );
+
+      scheduleRefresh();
+    } catch (e) {
+      console.error(
+        "[CLOrad] iDarkMeteo error:",
+        e
+      );
+
+      removeOverlay();
+
+      const label =
+        document.getElementById(
+          "timeLabel"
+        );
+
+      if (label) {
+        label.textContent =
+          "Ошибка загрузки радара";
+      }
+
+      msg(
+        "Ошибка загрузки радара"
       );
     }
   }
 
-  /* -------------------------------------------------------
-     Кнопки продуктов
-  ------------------------------------------------------- */
+  function scheduleRefresh() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
 
-  function bindButtons() {
-    Object.keys(
-      PRODUCTS
-    ).forEach(
-      product => {
-        const button =
-          getButton(
-            product
-          );
+    /*
+      API обновляет радар каждые 10 минут.
+      Проверяем немного чаще, чтобы новый кадр
+      подхватывался автоматически.
+    */
+    refreshTimer =
+      setTimeout(
+        async () => {
+          if (!currentProduct) {
+            return;
+          }
 
-        if (!button) {
+          const product =
+            currentProduct;
+
+          try {
+            const p =
+              PRODUCTS[product];
+
+            const path =
+              "frames/" +
+              product +
+              "/" +
+              p.mosaic +
+              ".json";
+
+            const data =
+              await getJSON(path);
+
+            if (
+              !data ||
+              !Array.isArray(
+                data.frames
+              )
+            ) {
+              throw new Error(
+                "Invalid refresh data"
+              );
+            }
+
+            data.bounds =
+              makeBounds(data.box);
+
+            data.frames =
+              data.frames
+                .filter(f =>
+                  f &&
+                  f.path &&
+                  f.t
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(b.t) -
+                    new Date(a.t)
+                );
+
+            const oldLatest =
+              currentData &&
+              currentData.frames &&
+              currentData.frames[0] &&
+              currentData.frames[0].t;
+
+            const newLatest =
+              data.frames[0] &&
+              data.frames[0].t;
+
+            currentData = data;
+
+            window.__CLOCurrentDarkData =
+              data;
+
+            updateTimeline();
+
+            if (
+              newLatest &&
+              newLatest !== oldLatest
+            ) {
+              await showFrame(0);
+            }
+
+          } catch (e) {
+            console.warn(
+              "[CLOrad] Refresh failed:",
+              e
+            );
+          }
+
+          scheduleRefresh();
+        },
+        90 * 1000
+      );
+  }
+
+  /*
+    Timeline
+  */
+
+  const range =
+    document.getElementById("range");
+
+  if (range) {
+    range.addEventListener(
+      "input",
+      async () => {
+        if (
+          !currentData ||
+          loading
+        ) {
           return;
         }
 
-        button.addEventListener(
-          "click",
-          event => {
-            event.preventDefault();
-
-            loadProduct(
-              product
-            );
-          }
-        );
+        try {
+          await showFrame(
+            Number(range.value)
+          );
+        } catch (e) {
+          console.error(e);
+        }
       }
     );
   }
 
-  /* -------------------------------------------------------
-     Таймлайн
-  ------------------------------------------------------- */
+  /*
+    Навигация
+  */
 
-  function bindTimeline() {
+  document
+    .querySelectorAll(".n")
+    .forEach(button => {
+      const text =
+        button.textContent.trim();
+
+      const product =
+        Object.keys(PRODUCTS)
+          .find(
+            key =>
+              PRODUCTS[key].button ===
+              text
+          );
+
+      if (!product) return;
+
+      button.addEventListener(
+        "click",
+        e => {
+          e.preventDefault();
+
+          loadProduct(
+            product
+          );
+        }
+      );
+    });
+
+  /*
+    Play
+  */
+
+  const play =
+    document.getElementById("play");
+
+  let playing = false;
+  let playTimer = null;
+
+  if (play) {
+    play.addEventListener(
+      "click",
+      () => {
+        if (
+          !currentData ||
+          !currentData.frames ||
+          !currentData.frames.length
+        ) {
+          return;
+        }
+
+        playing = !playing;
+
+        play.textContent =
+          playing
+            ? "❚❚"
+            : "▶";
+
+        if (playing) {
+          playStep();
+        } else {
+          if (playTimer) {
+            clearTimeout(
+              playTimer
+            );
+          }
+        }
+      }
+    );
+  }
+
+  async function playStep() {
+    if (
+      !playing ||
+      !currentData
+    ) {
+      return;
+    }
+
     const range =
       document.getElementById(
         "range"
       );
 
-    const play =
-      document.getElementById(
-        "play"
-      );
-
-    if (range) {
-      range.addEventListener(
-        "input",
-        () => {
-          const index =
-            Number(
-              range.value
-            );
-
-          showFrame(
-            index
-          );
-        }
-      );
+    if (!range) {
+      return;
     }
 
-    if (play) {
-      let playing =
-        false;
+    let index =
+      Number(range.value) || 0;
 
-      let timer =
-        null;
+    index++;
 
-      play.addEventListener(
-        "click",
-        () => {
-          playing =
-            !playing;
+    if (
+      index >=
+      currentData.frames.length
+    ) {
+      index = 0;
+    }
 
-          if (!playing) {
-            clearInterval(
-              timer
-            );
+    try {
+      await showFrame(index);
+    } catch (e) {
+      console.error(e);
+    }
 
-            timer = null;
-
-            return;
-          }
-
-          timer =
-            setInterval(
-              () => {
-                if (
-                  !frames.length
-                ) {
-                  return;
-                }
-
-                frameIndex =
-                  frameIndex >=
-                  frames.length - 1
-                    ? 0
-                    : frameIndex + 1;
-
-                showFrame(
-                  frameIndex
-                );
-              },
-              700
-            );
-        }
-      );
+    if (playing) {
+      playTimer =
+        setTimeout(
+          playStep,
+          500
+        );
     }
   }
 
-  /* -------------------------------------------------------
-     Публичный API
-  ------------------------------------------------------- */
+  /*
+    Экспортируем API для отладки
+  */
 
   window.CLOIdarkMeteo = {
     loadProduct,
-    showFrame
+    showFrame,
+    getData: () =>
+      currentData
   };
 
-  /* -------------------------------------------------------
-     Запуск
+  /*
+    ВАЖНО:
+    Ничего автоматически не грузим.
+    Пользователь сам нажимает:
+    "Осадки-мм/ч"
+  */
 
-     ВАЖНО:
-     Ничего автоматически не загружаем.
-     Пользователь сам выбирает продукт.
-  ------------------------------------------------------- */
-
-  bindButtons();
-
-  bindTimeline();
 })();
