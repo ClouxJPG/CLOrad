@@ -1,1209 +1,493 @@
 /* =========================================================
    CLOrad — IDARKMETEO
-   Реальные данные:
-   rain / cloudphase / smoke / satrain
+   Загрузка кадров IDARKMETEO и вывод на Leaflet.
+   Raster-слой .rdr обрабатывается через
+   idarkmeteo-raster.js.
 ========================================================= */
 
-(function(){
-
+(function () {
   "use strict";
-
-
-  /* =========================================================
-     API
-  ========================================================= */
 
   const API =
     "/api/idarkmeteo?path=";
 
-
-  /* =========================================================
-     MAP
-  ========================================================= */
-
   const map =
     window.map;
 
-
-  if(!map){
-
+  if (!map) {
     console.error(
-      "CLOrad Idarkmeteo: карта не найдена"
+      "CLOrad: window.map не найден"
     );
 
     return;
   }
-
-
-  /* =========================================================
-     DOM
-  ========================================================= */
-
-  const range =
-    document.getElementById("range");
-
-  const timeLabel =
-    document.getElementById("timeLabel");
-
-  const times =
-    document.getElementById("times");
-
-  const play =
-    document.getElementById("play");
-
-  const loading =
-    document.getElementById("loadingFrames");
-
-  const framesInfo =
-    document.getElementById("framesInfo");
-
-  const frameInput =
-    document.getElementById("frameInput");
-
-  const frameMinus =
-    document.getElementById("frameMinus");
-
-  const framePlus =
-    document.getElementById("framePlus");
-
-
-  if(
-    !range ||
-    !timeLabel ||
-    !times ||
-    !play
-  ){
-
-    console.error(
-      "CLOrad Idarkmeteo: таймлайн не найден"
-    );
-
-    return;
-  }
-
-
-  /* =========================================================
-     ПРОДУКТЫ
-  ========================================================= */
 
   const PRODUCTS = {
-
-    rain:{
-      button:"Осадки-мм/ч",
-      mosaic:"wide",
-      title:"Осадки",
-      units:"мм/ч"
+    rain: {
+      button: "Осадки-мм/ч",
+      mosaic: "wide",
+      title: "Осадки",
+      units: "мм/ч"
     },
 
-    cloudphase:{
-      button:"Фаза облака",
-      mosaic:"swath",
-      title:"Фаза облака",
-      units:""
+    cloudphase: {
+      button: "Фаза облака",
+      mosaic: "swath",
+      title: "Фаза облака",
+      units: ""
     },
 
-    smoke:{
-      button:"Дым/пепел",
-      mosaic:"swath",
-      title:"Дым / пепел",
-      units:""
+    smoke: {
+      button: "Дым/пепел",
+      mosaic: "swath",
+      title: "Дым / пепел",
+      units: ""
     },
 
-    satrain:{
-      button:"Спутниковые осадки",
-      mosaic:"coarse",
-      title:"Спутниковые осадки",
-      units:"мм/ч"
+    satrain: {
+      button:
+        "Спутниковые осадки",
+      mosaic: "coarse",
+      title:
+        "Спутниковые осадки",
+      units: "мм/ч"
     }
-
   };
 
-
-  /* =========================================================
-     СОСТОЯНИЕ
-  ========================================================= */
-
   let activeProduct = null;
+
+  let activeLayer = null;
 
   let frames = [];
 
   let bounds = null;
 
-  let overlay = null;
-
-  let currentFrame = 0;
-
-  let playing = false;
-
-  let playTimer = null;
+  let frameIndex = 0;
 
   let refreshTimer = null;
 
-  let requestId = 0;
+  let loading = false;
 
-
-  /* =========================================================
-     КНОПКИ
-  ========================================================= */
-
-  const buttons =
-    Array.from(
-      document.querySelectorAll(
-        ".n:not(#layersNav)"
-      )
-    );
-
-
-  function getProductFromButton(button){
-
-    const text =
-      button.textContent
-        .replace(/\s+/g," ")
-        .trim();
-
-
-    for(
-      const key of Object.keys(PRODUCTS)
-    ){
-
-      if(
-        PRODUCTS[key].button === text
-      ){
-        return key;
-      }
-
-    }
-
-    return null;
-  }
-
-
-  /* =========================================================
-     OVERLAY
-  ========================================================= */
-
-  function removeOverlay(){
-
-    if(!overlay){
-      return;
-    }
-
-    try{
-      map.removeLayer(
-        overlay
-      );
-    }catch(error){}
-
-    overlay = null;
-  }
-
-
-  /* =========================================================
-     LOADING
-  ========================================================= */
-
-  function setLoading(state){
-
-    if(!loading){
-      return;
-    }
-
-    loading.classList.toggle(
-      "show",
-      !!state
-    );
-  }
-
-
-  /* =========================================================
-     СТАТУС
-  ========================================================= */
-
-  function setStatus(text){
-
-    timeLabel.textContent =
-      text;
-  }
-
-
-  /* =========================================================
-     ВРЕМЯ
-  ========================================================= */
-
-  function formatTime(value){
-
-    const date =
-      new Date(value);
-
-
-    if(
-      Number.isNaN(
-        date.getTime()
-      )
-    ){
-
-      return value || "—";
-    }
-
-
-    return date.toLocaleString(
-      "ru-RU",
-      {
-        day:"2-digit",
-        month:"2-digit",
-        hour:"2-digit",
-        minute:"2-digit"
-      }
-    );
-  }
-
-
-  /* =========================================================
-     TIMELINE
-  ========================================================= */
-
-  function updateTimeline(){
-
-    if(
-      !activeProduct ||
-      !frames.length
-    ){
-
-      range.min = "0";
-      range.max = "0";
-      range.value = "0";
-
-      setStatus(
-        "Радар не подключён"
-      );
-
-      times.innerHTML = "";
-
-      if(framesInfo){
-
-        framesInfo.textContent =
-          "Радар пока не подключён";
-      }
-
-      return;
-    }
-
-
-    range.min =
-      "0";
-
-
-    range.max =
-      String(
-        frames.length - 1
-      );
-
-
-    range.value =
-      String(
-        currentFrame
-      );
-
-
-    const current =
-      frames[currentFrame];
-
-
-    if(!current){
-      return;
-    }
-
-
-    setStatus(
-      activeProduct.title +
-      " · " +
-      formatTime(
-        current.t
-      )
-    );
-
-
-    const oldest =
-      frames[0];
-
-
-    const newest =
-      frames[
-        frames.length - 1
-      ];
-
-
-    times.innerHTML =
-      "<span>" +
-      formatTime(
-        oldest.t
-      ) +
-      "</span>" +
-      "<span>" +
-      formatTime(
-        newest.t
-      ) +
-      "</span>";
-
-
-    if(framesInfo){
-
-      framesInfo.textContent =
-        activeProduct.title +
-        " · " +
-        frames.length +
-        " кадров" +
-        (
-          activeProduct.step
-            ? " · шаг " +
-              activeProduct.step +
-              " мин"
-            : ""
-        );
-    }
-  }
-
-
-  /* =========================================================
-     URL КАДРА
-  ========================================================= */
-
-  function frameUrl(path){
-
-    if(!path){
-      return null;
-    }
-
-
+  function api(path) {
     return (
       API +
-      encodeURIComponent(
-        path
-      )
+      encodeURIComponent(path)
     );
   }
 
-
-  /* =========================================================
-     BOX
-  ========================================================= */
-
-  function makeBounds(box){
-
-    if(
+  function makeBounds(box) {
+    if (
       !Array.isArray(box) ||
-      box.length < 4
-    ){
-
-      throw new Error(
-        "API не вернул box"
-      );
-    }
-
-
-    const west =
-      Number(box[0]);
-
-    const south =
-      Number(box[1]);
-
-    const east =
-      Number(box[2]);
-
-    const north =
-      Number(box[3]);
-
-
-    if(
-      !Number.isFinite(west) ||
-      !Number.isFinite(south) ||
-      !Number.isFinite(east) ||
-      !Number.isFinite(north)
-    ){
-
+      box.length !== 4
+    ) {
       throw new Error(
         "Некорректный box"
       );
     }
 
-
-    const southWest =
+    const back = (x, y) =>
       L.Projection
         .SphericalMercator
         .unproject(
-          L.point(
-            west,
-            south
-          )
+          L.point(x, y)
         );
-
-
-    const northEast =
-      L.Projection
-        .SphericalMercator
-        .unproject(
-          L.point(
-            east,
-            north
-          )
-        );
-
 
     return L.latLngBounds(
-      southWest,
-      northEast
+      back(
+        box[0],
+        box[1]
+      ),
+      back(
+        box[2],
+        box[3]
+      )
     );
   }
 
+  function getButton(product) {
+    return [
+      ...document.querySelectorAll(
+        ".n"
+      )
+    ].find(
+      element =>
+        element.textContent.trim() ===
+        PRODUCTS[product]?.button
+    );
+  }
 
-  /* =========================================================
-     ПОКАЗ КАДРА
-  ========================================================= */
+  function setButtonState(product) {
+    document
+      .querySelectorAll(".n")
+      .forEach(element => {
+        element.classList.toggle(
+          "active",
+          element ===
+            getButton(product)
+        );
+      });
+  }
 
-  function showFrame(index){
+  function setTimeLabel(text) {
+    const element =
+      document.getElementById(
+        "timeLabel"
+      );
 
-    if(
-      !frames.length ||
-      !bounds
-    ){
-      return;
+    if (element) {
+      element.textContent =
+        text;
     }
+  }
 
+  function setTimeline() {
+    const range =
+      document.getElementById(
+        "range"
+      );
 
-    index =
-      Math.max(
-        0,
-        Math.min(
-          index,
+    const times =
+      document.getElementById(
+        "times"
+      );
+
+    if (range) {
+      range.min = 0;
+
+      range.max =
+        Math.max(
+          0,
           frames.length - 1
-        )
-      );
+        );
 
-
-    currentFrame =
-      index;
-
-
-    const frame =
-      frames[currentFrame];
-
-
-    if(
-      !frame ||
-      !frame.path
-    ){
-
-      console.error(
-        "CLOrad: неправильный кадр",
-        frame
-      );
-
-      return;
+      range.value =
+        frameIndex;
     }
 
-
-    const url =
-      frameUrl(
-        frame.path
-      );
-
-
-    if(!url){
-      return;
-    }
-
-
-    removeOverlay();
-
-
-    console.log(
-      "CLOrad: загружаю кадр:",
-      frame.path
-    );
-
-
-    const image =
-      L.imageOverlay(
-        url,
-        bounds,
-        {
-          opacity:1,
-          interactive:false,
-          zIndex:35,
-          crossOrigin:true
-        }
-      );
-
-
-    overlay =
-      image;
-
-
-    image.once(
-      "load",
-      function(){
-
-        console.log(
-          "CLOrad: кадр загружен:",
-          frame.path
-        );
-
-      }
-    );
-
-
-    image.once(
-      "error",
-      function(){
-
-        console.error(
-          "CLOrad: кадр не загрузился:",
-          url
-        );
-
-
-        if(
-          overlay === image
-        ){
-
-          try{
-            map.removeLayer(
-              image
-            );
-          }catch(error){}
-
-          overlay = null;
-        }
-
-
-        setStatus(
-          "Ошибка загрузки кадра"
-        );
-
-      }
-    );
-
-
-    image.addTo(map);
-
-
-    updateTimeline();
-  }
-
-
-  /* =========================================================
-     PLAY
-  ========================================================= */
-
-  function stopPlayback(){
-
-    playing =
-      false;
-
-
-    if(playTimer){
-
-      clearTimeout(
-        playTimer
-      );
-
-      playTimer = null;
+    if (times) {
+      times.textContent =
+        frames.length
+          ? `${frameIndex + 1} / ${frames.length}`
+          : "";
     }
   }
 
-
-  play.addEventListener(
-    "click",
-    function(){
-
-      if(
-        !activeProduct ||
-        !frames.length
-      ){
-
-        return;
-      }
-
-
-      playing =
-        !playing;
-
-
-      if(playTimer){
-
-        clearTimeout(
-          playTimer
-        );
-
-        playTimer = null;
-      }
-
-
-      if(!playing){
-        return;
-      }
-
-
-      function tick(){
-
-        if(
-          !playing ||
-          !activeProduct
-        ){
-          return;
-        }
-
-
-        currentFrame =
-          currentFrame >=
-          frames.length - 1
-            ? 0
-            : currentFrame + 1;
-
-
-        showFrame(
-          currentFrame
-        );
-
-
-        playTimer =
-          setTimeout(
-            tick,
-            650
-          );
-      }
-
-
-      tick();
-    }
-  );
-
-
-  /* =========================================================
-     SLIDER
-  ========================================================= */
-
-  range.addEventListener(
-    "input",
-    function(){
-
-      if(
-        !activeProduct ||
-        !frames.length
-      ){
-        return;
-      }
-
-
-      showFrame(
-        parseInt(
-          range.value,
-          10
-        ) || 0
-      );
-    }
-  );
-
-
-  /* =========================================================
-     КОЛИЧЕСТВО КАДРОВ
-  ========================================================= */
-
-  function reloadCurrentProduct(){
-
-    if(!activeProduct){
-      return;
+  function formatTime(t) {
+    if (!t) {
+      return "";
     }
 
+    const date =
+      new Date(t);
 
-    loadProduct(
-      activeProduct.product,
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return t;
+    }
+
+    return date.toLocaleString(
+      "ru-RU",
       {
-        keepFrame:true
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
       }
     );
   }
 
-
-  if(frameMinus){
-
-    frameMinus.addEventListener(
-      "click",
-      reloadCurrentProduct
-    );
-  }
-
-
-  if(framePlus){
-
-    framePlus.addEventListener(
-      "click",
-      reloadCurrentProduct
-    );
-  }
-
-
-  /* =========================================================
-     АВТООБНОВЛЕНИЕ
-  ========================================================= */
-
-  function scheduleRefresh(){
-
-    if(refreshTimer){
-
-      clearTimeout(
-        refreshTimer
-      );
+  async function showFrame(index) {
+    if (
+      !frames[index] ||
+      !bounds ||
+      !activeProduct
+    ) {
+      return;
     }
 
+    if (loading) {
+      return;
+    }
 
-    refreshTimer =
-      setTimeout(
-        function(){
+    loading = true;
 
-          refreshTimer = null;
+    try {
+      const frame =
+        frames[index];
 
+      const imageUrl =
+        await window
+          .CLOIdarkRaster
+          .frameToImageUrl(
+            frame.path,
+            activeProduct
+          );
 
-          if(activeProduct){
+      if (activeLayer) {
+        map.removeLayer(
+          activeLayer
+        );
 
-            loadProduct(
-              activeProduct.product,
-              {
-                keepFrame:true
-              }
-            );
+        activeLayer = null;
+      }
+
+      activeLayer =
+        L.imageOverlay(
+          imageUrl,
+          bounds,
+          {
+            opacity: 1,
+            interactive: false,
+            zIndex: 35
           }
+        ).addTo(map);
 
-        },
-        10 * 60 * 1000
+      frameIndex =
+        index;
+
+      setTimeline();
+
+      setTimeLabel(
+        `${PRODUCTS[activeProduct].title} • ${formatTime(frame.t)}`
       );
+
+    } catch (error) {
+      console.error(
+        "IDARKMETEO frame:",
+        error
+      );
+
+      setTimeLabel(
+        "Ошибка загрузки радара"
+      );
+
+    } finally {
+      loading = false;
+    }
   }
-
-
-  /* =========================================================
-     ЗАГРУЗКА ПРОДУКТА
-  ========================================================= */
 
   async function loadProduct(
-    product,
-    options
-  ){
-
-    const config =
+    product
+  ) {
+    const cfg =
       PRODUCTS[product];
 
-
-    if(!config){
+    if (!cfg) {
       return;
     }
 
-
-    const id =
-      ++requestId;
-
-
-    stopPlayback();
-
-    setLoading(true);
-
-    removeOverlay();
-
-
-    activeProduct = {
-
-      product:product,
-
-      title:config.title,
-
-      units:config.units,
-
-      mosaic:config.mosaic,
-
-      step:null
-    };
-
-
-    frames = [];
-
-    bounds = null;
-
-    currentFrame = 0;
-
-
-    setStatus(
-      "Подключение к радару…"
+    clearTimeout(
+      refreshTimer
     );
 
-
-    if(framesInfo){
-
-      framesInfo.textContent =
-        "Получение данных…";
-    }
-
-
-    try{
-
-      /*
-       * -----------------------------------------------------
-       * METADATA
-       * -----------------------------------------------------
-       */
-
-      const path =
-        "frames/" +
-        product +
-        "/" +
-        config.mosaic +
-        ".json";
-
-
-      const url =
-        API +
-        encodeURIComponent(
-          path
-        );
-
-
-      console.log(
-        "CLOrad: metadata:",
-        url
-      );
-
-
+    try {
       const response =
         await fetch(
-          url,
+          api(
+            `frames/${product}/${cfg.mosaic}.json`
+          ),
           {
-            method:"GET",
-            cache:"no-store",
-            headers:{
-              "Accept":
-                "application/json"
-            }
+            cache: "no-store"
           }
         );
 
-
-      if(!response.ok){
-
-        const text =
-          await response.text()
-            .catch(
-              () => ""
-            );
-
-
+      if (!response.ok) {
         throw new Error(
-          "Metadata HTTP " +
-          response.status +
-          (
-            text
-              ? " · " +
-                text.slice(
-                  0,
-                  200
-                )
-              : ""
-          )
+          "frames: HTTP " +
+          response.status
         );
       }
-
 
       const data =
         await response.json();
 
+      activeProduct =
+        product;
 
-      if(id !== requestId){
-        return;
-      }
-
-
-      console.log(
-        "CLOrad: metadata:",
-        data
-      );
-
-
-      if(
-        !data ||
-        !Array.isArray(
+      frames =
+        Array.isArray(
           data.frames
-        ) ||
-        !data.frames.length
-      ){
-
-        throw new Error(
-          "В metadata нет кадров"
-        );
-      }
-
-
-      /*
-       * -----------------------------------------------------
-       * BOUNDS
-       * -----------------------------------------------------
-       */
+        )
+          ? data.frames
+              .slice()
+              .reverse()
+          : [];
 
       bounds =
         makeBounds(
           data.box
         );
 
-
-      /*
-       * -----------------------------------------------------
-       * STEP
-       * -----------------------------------------------------
-       */
-
-      activeProduct.step =
-        Number(
-          data.step_minutes
-        ) || null;
-
-
-      /*
-       * -----------------------------------------------------
-       * КОЛИЧЕСТВО КАДРОВ
-       * -----------------------------------------------------
-       */
-
-      let count =
-        parseInt(
-          frameInput?.value ||
-          "24",
-          10
+      frameIndex =
+        Math.max(
+          0,
+          frames.length - 1
         );
 
-
-      if(
-        !Number.isFinite(count) ||
-        count < 1
-      ){
-
-        count = 1;
-      }
-
-
-      /*
-       * API:
-       *
-       * новый → старый
-       *
-       * интерфейс:
-       *
-       * старый → новый
-       */
-
-      frames =
-        data.frames
-          .filter(
-            frame =>
-              frame &&
-              typeof frame.path ===
-                "string" &&
-              frame.path.length > 0 &&
-              typeof frame.t ===
-                "string" &&
-              frame.t.length > 0
-          )
-          .slice(
-            0,
-            count
-          )
-          .reverse();
-
-
-      if(!frames.length){
-
-        throw new Error(
-          "После фильтрации кадров нет"
-        );
-      }
-
-
-      /*
-       * -----------------------------------------------------
-       * ПОКАЗЫВАЕМ НОВЕЙШИЙ
-       * -----------------------------------------------------
-       */
-
-      if(
-        options &&
-        options.keepFrame
-      ){
-
-        currentFrame =
-          Math.min(
-            currentFrame,
-            frames.length - 1
-          );
-
-      }else{
-
-        currentFrame =
-          frames.length - 1;
-      }
-
-
-      updateTimeline();
-
-
-      showFrame(
-        currentFrame
+      setButtonState(
+        product
       );
 
+      setTimeline();
 
-      scheduleRefresh();
-
-
-    }catch(error){
-
-      if(id !== requestId){
-        return;
+      if (frames.length) {
+        await showFrame(
+          frameIndex
+        );
+      } else {
+        setTimeLabel(
+          "Данных нет"
+        );
       }
 
+      /*
+         Обновляем список кадров
+         примерно каждые 10 минут.
+      */
 
+      refreshTimer =
+        setTimeout(
+          () =>
+            loadProduct(
+              product
+            ),
+          10 * 60 * 1000
+        );
+
+    } catch (error) {
       console.error(
-        "CLOrad Idarkmeteo ERROR:",
+        "IDARKMETEO:",
         error
       );
 
-
-      activeProduct = null;
-
-      frames = [];
-
-      bounds = null;
-
-      removeOverlay();
-
-
-      setStatus(
-        "Радар не подключён"
+      setTimeLabel(
+        "Данные радара недоступны"
       );
-
-
-      times.innerHTML = "";
-
-
-      range.min = "0";
-      range.max = "0";
-      range.value = "0";
-
-
-      if(framesInfo){
-
-        framesInfo.textContent =
-          "Ошибка подключения к Idarkmeteo";
-      }
-
-
-      if(
-        typeof window.msg ===
-        "function"
-      ){
-
-        window.msg(
-          "Не удалось подключить радар"
-        );
-      }
-
-    }finally{
-
-      if(id === requestId){
-
-        setLoading(false);
-      }
     }
   }
 
-
-  /* =========================================================
-     КНОПКИ ПРОДУКТОВ
-     
-     ВАЖНО:
-     НЕТ АВТОЗАПУСКА.
-     
-     При открытии сайта:
-     ни один продукт не выбран.
-  ========================================================= */
-
-  buttons.forEach(
-    button => {
-
-      const product =
-        getProductFromButton(
-          button
+  function bindButtons() {
+    for (
+      const [
+        product,
+        cfg
+      ] of Object.entries(
+        PRODUCTS
+      )
+    ) {
+      const button =
+        getButton(
+          product
         );
 
-
-      if(!product){
-        return;
+      if (!button) {
+        continue;
       }
-
 
       button.addEventListener(
         "click",
-        function(event){
-
+        event => {
           event.preventDefault();
-          event.stopPropagation();
-
-
-          buttons.forEach(
-            item =>
-              item.classList.remove(
-                "active"
-              )
-          );
-
-
-          button.classList.add(
-            "active"
-          );
-
 
           loadProduct(
             product
           );
-
-        },
-        true
+        }
       );
-
     }
-  );
-
-
-  /* =========================================================
-     НАЧАЛЬНОЕ СОСТОЯНИЕ
-  ========================================================= */
-
-  buttons.forEach(
-    button =>
-      button.classList.remove(
-        "active"
-      )
-  );
-
-
-  setStatus(
-    "Радар не подключён"
-  );
-
-
-  if(framesInfo){
-
-    framesInfo.textContent =
-      "Радар пока не подключён";
   }
 
+  function bindTimeline() {
+    const range =
+      document.getElementById(
+        "range"
+      );
 
-  console.log(
-    "CLOrad: Idarkmeteo готов"
+    const play =
+      document.getElementById(
+        "play"
+      );
+
+    if (range) {
+      range.addEventListener(
+        "input",
+        () => {
+          const index =
+            Number(
+              range.value
+            );
+
+          showFrame(
+            index
+          );
+        }
+      );
+    }
+
+    if (play) {
+      let playing = false;
+
+      let timer = null;
+
+      play.addEventListener(
+        "click",
+        () => {
+          playing =
+            !playing;
+
+          if (!playing) {
+            clearInterval(
+              timer
+            );
+
+            timer = null;
+
+            return;
+          }
+
+          timer =
+            setInterval(
+              () => {
+                if (
+                  !frames.length
+                ) {
+                  return;
+                }
+
+                frameIndex =
+                  frameIndex >=
+                  frames.length - 1
+                    ? 0
+                    : frameIndex + 1;
+
+                showFrame(
+                  frameIndex
+                );
+              },
+              700
+            );
+        }
+      );
+    }
+  }
+
+  window.CLOIdarkMeteo = {
+    loadProduct
+  };
+
+  bindButtons();
+
+  bindTimeline();
+
+  /*
+     Запуск по умолчанию:
+     Осадки.
+  */
+
+  loadProduct(
+    "rain"
   );
-
-
 })();
