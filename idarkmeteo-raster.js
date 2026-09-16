@@ -1,11 +1,14 @@
 /* =========================================================
    CLOrad — IDARKMETEO RASTER
-   Преобразование индексного .rdr в PNG через Canvas.
+   Универсальный обработчик кадров IDARKMETEO.
 
-   Формат:
-   - 1 байт = 1 пиксель
-   - 0 = NODATA / прозрачный
-   - остальные значения = индексы палитры
+   Поддерживает:
+   1. PNG
+   2. TIFF/GeoTIFF
+   3. Однобайтный индексный raster
+
+   Индекс 0 = NODATA / прозрачный.
+   Остальные индексы переводятся через palettes.json.
 ========================================================= */
 
 (function () {
@@ -13,20 +16,20 @@
 
   const API = "/api/idarkmeteo?path=";
 
-  let palettePromise = null;
-  let activeUrl = null;
+  let palettesPromise = null;
+  let activeObjectUrl = null;
 
   function api(path) {
     return API + encodeURIComponent(path);
   }
 
   /* -------------------------------------------------------
-     Загрузка палитр
+     Палитры
   ------------------------------------------------------- */
 
-  async function loadPalettes() {
-    if (!palettePromise) {
-      palettePromise = fetch(
+  async function getPalettes() {
+    if (!palettesPromise) {
+      palettesPromise = fetch(
         api("palettes.json"),
         {
           cache: "force-cache"
@@ -43,36 +46,39 @@
       });
     }
 
-    return palettePromise;
+    return palettesPromise;
   }
 
-  function getPalette(all, product) {
-    if (!all) {
+  function getPalette(data, product) {
+    if (!data) {
       return null;
     }
 
-    if (all[product]) {
-      return all[product];
+    if (data[product]) {
+      return data[product];
     }
 
     if (
-      all.palettes &&
-      all.palettes[product]
+      data.palettes &&
+      data.palettes[product]
     ) {
-      return all.palettes[product];
+      return data.palettes[product];
     }
 
     return null;
   }
 
   /* -------------------------------------------------------
-     Поиск цвета по индексу
+     Поиск полосы палитры
   ------------------------------------------------------- */
 
   function findBand(bands, index) {
     for (const band of bands || []) {
-      const lo = Number(band.lo_i);
-      const hi = Number(band.hi_i);
+      const lo =
+        Number(band.lo_i);
+
+      const hi =
+        Number(band.hi_i);
 
       if (
         Number.isFinite(lo) &&
@@ -88,24 +94,41 @@
   }
 
   /* -------------------------------------------------------
-     Создание изображения
+     Индексный raster → Canvas
   ------------------------------------------------------- */
 
-  function rasterToCanvas(
+  function indexedRasterToCanvas(
     bytes,
     width,
     height,
     palette
   ) {
-    const expected =
+    const pixelsCount =
       width * height;
 
-    if (bytes.length < expected) {
+    if (
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width <= 0 ||
+      height <= 0
+    ) {
       throw new Error(
-        "RDR слишком маленький: " +
+        "Некорректный размер raster: " +
+        width +
+        "×" +
+        height
+      );
+    }
+
+    if (
+      bytes.length <
+      pixelsCount
+    ) {
+      throw new Error(
+        "Размер RDR меньше ожидаемого: " +
         bytes.length +
-        " байт, ожидалось " +
-        expected
+        " < " +
+        pixelsCount
       );
     }
 
@@ -118,13 +141,11 @@
     canvas.height = height;
 
     const ctx =
-      canvas.getContext(
-        "2d"
-      );
+      canvas.getContext("2d");
 
     if (!ctx) {
       throw new Error(
-        "Canvas недоступен"
+        "Canvas 2D недоступен"
       );
     }
 
@@ -134,7 +155,7 @@
         height
       );
 
-    const pixels =
+    const out =
       image.data;
 
     const bands =
@@ -142,24 +163,30 @@
 
     for (
       let i = 0, p = 0;
-      i < expected;
+      i < pixelsCount;
       i++, p += 4
     ) {
       const index =
         bytes[i];
 
       /*
-         0 = нет данных / NODATA
+         0 = прибор не смотрел.
+         Это не «сухо».
       */
 
       if (index === 0) {
-        pixels[p] = 0;
-        pixels[p + 1] = 0;
-        pixels[p + 2] = 0;
-        pixels[p + 3] = 0;
+        out[p] = 0;
+        out[p + 1] = 0;
+        out[p + 2] = 0;
+        out[p + 3] = 0;
 
         continue;
       }
+
+      /*
+         Ищем соответствующую
+         полосу индексов.
+      */
 
       const band =
         findBand(
@@ -173,30 +200,30 @@
           band.rgb
         )
       ) {
-        pixels[p] = 0;
-        pixels[p + 1] = 0;
-        pixels[p + 2] = 0;
-        pixels[p + 3] = 0;
+        out[p] = 0;
+        out[p + 1] = 0;
+        out[p + 2] = 0;
+        out[p + 3] = 0;
 
         continue;
       }
 
-      pixels[p] =
+      out[p] =
         Number(
           band.rgb[0]
         ) || 0;
 
-      pixels[p + 1] =
+      out[p + 1] =
         Number(
           band.rgb[1]
         ) || 0;
 
-      pixels[p + 2] =
+      out[p + 2] =
         Number(
           band.rgb[2]
         ) || 0;
 
-      pixels[p + 3] =
+      out[p + 3] =
         Math.max(
           0,
           Math.min(
@@ -218,84 +245,123 @@
   }
 
   /* -------------------------------------------------------
-     PNG → если существует, используем его напрямую
+     Определение формата файла
   ------------------------------------------------------- */
 
-  async function pngExists(url) {
-    try {
-      const response =
-        await fetch(
-          url,
-          {
-            method: "HEAD",
-            cache: "force-cache"
-          }
-        );
+  function detectFormat(bytes) {
+    /*
+       PNG:
+       89 50 4E 47 0D 0A 1A 0A
+    */
 
-      return response.ok;
-
-    } catch {
-      return false;
+    if (
+      bytes.length >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    ) {
+      return "png";
     }
+
+    /*
+       TIFF little endian:
+       II 2A 00
+    */
+
+    if (
+      bytes.length >= 4 &&
+      bytes[0] === 0x49 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x2a &&
+      bytes[3] === 0x00
+    ) {
+      return "tiff";
+    }
+
+    /*
+       TIFF big endian:
+       MM 00 2A
+    */
+
+    if (
+      bytes.length >= 4 &&
+      bytes[0] === 0x4d &&
+      bytes[1] === 0x4d &&
+      bytes[2] === 0x00 &&
+      bytes[3] === 0x2a
+    ) {
+      return "tiff";
+    }
+
+    return "indexed";
   }
 
   /* -------------------------------------------------------
-     .rdr → PNG
+     GeoTIFF
   ------------------------------------------------------- */
 
-  async function renderRdr(
-    path,
-    product,
-    width,
-    height
+  async function decodeTiff(
+    buffer,
+    palette
   ) {
-    const response =
-      await fetch(
-        api(path),
-        {
-          cache: "force-cache"
-        }
+    const GeoTIFF =
+      await import(
+        "https://unpkg.com/geotiff@2.1.3/+esm"
       );
 
-    if (!response.ok) {
-      throw new Error(
-        "RDR HTTP " +
-        response.status
-      );
-    }
+    const lib =
+      GeoTIFF.default ||
+      GeoTIFF;
 
-    const buffer =
-      await response.arrayBuffer();
-
-    const bytes =
-      new Uint8Array(
+    const tiff =
+      await lib.fromArrayBuffer(
         buffer
       );
 
-    const all =
-      await loadPalettes();
+    const image =
+      await tiff.getImage();
 
-    const palette =
-      getPalette(
-        all,
-        product
-      );
+    const width =
+      image.getWidth();
 
-    if (!palette) {
-      throw new Error(
-        "Палитра не найдена: " +
-        product
-      );
-    }
+    const height =
+      image.getHeight();
 
-    const canvas =
-      rasterToCanvas(
-        bytes,
-        width,
-        height,
-        palette
-      );
+    const raster =
+      await image.readRasters({
+        interleave: true,
+        samples: [0]
+      });
 
+    const bytes =
+      raster instanceof Uint8Array
+        ? raster
+        : new Uint8Array(
+            raster.buffer,
+            raster.byteOffset,
+            raster.byteLength
+          );
+
+    return indexedRasterToCanvas(
+      bytes,
+      width,
+      height,
+      palette
+    );
+  }
+
+  /* -------------------------------------------------------
+     Canvas → object URL
+  ------------------------------------------------------- */
+
+  async function canvasToUrl(
+    canvas
+  ) {
     const blob =
       await new Promise(
         resolve => {
@@ -308,22 +374,22 @@
 
     if (!blob) {
       throw new Error(
-        "Canvas не смог создать PNG"
+        "Не удалось создать PNG"
       );
     }
 
-    if (activeUrl) {
+    if (activeObjectUrl) {
       URL.revokeObjectURL(
-        activeUrl
+        activeObjectUrl
       );
     }
 
-    activeUrl =
+    activeObjectUrl =
       URL.createObjectURL(
         blob
       );
 
-    return activeUrl;
+    return activeObjectUrl;
   }
 
   /* -------------------------------------------------------
@@ -336,37 +402,140 @@
     width,
     height
   ) {
-    /*
-       Сначала пробуем PNG.
-    */
-
-    const pngPath =
-      path.replace(
-        /\.rdr$/i,
-        ".png"
+    if (!path) {
+      throw new Error(
+        "У кадра отсутствует path"
       );
-
-    const pngUrl =
-      api(pngPath);
-
-    if (
-      await pngExists(
-        pngUrl
-      )
-    ) {
-      return pngUrl;
     }
 
     /*
-       Если PNG нет —
-       декодируем .rdr.
+       Загружаем сам кадр.
     */
 
-    return renderRdr(
+    const response =
+      await fetch(
+        api(path),
+        {
+          cache: "force-cache"
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        "Кадр HTTP " +
+        response.status
+      );
+    }
+
+    const buffer =
+      await response.arrayBuffer();
+
+    const bytes =
+      new Uint8Array(
+        buffer
+      );
+
+    if (!bytes.length) {
+      throw new Error(
+        "Кадр пустой"
+      );
+    }
+
+    const format =
+      detectFormat(bytes);
+
+    console.log(
+      "CLOrad IDARKMETEO:",
       path,
-      product,
-      width,
-      height
+      "формат:",
+      format,
+      "размер:",
+      bytes.length,
+      "байт"
+    );
+
+    /*
+       PNG можно сразу показать.
+    */
+
+    if (format === "png") {
+      const blob =
+        new Blob(
+          [buffer],
+          {
+            type: "image/png"
+          }
+        );
+
+      if (activeObjectUrl) {
+        URL.revokeObjectURL(
+          activeObjectUrl
+        );
+      }
+
+      activeObjectUrl =
+        URL.createObjectURL(
+          blob
+        );
+
+      return activeObjectUrl;
+    }
+
+    /*
+       Палитра нужна для
+       индексного raster.
+    */
+
+    const palettes =
+      await getPalettes();
+
+    const palette =
+      getPalette(
+        palettes,
+        product
+      );
+
+    if (!palette) {
+      throw new Error(
+        "Палитра отсутствует для продукта: " +
+        product
+      );
+    }
+
+    /*
+       TIFF / GeoTIFF.
+    */
+
+    if (format === "tiff") {
+      const canvas =
+        await decodeTiff(
+          buffer,
+          palette
+        );
+
+      return canvasToUrl(
+        canvas
+      );
+    }
+
+    /*
+       Если файл не PNG и не TIFF,
+       рассматриваем его как
+       однобайтный индексный raster.
+
+       Размер берём из frames JSON.
+    */
+
+    const canvas =
+      indexedRasterToCanvas(
+        bytes,
+        width,
+        height,
+        palette
+      );
+
+    return canvasToUrl(
+      canvas
     );
   }
 
