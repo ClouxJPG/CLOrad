@@ -1,6 +1,9 @@
 /* =========================================================
    CLOrad — IDARKMETEO
-   Загрузка кадров и отображение на Leaflet.
+   Управление продуктами IDARKMETEO.
+
+   Продукт загружается только после нажатия
+   соответствующей кнопки.
 ========================================================= */
 
 (function () {
@@ -52,24 +55,31 @@
     }
   };
 
-  let activeProduct = null;
-  let activeLayer = null;
+  let activeProduct =
+    null;
+
+  let activeLayer =
+    null;
 
   let frames = [];
-  let bounds = null;
 
-  let frameIndex = 0;
+  let bounds =
+    null;
 
-  let refreshTimer = null;
-  let loading = false;
+  let frameIndex =
+    0;
 
-  /*
-     Размер raster.
-     Берём из frames JSON.
-  */
+  let rasterWidth =
+    0;
 
-  let rasterWidth = 0;
-  let rasterHeight = 0;
+  let rasterHeight =
+    0;
+
+  let refreshTimer =
+    null;
+
+  let loading =
+    false;
 
   /* -------------------------------------------------------
      API
@@ -83,7 +93,7 @@
   }
 
   /* -------------------------------------------------------
-     EPSG:3857 → Leaflet bounds
+     Bounds
   ------------------------------------------------------- */
 
   function makeBounds(box) {
@@ -120,10 +130,19 @@
   }
 
   /* -------------------------------------------------------
-     Поиск кнопки продукта
+     Кнопки
   ------------------------------------------------------- */
 
-  function getButton(product) {
+  function getButton(
+    product
+  ) {
+    const cfg =
+      PRODUCTS[product];
+
+    if (!cfg) {
+      return null;
+    }
+
     return [
       ...document.querySelectorAll(
         ".n"
@@ -131,19 +150,25 @@
     ].find(
       element =>
         element.textContent.trim() ===
-        PRODUCTS[product]?.button
+        cfg.button
     );
   }
 
-  function setButtonState(product) {
+  function setButtonState(
+    product
+  ) {
     document
-      .querySelectorAll(".n")
+      .querySelectorAll(
+        ".n"
+      )
       .forEach(
         element => {
           element.classList.toggle(
             "active",
             element ===
-              getButton(product)
+              getButton(
+                product
+              )
           );
         }
       );
@@ -153,7 +178,9 @@
      Таймлайн
   ------------------------------------------------------- */
 
-  function setTimeLabel(text) {
+  function setTimeLabel(
+    text
+  ) {
     const element =
       document.getElementById(
         "timeLabel"
@@ -197,7 +224,9 @@
     }
   }
 
-  function formatTime(value) {
+  function formatTime(
+    value
+  ) {
     if (!value) {
       return "";
     }
@@ -225,10 +254,12 @@
   }
 
   /* -------------------------------------------------------
-     Отображение кадра
+     Показ кадра
   ------------------------------------------------------- */
 
-  async function showFrame(index) {
+  async function showFrame(
+    index
+  ) {
     if (
       !frames[index] ||
       !bounds ||
@@ -248,8 +279,8 @@
         frames[index];
 
       /*
-         Передаём размер raster
-         в декодер .rdr.
+         Получаем готовый URL
+         изображения от raster-модуля.
       */
 
       const imageUrl =
@@ -263,7 +294,7 @@
           );
 
       /*
-         Удаляем старый кадр.
+         Удаляем предыдущий слой.
       */
 
       if (activeLayer) {
@@ -276,7 +307,7 @@
       }
 
       /*
-         Новый кадр.
+         Новый слой.
       */
 
       activeLayer =
@@ -305,7 +336,7 @@
 
     } catch (error) {
       console.error(
-        "CLOrad IDARKMETEO frame error:",
+        "CLOrad IDARKMETEO frame:",
         error
       );
 
@@ -337,6 +368,10 @@
     );
 
     try {
+      setTimeLabel(
+        "Загрузка радара..."
+      );
+
       const response =
         await fetch(
           api(
@@ -358,51 +393,58 @@
         await response.json();
 
       /*
-         Сохраняем размеры
-         именно этого raster.
+         Геометрия из frames JSON.
       */
-
-      rasterWidth =
-        Number(
-          data.width
-        ) || 0;
-
-      rasterHeight =
-        Number(
-          data.height
-        ) || 0;
-
-      if (
-        !rasterWidth ||
-        !rasterHeight
-      ) {
-        throw new Error(
-          "В frames JSON отсутствуют width/height"
-        );
-      }
-
-      activeProduct =
-        product;
-
-      frames =
-        Array.isArray(
-          data.frames
-        )
-          ? data.frames
-              .slice()
-              .reverse()
-          : [];
 
       bounds =
         makeBounds(
           data.box
         );
 
-      frameIndex =
-        Math.max(
-          0,
-          frames.length - 1
+      /*
+         Размер raster из frames JSON.
+      */
+
+      rasterWidth =
+        Number(
+          data.width
         );
+
+      rasterHeight =
+        Number(
+          data.height
+        );
+
+      if (
+        !rasterWidth ||
+        !rasterHeight
+      ) {
+        throw new Error(
+          "В frames JSON нет width/height"
+        );
+      }
+
+      /*
+         Список кадров.
+         API отдаёт свежий → старый.
+      */
+
+      frames =
+        Array.isArray(
+          data.frames
+        )
+          ? data.frames
+          : [];
+
+      activeProduct =
+        product;
+
+      /*
+         Первый кадр —
+         самый свежий.
+      */
+
+      frameIndex = 0;
 
       setButtonState(
         product
@@ -414,17 +456,17 @@
         frames.length
       ) {
         await showFrame(
-          frameIndex
+          0
         );
       } else {
         setTimeLabel(
-          "Данных нет"
+          "Кадров нет"
         );
       }
 
       /*
-         Обновление списка
-         каждые 10 минут.
+         Список обновляем
+         раз в 10 минут.
       */
 
       refreshTimer =
@@ -439,7 +481,7 @@
 
     } catch (error) {
       console.error(
-        "CLOrad IDARKMETEO error:",
+        "CLOrad IDARKMETEO:",
         error
       );
 
@@ -454,10 +496,10 @@
   ------------------------------------------------------- */
 
   function bindButtons() {
-    Object.entries(
+    Object.keys(
       PRODUCTS
     ).forEach(
-      ([product, cfg]) => {
+      product => {
         const button =
           getButton(
             product
@@ -513,8 +555,11 @@
     }
 
     if (play) {
-      let playing = false;
-      let timer = null;
+      let playing =
+        false;
+
+      let timer =
+        null;
 
       play.addEventListener(
         "click",
@@ -569,13 +614,13 @@
 
   /* -------------------------------------------------------
      Запуск
+
+     ВАЖНО:
+     Ничего автоматически не загружаем.
+     Пользователь сам выбирает продукт.
   ------------------------------------------------------- */
 
   bindButtons();
 
   bindTimeline();
-
-  loadProduct(
-    "rain"
-  );
 })();
