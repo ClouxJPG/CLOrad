@@ -1,8 +1,6 @@
 /* =========================================================
    CLOrad — IDARKMETEO
-   Загрузка кадров IDARKMETEO и вывод на Leaflet.
-   Raster-слой .rdr обрабатывается через
-   idarkmeteo-raster.js.
+   Загрузка кадров и отображение на Leaflet.
 ========================================================= */
 
 (function () {
@@ -55,18 +53,27 @@
   };
 
   let activeProduct = null;
-
   let activeLayer = null;
 
   let frames = [];
-
   let bounds = null;
 
   let frameIndex = 0;
 
   let refreshTimer = null;
-
   let loading = false;
+
+  /*
+     Размер raster.
+     Берём из frames JSON.
+  */
+
+  let rasterWidth = 0;
+  let rasterHeight = 0;
+
+  /* -------------------------------------------------------
+     API
+  ------------------------------------------------------- */
 
   function api(path) {
     return (
@@ -74,6 +81,10 @@
       encodeURIComponent(path)
     );
   }
+
+  /* -------------------------------------------------------
+     EPSG:3857 → Leaflet bounds
+  ------------------------------------------------------- */
 
   function makeBounds(box) {
     if (
@@ -85,12 +96,16 @@
       );
     }
 
-    const back = (x, y) =>
-      L.Projection
-        .SphericalMercator
-        .unproject(
-          L.point(x, y)
-        );
+    const back =
+      (x, y) =>
+        L.Projection
+          .SphericalMercator
+          .unproject(
+            L.point(
+              x,
+              y
+            )
+          );
 
     return L.latLngBounds(
       back(
@@ -103,6 +118,10 @@
       )
     );
   }
+
+  /* -------------------------------------------------------
+     Поиск кнопки продукта
+  ------------------------------------------------------- */
 
   function getButton(product) {
     return [
@@ -119,14 +138,20 @@
   function setButtonState(product) {
     document
       .querySelectorAll(".n")
-      .forEach(element => {
-        element.classList.toggle(
-          "active",
-          element ===
-            getButton(product)
-        );
-      });
+      .forEach(
+        element => {
+          element.classList.toggle(
+            "active",
+            element ===
+              getButton(product)
+          );
+        }
+      );
   }
+
+  /* -------------------------------------------------------
+     Таймлайн
+  ------------------------------------------------------- */
 
   function setTimeLabel(text) {
     const element =
@@ -172,20 +197,20 @@
     }
   }
 
-  function formatTime(t) {
-    if (!t) {
+  function formatTime(value) {
+    if (!value) {
       return "";
     }
 
     const date =
-      new Date(t);
+      new Date(value);
 
     if (
       Number.isNaN(
         date.getTime()
       )
     ) {
-      return t;
+      return value;
     }
 
     return date.toLocaleString(
@@ -198,6 +223,10 @@
       }
     );
   }
+
+  /* -------------------------------------------------------
+     Отображение кадра
+  ------------------------------------------------------- */
 
   async function showFrame(index) {
     if (
@@ -218,21 +247,37 @@
       const frame =
         frames[index];
 
+      /*
+         Передаём размер raster
+         в декодер .rdr.
+      */
+
       const imageUrl =
         await window
           .CLOIdarkRaster
           .frameToImageUrl(
             frame.path,
-            activeProduct
+            activeProduct,
+            rasterWidth,
+            rasterHeight
           );
+
+      /*
+         Удаляем старый кадр.
+      */
 
       if (activeLayer) {
         map.removeLayer(
           activeLayer
         );
 
-        activeLayer = null;
+        activeLayer =
+          null;
       }
+
+      /*
+         Новый кадр.
+      */
 
       activeLayer =
         L.imageOverlay(
@@ -243,7 +288,11 @@
             interactive: false,
             zIndex: 35
           }
-        ).addTo(map);
+        );
+
+      activeLayer.addTo(
+        map
+      );
 
       frameIndex =
         index;
@@ -256,7 +305,7 @@
 
     } catch (error) {
       console.error(
-        "IDARKMETEO frame:",
+        "CLOrad IDARKMETEO frame error:",
         error
       );
 
@@ -268,6 +317,10 @@
       loading = false;
     }
   }
+
+  /* -------------------------------------------------------
+     Загрузка продукта
+  ------------------------------------------------------- */
 
   async function loadProduct(
     product
@@ -296,13 +349,37 @@
 
       if (!response.ok) {
         throw new Error(
-          "frames: HTTP " +
+          "frames JSON HTTP " +
           response.status
         );
       }
 
       const data =
         await response.json();
+
+      /*
+         Сохраняем размеры
+         именно этого raster.
+      */
+
+      rasterWidth =
+        Number(
+          data.width
+        ) || 0;
+
+      rasterHeight =
+        Number(
+          data.height
+        ) || 0;
+
+      if (
+        !rasterWidth ||
+        !rasterHeight
+      ) {
+        throw new Error(
+          "В frames JSON отсутствуют width/height"
+        );
+      }
 
       activeProduct =
         product;
@@ -333,7 +410,9 @@
 
       setTimeline();
 
-      if (frames.length) {
+      if (
+        frames.length
+      ) {
         await showFrame(
           frameIndex
         );
@@ -344,22 +423,23 @@
       }
 
       /*
-         Обновляем список кадров
-         примерно каждые 10 минут.
+         Обновление списка
+         каждые 10 минут.
       */
 
       refreshTimer =
         setTimeout(
-          () =>
+          () => {
             loadProduct(
               product
-            ),
+            );
+          },
           10 * 60 * 1000
         );
 
     } catch (error) {
       console.error(
-        "IDARKMETEO:",
+        "CLOrad IDARKMETEO error:",
         error
       );
 
@@ -369,36 +449,41 @@
     }
   }
 
+  /* -------------------------------------------------------
+     Кнопки продуктов
+  ------------------------------------------------------- */
+
   function bindButtons() {
-    for (
-      const [
-        product,
-        cfg
-      ] of Object.entries(
-        PRODUCTS
-      )
-    ) {
-      const button =
-        getButton(
-          product
-        );
-
-      if (!button) {
-        continue;
-      }
-
-      button.addEventListener(
-        "click",
-        event => {
-          event.preventDefault();
-
-          loadProduct(
+    Object.entries(
+      PRODUCTS
+    ).forEach(
+      ([product, cfg]) => {
+        const button =
+          getButton(
             product
           );
+
+        if (!button) {
+          return;
         }
-      );
-    }
+
+        button.addEventListener(
+          "click",
+          event => {
+            event.preventDefault();
+
+            loadProduct(
+              product
+            );
+          }
+        );
+      }
+    );
   }
+
+  /* -------------------------------------------------------
+     Таймлайн
+  ------------------------------------------------------- */
 
   function bindTimeline() {
     const range =
@@ -429,7 +514,6 @@
 
     if (play) {
       let playing = false;
-
       let timer = null;
 
       play.addEventListener(
@@ -474,18 +558,22 @@
     }
   }
 
+  /* -------------------------------------------------------
+     Публичный API
+  ------------------------------------------------------- */
+
   window.CLOIdarkMeteo = {
-    loadProduct
+    loadProduct,
+    showFrame
   };
+
+  /* -------------------------------------------------------
+     Запуск
+  ------------------------------------------------------- */
 
   bindButtons();
 
   bindTimeline();
-
-  /*
-     Запуск по умолчанию:
-     Осадки.
-  */
 
   loadProduct(
     "rain"
