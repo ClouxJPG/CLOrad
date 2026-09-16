@@ -1,18 +1,16 @@
 /* =========================================================
    CLOrad — iDarkMeteo
+   DIRECT PNG MODE
    ========================================================= */
 
 (function () {
   "use strict";
 
   const API = "/api/idarkmeteo?path=";
-
   const map = window.map;
 
   if (!map) {
-    console.error(
-      "[CLOrad] Leaflet map was not found"
-    );
+    console.error("[CLOrad] Map not found");
     return;
   }
 
@@ -48,12 +46,10 @@
 
   let currentProduct = null;
   let currentData = null;
-
   let overlay = null;
-  let overlayUrl = null;
 
-  let loading = false;
   let refreshTimer = null;
+  let loading = false;
 
   function api(path) {
     return API + encodeURIComponent(path);
@@ -65,302 +61,191 @@
     }
   }
 
-  function getButton(product) {
-    const p = PRODUCTS[product];
-
-    if (!p) return null;
+  function findButton(product) {
+    const text = PRODUCTS[product].button;
 
     return Array.from(
       document.querySelectorAll(".n")
-    ).find(el =>
-      el.textContent.trim() === p.button
+    ).find(
+      el => el.textContent.trim() === text
     );
   }
 
-  function setActive(product) {
-    const target = getButton(product);
-
+  function activateButton(product) {
     document
       .querySelectorAll(".n")
-      .forEach(el => {
-        el.classList.remove("active");
-      });
+      .forEach(el =>
+        el.classList.remove("active")
+      );
 
-    if (target) {
-      target.classList.add("active");
+    const button = findButton(product);
+
+    if (button) {
+      button.classList.add("active");
     }
   }
 
   function makeBounds(box) {
-    if (
-      !Array.isArray(box) ||
-      box.length < 4
-    ) {
-      throw new Error(
-        "Invalid EPSG:3857 box"
-      );
-    }
-
     const unproject = (x, y) =>
       L.Projection.SphericalMercator.unproject(
         L.point(x, y)
       );
 
-    const southWest = unproject(
-      box[0],
-      box[1]
-    );
-
-    const northEast = unproject(
-      box[2],
-      box[3]
-    );
-
     return L.latLngBounds(
-      southWest,
-      northEast
+      unproject(box[0], box[1]),
+      unproject(box[2], box[3])
     );
   }
 
   async function getJSON(path) {
-    const r = await fetch(api(path), {
-      cache: "no-store"
-    });
+    const response = await fetch(
+      api(path),
+      {
+        method: "GET",
+        cache: "default"
+      }
+    );
 
-    if (!r.ok) {
+    if (!response.ok) {
       throw new Error(
-        "HTTP " + r.status
+        "HTTP " + response.status
       );
     }
 
-    return await r.json();
+    return await response.json();
   }
 
-  function updateTimeline() {
-    const range = document.getElementById("range");
-    const times = document.getElementById("times");
-    const label = document.getElementById("timeLabel");
+  function removeOverlay() {
+    if (overlay) {
+      map.removeLayer(overlay);
+      overlay = null;
+    }
+  }
 
-    if (!range || !times || !currentData) {
+  function updateTimeLabel(time) {
+    const label =
+      document.getElementById(
+        "timeLabel"
+      );
+
+    if (!label) return;
+
+    if (!time) {
+      label.textContent =
+        "Радар подключён";
       return;
     }
 
-    const frames = currentData.frames || [];
+    const date = new Date(time);
+
+    if (Number.isNaN(date.getTime())) {
+      label.textContent =
+        "Радар подключён";
+      return;
+    }
+
+    label.textContent =
+      date.toLocaleString(
+        "ru-RU",
+        {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }
+      );
+  }
+
+  function updateTimeline(data) {
+    const range =
+      document.getElementById(
+        "range"
+      );
+
+    const times =
+      document.getElementById(
+        "times"
+      );
+
+    if (!range || !times) {
+      return;
+    }
+
+    const frames =
+      Array.isArray(data.frames)
+        ? data.frames
+        : [];
 
     range.min = "0";
     range.max = String(
       Math.max(0, frames.length - 1)
     );
-
-    if (
-      range.value === "" ||
-      Number(range.value) >= frames.length
-    ) {
-      range.value = "0";
-    }
+    range.value = "0";
 
     times.innerHTML = "";
 
-    frames.forEach((frame, i) => {
-      const d = document.createElement("span");
+    frames.forEach(
+      (frame, index) => {
+        const item =
+          document.createElement(
+            "span"
+          );
 
-      d.textContent = formatTime(
-        frame.t
-      );
+        const date =
+          new Date(frame.t);
 
-      if (
-        i === Number(range.value)
-      ) {
-        d.classList.add("active");
-      }
+        item.textContent =
+          Number.isNaN(date.getTime())
+            ? "--:--"
+            : date.toLocaleTimeString(
+                "ru-RU",
+                {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false
+                }
+              );
 
-      times.appendChild(d);
-    });
+        if (index === 0) {
+          item.classList.add(
+            "active"
+          );
+        }
 
-    const index = Number(range.value) || 0;
-
-    if (frames[index] && label) {
-      label.textContent =
-        formatFullTime(frames[index].t);
-    }
-  }
-
-  function formatTime(t) {
-    if (!t) return "--:--";
-
-    const d = new Date(t);
-
-    if (Number.isNaN(d.getTime())) {
-      return "--:--";
-    }
-
-    return d.toLocaleTimeString(
-      "ru-RU",
-      {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
+        times.appendChild(item);
       }
     );
   }
 
-  function formatFullTime(t) {
-    if (!t) return "Радар";
+  /*
+    ========================================================
+    ГЛАВНОЕ:
+    Показываем ГОТОВЫЙ PNG.
 
-    const d = new Date(t);
+    Никаких .rdr.
+    Никаких TIFF.
+    Никаких GeoTIFF.js.
+    Никаких palettes.json.
 
-    if (Number.isNaN(d.getTime())) {
-      return "Радар";
-    }
+    latest/...png уже является готовым изображением.
+    ========================================================
+  */
 
-    return d.toLocaleString(
-      "ru-RU",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
-      }
-    );
-  }
-
-  function removeOverlay() {
-    if (overlay) {
-      try {
-        map.removeLayer(overlay);
-      } catch (_) {}
-
-      overlay = null;
-    }
-
-    if (overlayUrl) {
-      try {
-        URL.revokeObjectURL(
-          overlayUrl
-        );
-      } catch (_) {}
-
-      overlayUrl = null;
-    }
-  }
-
-  async function showFrame(index) {
-    if (
-      !currentData ||
-      !currentProduct ||
-      !window.CLOIdarkRaster
-    ) {
-      return;
-    }
-
-    const frames =
-      currentData.frames || [];
-
-    if (!frames.length) {
-      throw new Error(
-        "No radar frames"
-      );
-    }
-
-    index = Math.max(
-      0,
-      Math.min(
-        frames.length - 1,
-        Number(index) || 0
-      )
-    );
-
-    const frame = frames[index];
-
-    if (!frame || !frame.path) {
-      throw new Error(
-        "Frame path missing"
-      );
-    }
-
-    loading = true;
-
-    try {
-      const url =
-        await window.CLOIdarkRaster.frameToImageUrl(
-          frame.path,
-          currentProduct,
-          currentData.width,
-          currentData.height
-        );
-
-      if (
-        currentData !==
-        window.__CLOCurrentDarkData
-      ) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      const bounds =
-        currentData.bounds;
-
-      const newOverlay =
-        L.imageOverlay(
-          url,
-          bounds,
-          {
-            opacity: 1,
-            interactive: false,
-            zIndex: 35,
-            crossOrigin: true
-          }
-        );
-
-      removeOverlay();
-
-      overlay = newOverlay;
-      overlayUrl = url;
-
-      overlay.addTo(map);
-
-      rangeSet(index);
-
-      updateTimeline();
-
-      console.log(
-        "[CLOrad] Frame displayed:",
-        frame.t
-      );
-    } finally {
-      loading = false;
-    }
-  }
-
-  function rangeSet(index) {
-    const range =
-      document.getElementById("range");
-
-    if (range) {
-      range.value = String(index);
-    }
-  }
-
-  async function loadProduct(
-    product,
-    options
-  ) {
+  async function showProduct(product) {
     if (!PRODUCTS[product]) {
       return;
     }
 
-    options =
-      options || {};
-
-    if (refreshTimer) {
-      clearTimeout(refreshTimer);
-      refreshTimer = null;
+    if (loading) {
+      return;
     }
+
+    loading = true;
 
     currentProduct = product;
 
-    setActive(product);
+    activateButton(product);
 
     msg(
       "Загрузка " +
@@ -372,77 +257,116 @@
       const p =
         PRODUCTS[product];
 
-      const path =
-        "frames/" +
+      /*
+        Получаем только metadata.
+      */
+
+      const metadata =
+        await getJSON(
+          "frames/" +
+          product +
+          "/" +
+          p.mosaic +
+          ".json"
+        );
+
+      if (
+        !metadata ||
+        !Array.isArray(metadata.box)
+      ) {
+        throw new Error(
+          "Invalid radar metadata"
+        );
+      }
+
+      currentData =
+        metadata;
+
+      const bounds =
+        makeBounds(
+          metadata.box
+        );
+
+      /*
+        Для rain используем latest PNG.
+        Это готовый цветной кадр.
+      */
+
+      const pngPath =
+        "latest/" +
         product +
         "/" +
         p.mosaic +
-        ".json";
+        ".png";
 
-      const data =
-        await getJSON(path);
-
-      if (
-        !data ||
-        !Array.isArray(data.frames)
-      ) {
-        throw new Error(
-          "Invalid frames response"
-        );
-      }
-
-      if (
-        !Array.isArray(data.box) ||
-        data.box.length < 4
-      ) {
-        throw new Error(
-          "Radar box missing"
-        );
-      }
-
-      data.bounds =
-        makeBounds(data.box);
+      const imageUrl =
+        api(pngPath);
 
       /*
-        API отдаёт frames от newest к oldest
-        в нормальном случае.
-
-        На всякий случай сортируем по времени
-        и показываем самый новый.
+        Создаём новый overlay.
       */
-      data.frames =
-        data.frames
-          .filter(f =>
-            f &&
-            f.path &&
-            f.t
-          )
-          .sort(
-            (a, b) =>
-              new Date(b.t) -
-              new Date(a.t)
-          );
 
-      if (!data.frames.length) {
-        throw new Error(
-          "No valid frames"
+      const newOverlay =
+        L.imageOverlay(
+          imageUrl,
+          bounds,
+          {
+            opacity: 1,
+            interactive: false,
+            zIndex: 35
+          }
         );
-      }
 
-      currentData = data;
+      /*
+        Ждём фактической загрузки изображения.
+        Так ошибка картинки не будет маскироваться.
+      */
 
-      window.__CLOCurrentDarkData =
-        data;
+      await new Promise(
+        (resolve, reject) => {
+          const img =
+            new Image();
 
-      updateTimeline();
+          img.onload = () => {
+            resolve();
+          };
 
-      const initialIndex =
-        options.index != null
-          ? options.index
-          : 0;
+          img.onerror = () => {
+            reject(
+              new Error(
+                "PNG failed to load"
+              )
+            );
+          };
 
-      await showFrame(
-        initialIndex
+          img.src = imageUrl;
+        }
+      );
+
+      /*
+        Только после успешной загрузки
+        заменяем старый слой.
+      */
+
+      removeOverlay();
+
+      overlay =
+        newOverlay;
+
+      overlay.addTo(map);
+
+      /*
+        Показываем metadata времени,
+        если сервер его передал.
+      */
+
+      updateTimeLabel(
+        metadata.latest ||
+        metadata.generated
+      );
+
+      updateTimeline(
+        metadata
       );
 
       msg(
@@ -450,14 +374,27 @@
         " подключены"
       );
 
-      scheduleRefresh();
-    } catch (e) {
-      console.error(
-        "[CLOrad] iDarkMeteo error:",
-        e
+      console.log(
+        "[CLOrad] PNG displayed:",
+        imageUrl
       );
 
-      removeOverlay();
+      /*
+        Обновление примерно раз в 10 минут.
+        Не 90 секунд — чтобы не ловить 429.
+      */
+
+      scheduleRefresh();
+
+    } catch (error) {
+      console.error(
+        "[CLOrad] iDarkMeteo:",
+        error
+      );
+
+      msg(
+        "Ошибка загрузки радара"
+      );
 
       const label =
         document.getElementById(
@@ -469,28 +406,32 @@
           "Ошибка загрузки радара";
       }
 
-      msg(
-        "Ошибка загрузки радара"
-      );
+    } finally {
+      loading = false;
     }
   }
 
   function scheduleRefresh() {
     if (refreshTimer) {
-      clearTimeout(refreshTimer);
+      clearTimeout(
+        refreshTimer
+      );
     }
 
-    /*
-      API обновляет радар каждые 10 минут.
-      Проверяем немного чаще, чтобы новый кадр
-      подхватывался автоматически.
-    */
     refreshTimer =
       setTimeout(
         async () => {
+
           if (!currentProduct) {
             return;
           }
+
+          /*
+            При обновлении НЕ перезагружаем
+            старые кадры и НЕ трогаем .rdr.
+
+            Просто снова показываем latest PNG.
+          */
 
           const product =
             currentProduct;
@@ -499,66 +440,90 @@
             const p =
               PRODUCTS[product];
 
-            const path =
-              "frames/" +
-              product +
-              "/" +
-              p.mosaic +
-              ".json";
-
-            const data =
-              await getJSON(path);
+            const metadata =
+              await getJSON(
+                "frames/" +
+                product +
+                "/" +
+                p.mosaic +
+                ".json"
+              );
 
             if (
-              !data ||
+              !metadata ||
               !Array.isArray(
-                data.frames
+                metadata.box
               )
             ) {
               throw new Error(
-                "Invalid refresh data"
+                "Invalid refresh metadata"
               );
             }
 
-            data.bounds =
-              makeBounds(data.box);
+            currentData =
+              metadata;
 
-            data.frames =
-              data.frames
-                .filter(f =>
-                  f &&
-                  f.path &&
-                  f.t
-                )
-                .sort(
-                  (a, b) =>
-                    new Date(b.t) -
-                    new Date(a.t)
-                );
+            const bounds =
+              makeBounds(
+                metadata.box
+              );
 
-            const oldLatest =
-              currentData &&
-              currentData.frames &&
-              currentData.frames[0] &&
-              currentData.frames[0].t;
+            const pngPath =
+              "latest/" +
+              product +
+              "/" +
+              p.mosaic +
+              ".png";
 
-            const newLatest =
-              data.frames[0] &&
-              data.frames[0].t;
+            const imageUrl =
+              api(pngPath);
 
-            currentData = data;
+            const test =
+              new Image();
 
-            window.__CLOCurrentDarkData =
-              data;
+            await new Promise(
+              (resolve, reject) => {
+                test.onload =
+                  resolve;
 
-            updateTimeline();
+                test.onerror =
+                  reject;
 
-            if (
-              newLatest &&
-              newLatest !== oldLatest
-            ) {
-              await showFrame(0);
-            }
+                test.src =
+                  imageUrl;
+              }
+            );
+
+            const newOverlay =
+              L.imageOverlay(
+                imageUrl,
+                bounds,
+                {
+                  opacity: 1,
+                  interactive: false,
+                  zIndex: 35
+                }
+              );
+
+            removeOverlay();
+
+            overlay =
+              newOverlay;
+
+            overlay.addTo(map);
+
+            updateTimeLabel(
+              metadata.latest ||
+              metadata.generated
+            );
+
+            updateTimeline(
+              metadata
+            );
+
+            console.log(
+              "[CLOrad] Radar refreshed"
+            );
 
           } catch (e) {
             console.warn(
@@ -568,47 +533,22 @@
           }
 
           scheduleRefresh();
+
         },
-        90 * 1000
+        10 * 60 * 1000
       );
   }
 
   /*
-    Timeline
-  */
-
-  const range =
-    document.getElementById("range");
-
-  if (range) {
-    range.addEventListener(
-      "input",
-      async () => {
-        if (
-          !currentData ||
-          loading
-        ) {
-          return;
-        }
-
-        try {
-          await showFrame(
-            Number(range.value)
-          );
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    );
-  }
-
-  /*
-    Навигация
+    ========================================================
+    Кнопки продуктов
+    ========================================================
   */
 
   document
     .querySelectorAll(".n")
     .forEach(button => {
+
       const text =
         button.textContent.trim();
 
@@ -620,14 +560,16 @@
               text
           );
 
-      if (!product) return;
+      if (!product) {
+        return;
+      }
 
       button.addEventListener(
         "click",
-        e => {
-          e.preventDefault();
+        event => {
+          event.preventDefault();
 
-          loadProduct(
+          showProduct(
             product
           );
         }
@@ -635,107 +577,46 @@
     });
 
   /*
-    Play
+    ========================================================
+    Timeline
+    ========================================================
   */
 
-  const play =
-    document.getElementById("play");
+  const range =
+    document.getElementById(
+      "range"
+    );
 
-  let playing = false;
-  let playTimer = null;
-
-  if (play) {
-    play.addEventListener(
-      "click",
+  if (range) {
+    range.addEventListener(
+      "input",
       () => {
-        if (
-          !currentData ||
-          !currentData.frames ||
-          !currentData.frames.length
-        ) {
-          return;
-        }
-
-        playing = !playing;
-
-        play.textContent =
-          playing
-            ? "❚❚"
-            : "▶";
-
-        if (playing) {
-          playStep();
-        } else {
-          if (playTimer) {
-            clearTimeout(
-              playTimer
-            );
-          }
-        }
+        /*
+          latest PNG — это текущий готовый кадр.
+          Старые .rdr специально не трогаем,
+          чтобы не получить 429.
+        */
       }
     );
   }
 
-  async function playStep() {
-    if (
-      !playing ||
-      !currentData
-    ) {
-      return;
-    }
-
-    const range =
-      document.getElementById(
-        "range"
-      );
-
-    if (!range) {
-      return;
-    }
-
-    let index =
-      Number(range.value) || 0;
-
-    index++;
-
-    if (
-      index >=
-      currentData.frames.length
-    ) {
-      index = 0;
-    }
-
-    try {
-      await showFrame(index);
-    } catch (e) {
-      console.error(e);
-    }
-
-    if (playing) {
-      playTimer =
-        setTimeout(
-          playStep,
-          500
-        );
-    }
-  }
-
   /*
-    Экспортируем API для отладки
+    ========================================================
+    Экспорт
+    ========================================================
   */
 
   window.CLOIdarkMeteo = {
-    loadProduct,
-    showFrame,
-    getData: () =>
-      currentData
+    loadProduct:
+      showProduct,
+
+    getData:
+      () => currentData
   };
 
   /*
-    ВАЖНО:
-    Ничего автоматически не грузим.
-    Пользователь сам нажимает:
-    "Осадки-мм/ч"
+    Осадки НЕ загружаются автоматически.
+    Только после нажатия кнопки.
   */
 
 })();
