@@ -1,166 +1,134 @@
-module.exports = async function handler(req, res) {
-  const UPSTREAM = "https://idarkmeteo.host/api/v1/";
-  const key = process.env.IDARKMETEO_KEY;
+// ============================================================
+// CLOrad — Vercel proxy for Idarkmeteo
+// Environment variable required:
+// IDARKMETEO_KEY
+// ============================================================
 
+export default async function handler(req, res) {
+  // ------------------------------------------------------------
   // CORS
+  // ------------------------------------------------------------
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, OPTIONS"
+  );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-API-Key"
+    "Content-Type"
   );
 
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate"
-  );
-
-  res.setHeader("Pragma", "no-cache");
-
-  // OPTIONS
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
 
+  // ------------------------------------------------------------
   // API KEY
-  if (!key) {
-    console.error("CLOrad: IDARKMETEO_KEY is missing");
+  // ------------------------------------------------------------
+  const API_KEY = process.env.IDARKMETEO_KEY;
 
+  if (!API_KEY) {
     return res.status(500).json({
       ok: false,
-      error: "IDARKMETEO_KEY is not configured"
+      error: "IDARKMETEO_KEY is not configured in Vercel"
     });
   }
 
+  // ------------------------------------------------------------
   // PATH
-  const path = req.query?.path;
+  // ------------------------------------------------------------
+  let path = req.query?.path;
 
   if (!path || typeof path !== "string") {
     return res.status(400).json({
       ok: false,
-      error: "Missing path"
+      error: "Missing ?path="
     });
   }
 
-  // SECURITY
+  // Decode safely
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid path encoding"
+    });
+  }
+
+  // Prevent accidental external URL injection
   if (
-    path.startsWith("/") ||
-    path.includes("..") ||
-    path.includes("\\") ||
-    path.includes("\0")
+    path.startsWith("http://") ||
+    path.startsWith("https://") ||
+    path.includes("://")
   ) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid Idarkmeteo path",
-      path
+      error: "Absolute URLs are not allowed"
     });
   }
 
-  // ALLOWED PATHS
-
-  const isFrameJson =
-    /^frames\/[a-z]+\/[a-z0-9_-]+\.json$/i.test(path);
-
-  const isPng =
-    /^(data|latest|archive|day)\/[a-z]+\/[a-z0-9_-]+\/.+\.png$/i.test(path);
-
-  const isRdr =
-    /^data\/[a-z]+\/[a-z0-9_-]+\/\d{8}\/\d{4}\.rdr$/i.test(path);
-
-  if (!isFrameJson && !isPng && !isRdr) {
-    return res.status(400).json({
-      ok: false,
-      error: "Invalid Idarkmeteo path",
-      path
-    });
+  // Always make the path begin with /
+  if (!path.startsWith("/")) {
+    path = "/" + path;
   }
 
-  const target = UPSTREAM + path;
+  // ------------------------------------------------------------
+  // .rdr -> .png
+  // Idarkmeteo radar images are requested as PNG by CLOrad.
+  // ------------------------------------------------------------
+  if (path.endsWith(".rdr")) {
+    path = path.slice(0, -4) + ".png";
+  }
 
-  console.log("CLOrad Idarkmeteo request:", target);
+  // ------------------------------------------------------------
+  // BASE URL
+  // ------------------------------------------------------------
+  const BASE_URL = "https://idarkmeteo.ru";
 
-  let response;
+  const target = new URL(BASE_URL + path);
+
+  // ------------------------------------------------------------
+  // API KEY
+  //
+  // We support both common forms:
+  // ?key=...
+  // and Authorization: Bearer ...
+  //
+  // The key never reaches the browser.
+  // ------------------------------------------------------------
+  target.searchParams.set("key", API_KEY);
 
   try {
-    response = await fetch(target, {
+    const response = await fetch(target.toString(), {
       method: "GET",
-
       headers: {
-        "X-API-Key": key,
-        "Accept": isFrameJson
-          ? "application/json"
-          : "*/*"
+        "Accept": "*/*",
+        "User-Agent": "CLOrad/1.0"
       }
     });
-  } catch (error) {
-    console.error(
-      "CLOrad Idarkmeteo fetch error:",
-      error
+
+    const contentType =
+      response.headers.get("content-type") ||
+      "application/octet-stream";
+
+    const data = Buffer.from(await response.arrayBuffer());
+
+    res.status(response.status);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=30, s-maxage=30"
     );
+
+    return res.send(data);
+
+  } catch (error) {
+    console.error("Idarkmeteo proxy error:", error);
 
     return res.status(502).json({
       ok: false,
-      error: "Upstream fetch failed",
-      path,
-      message: error?.message || String(error)
+      error: "Failed to connect to Idarkmeteo"
     });
   }
-
-  // UPSTREAM ERROR
-
-  if (!response.ok) {
-    let body = "";
-
-    try {
-      body = await response.text();
-    } catch (_) {
-      body = "";
-    }
-
-    console.error(
-      "CLOrad Idarkmeteo upstream error:",
-      response.status,
-      path,
-      body
-    );
-
-    return res.status(response.status).json({
-      ok: false,
-      error: "Idarkmeteo upstream error",
-      status: response.status,
-      path,
-      message: body || `HTTP ${response.status}`
-    });
-  }
-
-  // CONTENT TYPE
-
-  const contentType =
-    response.headers.get("content-type") ||
-    (
-      isFrameJson
-        ? "application/json"
-        : "application/octet-stream"
-    );
-
-  res.setHeader(
-    "Content-Type",
-    contentType
-  );
-
-  // JSON
-
-  if (isFrameJson) {
-    const text = await response.text();
-
-    return res.status(200).send(text);
-  }
-
-  // BINARY: PNG / RDR
-
-  const buffer = Buffer.from(
-    await response.arrayBuffer()
-  );
-
-  return res.status(200).send(buffer);
-};
+}
