@@ -90,38 +90,25 @@
   ========================================================= */
 
   let activeProduct = null;
-
   let activeFrames = [];
-
   let activeMetadata = null;
 
   let activeLayer = null;
-
   let activeBlobUrl = null;
 
   let frameIndex = 0;
-
   let frameCount = 24;
 
   let generation = 0;
 
   let frameAbort = null;
-
   let productAbort = null;
 
   let refreshTimer = null;
-
   let playTimer = null;
 
   let playing = false;
-
   let loading = false;
-
-  /*
-     Номер операции показа кадра.
-     Старый результат не сможет
-     попасть на карту.
-  */
 
   let renderSerial = 0;
 
@@ -145,6 +132,24 @@
       API +
       encodeURIComponent(path)
     );
+
+  }
+
+
+  /* =========================================================
+     ABORT CHECK
+  ========================================================= */
+
+  function throwIfAborted(signal) {
+
+    if (signal?.aborted) {
+
+      throw new DOMException(
+        "Aborted",
+        "AbortError"
+      );
+
+    }
 
   }
 
@@ -340,10 +345,6 @@
 
   function removeAllIdarkLayers() {
 
-    /*
-       Основной слой.
-    */
-
     if (activeLayer) {
 
       try {
@@ -359,13 +360,6 @@
 
     }
 
-
-    /*
-       Дополнительная страховка.
-
-       Удаляем все imageOverlay,
-       которые были помечены нами.
-    */
 
     map.eachLayer(
       layer => {
@@ -388,10 +382,6 @@
       }
     );
 
-
-    /*
-       Освобождаем Blob URL.
-    */
 
     if (activeBlobUrl) {
 
@@ -460,16 +450,13 @@
     signal
   ) {
 
-    const response =
-      await fetch(
-        url,
-        {
-          cache: "no-store",
-          signal
-        }
-      );
-
-    return response;
+    return fetch(
+      url,
+      {
+        cache: "no-store",
+        signal
+      }
+    );
 
   }
 
@@ -484,9 +471,7 @@
     index
   ) {
 
-    if (
-      !frame?.path
-    ) {
+    if (!frame?.path) {
 
       throw new Error(
         "У кадра отсутствует path"
@@ -494,10 +479,6 @@
 
     }
 
-
-    /*
-       Отменяем предыдущий FETCH.
-    */
 
     cancelFrame();
 
@@ -512,11 +493,6 @@
       controller.signal;
 
 
-    /*
-       Уникальный номер именно
-       этой операции.
-    */
-
     const serial =
       ++renderSerial;
 
@@ -524,30 +500,44 @@
     setLoading(true);
 
 
+    let result = null;
+    let imageUrl = null;
+
+
     try {
 
+      throwIfAborted(
+        signal
+      );
+
+
       /*
-         Декодер сам скачивает RDR.
+         Теперь signal реально
+         передаётся в RDR-декодер.
       */
 
-      const result =
+      result =
         await window
           .CLOIdarkRaster
           .frameToImageUrl(
             frame.path,
-            activeProduct
+            activeProduct,
+            signal
           );
 
 
+      throwIfAborted(
+        signal
+      );
+
+
       /*
-         Старый результат уничтожается
-         и НИКОГДА не добавляется.
+         Проверяем поколение.
       */
 
       if (
         myGeneration !== generation ||
-        serial !== renderSerial ||
-        signal.aborted
+        serial !== renderSerial
       ) {
 
         if (result?.url) {
@@ -567,10 +557,11 @@
       }
 
 
-      const imageUrl =
+      imageUrl =
         typeof result === "string"
           ? result
           : result?.url;
+
 
       const header =
         typeof result === "object"
@@ -598,6 +589,8 @@
           imageUrl
         );
 
+        imageUrl = null;
+
         throw new Error(
           "В RDR отсутствует box"
         );
@@ -609,8 +602,13 @@
         makeBounds(box);
 
 
+      throwIfAborted(
+        signal
+      );
+
+
       /*
-         Создаём ровно ОДИН новый overlay.
+         Создаём новый слой.
       */
 
       const newLayer =
@@ -626,17 +624,13 @@
         );
 
 
-      /*
-         Помечаем слой.
-      */
-
       newLayer.__cloradIdark =
         true;
 
 
       /*
-         Проверка прямо перед
-         добавлением.
+         Последняя проверка
+         перед добавлением.
       */
 
       if (
@@ -653,13 +647,16 @@
 
         } catch {}
 
+        imageUrl = null;
+
         return;
 
       }
 
 
       /*
-         Добавляем новый слой.
+         Новый кадр готов.
+         Добавляем его.
       */
 
       newLayer.addTo(
@@ -668,7 +665,9 @@
 
 
       /*
-         Ещё одна проверка после addTo.
+         Если во время addTo
+         пришёл новый запрос —
+         сразу убираем этот слой.
       */
 
       if (
@@ -693,13 +692,15 @@
 
         } catch {}
 
+        imageUrl = null;
+
         return;
 
       }
 
 
       /*
-         Старый слой теперь удаляем.
+         Старый слой.
       */
 
       const oldLayer =
@@ -715,6 +716,12 @@
       activeBlobUrl =
         imageUrl;
 
+      imageUrl = null;
+
+
+      /*
+         Старый слой убираем.
+      */
 
       if (oldLayer) {
 
@@ -743,7 +750,8 @@
 
 
       /*
-         Дополнительная зачистка.
+         Финальная зачистка
+         всех старых IDARK overlay.
       */
 
       map.eachLayer(
@@ -807,6 +815,25 @@
 
       setLoading(false);
 
+
+    } catch (error) {
+
+      /*
+         Если этот кадр был отменён —
+         ничего не показываем.
+      */
+
+      if (
+        error?.name === "AbortError"
+      ) {
+
+        return;
+
+      }
+
+      throw error;
+
+
     } finally {
 
       if (
@@ -815,6 +842,23 @@
 
         frameAbort =
           null;
+
+      }
+
+      /*
+         На случай, если URL
+         был создан, но не стал activeBlobUrl.
+      */
+
+      if (imageUrl) {
+
+        try {
+
+          URL.revokeObjectURL(
+            imageUrl
+          );
+
+        } catch {}
 
       }
 
@@ -848,6 +892,7 @@
       return;
 
     }
+
 
     const myGeneration =
       generation;
@@ -927,11 +972,8 @@
       ++generation;
 
 
-    /*
-       Останавливаем всё старое.
-    */
-
     stopPlayback();
+
 
     if (refreshTimer) {
 
@@ -944,8 +986,8 @@
 
     }
 
-    cancelFrame();
 
+    cancelFrame();
     cancelProduct();
 
     removeAllIdarkLayers();
@@ -1047,7 +1089,7 @@
         metadata;
 
 
-      let frames =
+      const frames =
         metadata.frames
           .filter(
             frame =>
@@ -1099,7 +1141,9 @@
 
         selectedIndex =
           Math.min(
-            Number(range.value || 0),
+            Number(
+              range.value || 0
+            ),
             frames.length - 1
           );
 
@@ -1160,10 +1204,6 @@
       setLoading(false);
 
 
-      /*
-         Обновление через 10 минут.
-      */
-
       refreshTimer =
         setTimeout(
           () => {
@@ -1183,6 +1223,7 @@
           },
           10 * 60 * 1000
         );
+
 
     } catch (error) {
 
@@ -1221,12 +1262,14 @@
         "Ошибка загрузки кадра"
       );
 
+
       if ($("intensityValue")) {
 
         $("intensityValue").textContent =
           "Нет данных";
 
       }
+
 
       if (typeof msg === "function") {
 
@@ -1249,7 +1292,6 @@
   function stopRadar() {
 
     ++generation;
-
     ++renderSerial;
 
 
@@ -1269,7 +1311,6 @@
 
 
     cancelFrame();
-
     cancelProduct();
 
 
@@ -1560,6 +1601,9 @@
      TIMELINE
   ========================================================= */
 
+  let sliderTimer = null;
+
+
   $("range")?.addEventListener(
     "input",
     () => {
@@ -1573,10 +1617,12 @@
 
       }
 
+
       const index =
         Number(
           $("range").value
         );
+
 
       if (
         !Number.isInteger(index) ||
@@ -1597,17 +1643,30 @@
       );
 
 
-      /*
-         Останавливаем PLAY при
-         ручном перемещении.
-      */
-
       stopPlayback();
 
 
-      loadSelectedFrame(
-        index
+      /*
+         Не запускаем десятки RDR
+         при быстром движении ползунка.
+      */
+
+      clearTimeout(
+        sliderTimer
       );
+
+
+      sliderTimer =
+        setTimeout(
+          () => {
+
+            loadSelectedFrame(
+              index
+            );
+
+          },
+          100
+        );
 
     }
   );
@@ -1622,6 +1681,7 @@
     playing =
       false;
 
+
     if (playTimer) {
 
       clearTimeout(
@@ -1632,6 +1692,7 @@
         null;
 
     }
+
 
     if ($("play")) {
 
@@ -1669,13 +1730,6 @@
 
     }
 
-
-    /*
-       ВАЖНО:
-       Следующий кадр НЕ стартует,
-       пока предыдущий полностью
-       не закончил загрузку и декодирование.
-    */
 
     await loadSelectedFrame(
       next
@@ -1795,10 +1849,6 @@
 
   setLoading(false);
 
-
-  /*
-     Один запуск.
-  */
 
   loadProduct(
     "rain"
