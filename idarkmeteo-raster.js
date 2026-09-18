@@ -1,19 +1,18 @@
 /* =========================================================
    CLOrad — IDARKMETEO RASTER DECODER
 
-   Этот файл ТОЛЬКО:
+   ТОЛЬКО:
    .rdr → декодирование → Canvas → ObjectURL
 
-   Он НЕ управляет:
+   НЕ управляет:
    - кнопками
    - продуктами
    - таймлайном
-   - Leaflet-слоями
-
-   Управление всем этим остаётся в idarkmeteo.js.
+   - Leaflet
 ========================================================= */
 
 (function () {
+
   "use strict";
 
   const API = "/api/idarkmeteo?path=";
@@ -26,7 +25,9 @@
   ========================================================= */
 
   function api(path) {
+
     return API + encodeURIComponent(path);
+
   }
 
 
@@ -48,14 +49,18 @@
         .then(response => {
 
           if (!response.ok) {
+
             throw new Error(
               "palettes.json: HTTP " +
               response.status
             );
+
           }
 
           return response.json();
+
         });
+
     }
 
     const all =
@@ -66,6 +71,7 @@
       all?.palettes?.[product] ||
       null
     );
+
   }
 
 
@@ -98,11 +104,15 @@
         index >= lo &&
         index <= hi
       ) {
+
         return band;
+
       }
+
     }
 
     return null;
+
   }
 
 
@@ -118,9 +128,11 @@
       typeof DecompressionStream ===
       "undefined"
     ) {
+
       throw new Error(
         "DecompressionStream не поддерживается"
       );
+
     }
 
     const stream =
@@ -137,11 +149,15 @@
         stream
       ).arrayBuffer()
     );
+
   }
 
 
   /* =========================================================
      VARINT RLE
+
+     Без битовых операторов для накопления
+     больших значений.
   ========================================================= */
 
   function readVarints(
@@ -151,20 +167,21 @@
     const result = [];
 
     let value = 0;
-    let shift = 0;
+    let multiplier = 1;
 
     for (
       const byte of buffer
     ) {
 
-      value |=
-        (byte & 127) << shift;
+      value +=
+        (byte & 127) *
+        multiplier;
 
       if (
         byte & 128
       ) {
 
-        shift += 7;
+        multiplier *= 128;
 
       } else {
 
@@ -173,11 +190,24 @@
         );
 
         value = 0;
-        shift = 0;
+        multiplier = 1;
+
       }
+
+    }
+
+    if (
+      multiplier !== 1
+    ) {
+
+      throw new Error(
+        "RLE: оборванный varint"
+      );
+
     }
 
     return result;
+
   }
 
 
@@ -220,7 +250,9 @@
         !Number.isFinite(length) ||
         length <= 0
       ) {
+
         continue;
+
       }
 
       const end =
@@ -241,22 +273,28 @@
       if (
         position >= expected
       ) {
+
         break;
+
       }
+
     }
 
     if (
       position !== expected
     ) {
+
       throw new Error(
         "RLE: получено " +
         position +
         " пикселей из " +
         expected
       );
+
     }
 
     return output;
+
   }
 
 
@@ -276,9 +314,11 @@
     if (
       bytes.length < 9
     ) {
+
       throw new Error(
         "RDR слишком короткий"
       );
+
     }
 
 
@@ -297,10 +337,12 @@
     if (
       signature !== "IDMR"
     ) {
+
       throw new Error(
         "Неверная сигнатура: " +
         signature
       );
+
     }
 
 
@@ -314,15 +356,17 @@
     if (
       version !== 1
     ) {
+
       console.warn(
         "CLOrad: неизвестная версия RDR:",
         version
       );
+
     }
 
 
     /* -------------------------------------------------------
-       HEADER LENGTH
+       HEADER
     ------------------------------------------------------- */
 
     const view =
@@ -347,15 +391,12 @@
       headerEnd >
       bytes.length
     ) {
+
       throw new Error(
         "Повреждённый RDR header"
       );
+
     }
-
-
-    /* -------------------------------------------------------
-       HEADER JSON
-    ------------------------------------------------------- */
 
     const headerBytes =
       bytes.slice(
@@ -384,6 +425,7 @@
       throw new Error(
         "RDR header не является JSON"
       );
+
     }
 
 
@@ -407,9 +449,11 @@
       !width ||
       !height
     ) {
+
       throw new Error(
         "В RDR отсутствуют размеры"
       );
+
     }
 
 
@@ -426,9 +470,11 @@
       ) ||
       streamLengths.length < 2
     ) {
+
       throw new Error(
         "В RDR отсутствуют потоки"
       );
+
     }
 
 
@@ -461,9 +507,11 @@
         offset + length >
         body.length
       ) {
+
         throw new Error(
           "Некорректная длина RDR-потока"
         );
+
       }
 
       streams.push(
@@ -474,12 +522,13 @@
       );
 
       offset += length;
+
     }
 
 
-    /* =======================================================
+    /* -------------------------------------------------------
        COMPRESSION
-    ======================================================= */
+    ------------------------------------------------------- */
 
     const compression =
       String(
@@ -488,19 +537,20 @@
       ).toLowerCase();
 
     if (
-      compression !==
-      "deflate"
+      compression !== "deflate"
     ) {
+
       throw new Error(
         "Неподдерживаемое сжатие RDR: " +
         compression
       );
+
     }
 
 
-    /* =======================================================
-       STREAM 0 — VALUES
-    ======================================================= */
+    /* -------------------------------------------------------
+       STREAM 0
+    ------------------------------------------------------- */
 
     const values =
       await inflateDeflate(
@@ -508,9 +558,9 @@
       );
 
 
-    /* =======================================================
-       STREAM 1 — RLE LENGTHS
-    ======================================================= */
+    /* -------------------------------------------------------
+       STREAM 1
+    ------------------------------------------------------- */
 
     const lengthsCompressed =
       await inflateDeflate(
@@ -523,9 +573,9 @@
       );
 
 
-    /* =======================================================
-       RESTORE PIXELS
-    ======================================================= */
+    /* -------------------------------------------------------
+       PIXELS
+    ------------------------------------------------------- */
 
     const expected =
       width * height;
@@ -538,16 +588,18 @@
       );
 
 
-    /* =======================================================
-       RETURN
-    ======================================================= */
-
     return {
+
       header,
+
       width,
+
       height,
+
       pixels
+
     };
+
   }
 
 
@@ -579,9 +631,11 @@
       );
 
     if (!ctx) {
+
       throw new Error(
         "Canvas недоступен"
       );
+
     }
 
     const imageData =
@@ -598,9 +652,9 @@
       [];
 
 
-    /* =======================================================
+    /* -------------------------------------------------------
        DRAW
-    ======================================================= */
+    ------------------------------------------------------- */
 
     for (
       let i = 0, p = 0;
@@ -609,26 +663,20 @@
     ) {
 
       const index =
-        Number(
-          pixels[i]
-        );
+        pixels[i];
 
 
       /*
-       * IDARKMETEO:
        * 0 = прибор не смотрел.
-       * Это прозрачность, а НЕ отсутствие осадков.
+       * Полностью прозрачный.
        */
 
       if (
-        !Number.isFinite(index) ||
         index === 0
       ) {
 
-        out[p + 3] =
-          0;
-
         continue;
+
       }
 
 
@@ -638,7 +686,6 @@
           index
         );
 
-
       if (
         !band ||
         !Array.isArray(
@@ -646,10 +693,8 @@
         )
       ) {
 
-        out[p + 3] =
-          0;
-
         continue;
+
       }
 
 
@@ -679,6 +724,7 @@
             )
           )
         );
+
     }
 
 
@@ -689,6 +735,7 @@
     );
 
     return canvas;
+
   }
 
 
@@ -716,23 +763,29 @@
                 );
 
                 return;
+
               }
 
-              resolve(result);
+              resolve(
+                result
+              );
+
             },
             "image/png"
           );
+
         }
       );
 
     return URL.createObjectURL(
       blob
     );
+
   }
 
 
   /* =========================================================
-     MAIN FUNCTION
+     MAIN
   ========================================================= */
 
   async function frameToImageUrl(
@@ -740,20 +793,17 @@
     product
   ) {
 
-    if (
-      !path
-    ) {
+    if (!path) {
+
       throw new Error(
         "Путь к RDR не указан"
       );
+
     }
 
 
     /* -------------------------------------------------------
-       Скачиваем именно .rdr.
-
-       PNG больше НЕ проверяем:
-       по API PNG отключены.
+       FETCH RDR
     ------------------------------------------------------- */
 
     const response =
@@ -764,33 +814,32 @@
         }
       );
 
+    if (!response.ok) {
 
-    if (
-      !response.ok
-    ) {
       throw new Error(
         "Raster HTTP " +
         response.status
       );
-    }
 
+    }
 
     const buffer =
       await response.arrayBuffer();
-
 
     if (
       !buffer ||
       buffer.byteLength < 9
     ) {
+
       throw new Error(
         "Получен пустой RDR"
       );
+
     }
 
 
     /* -------------------------------------------------------
-       Decode
+       DECODE
     ------------------------------------------------------- */
 
     const decoded =
@@ -800,7 +849,7 @@
 
 
     /* -------------------------------------------------------
-       Palette
+       PALETTE
     ------------------------------------------------------- */
 
     const palette =
@@ -810,7 +859,7 @@
 
 
     /* -------------------------------------------------------
-       Canvas
+       CANVAS
     ------------------------------------------------------- */
 
     const canvas =
@@ -822,22 +871,41 @@
       );
 
 
-    /* -------------------------------------------------------
-       Object URL
-    ------------------------------------------------------- */
+    /*
+       После создания PNG нам больше
+       не нужен огромный Canvas/ImageData.
+    */
 
-    return await canvasToUrl(
-      canvas
-    );
+    const url =
+      await canvasToUrl(
+        canvas
+      );
+
+
+    canvas.width = 1;
+    canvas.height = 1;
+
+
+    return {
+
+      url,
+
+      header:
+        decoded.header
+
+    };
+
   }
 
 
   /* =========================================================
-     PUBLIC API
+     PUBLIC
   ========================================================= */
 
   window.CLOIdarkRaster = {
+
     frameToImageUrl
+
   };
 
 })();
