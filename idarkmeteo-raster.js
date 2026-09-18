@@ -1,503 +1,667 @@
-/* =========================================================
-   CLOrad — iDarkMeteo raster renderer
-   .rdr → PNG → TIFF → indexed raster
-   ========================================================= */
+// ============================================================
+// CLOrad — iDarkMeteo raster renderer
+//
+// .rdr → IDMR → JSON header → deflate → indexed raster
+// → embedded palette → Canvas PNG
+// ============================================================
 
 (function () {
   "use strict";
 
-  const API = "/api/idarkmeteo?path=";
+  const API =
+    "/api/idarkmeteo?path=";
+
+  // ----------------------------------------------------------
+  // API URL
+  // ----------------------------------------------------------
 
   function api(path) {
-    return API + encodeURIComponent(path);
-  }
-
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  function isPNG(buf) {
-    if (!buf || buf.byteLength < 8) return false;
-    const b = new Uint8Array(buf);
     return (
-      b[0] === 0x89 &&
-      b[1] === 0x50 &&
-      b[2] === 0x4e &&
-      b[3] === 0x47 &&
-      b[4] === 0x0d &&
-      b[5] === 0x0a &&
-      b[6] === 0x1a &&
-      b[7] === 0x0a
+      API +
+      encodeURIComponent(path)
     );
   }
 
-  function isTIFF(buf) {
-    if (!buf || buf.byteLength < 4) return false;
-
-    const b = new Uint8Array(buf);
-
-    return (
-      (b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2a && b[3] === 0x00) ||
-      (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0x00 && b[3] === 0x2a)
-    );
-  }
+  // ----------------------------------------------------------
+  // Fetch binary
+  // ----------------------------------------------------------
 
   async function fetchBuffer(path) {
-    const r = await fetch(api(path), {
-      cache: "no-store"
-    });
+    const r = await fetch(
+      api(path),
+      {
+        cache: "no-store"
+      }
+    );
 
     if (!r.ok) {
-      throw new Error("HTTP " + r.status + " for " + path);
+      let detail = "";
+
+      try {
+        const j =
+          await r.json();
+
+        if (j?.upstream) {
+          detail =
+            ": " + j.upstream;
+        }
+      } catch {}
+
+      throw new Error(
+        "HTTP " +
+        r.status +
+        " for " +
+        path +
+        detail
+      );
     }
 
     return await r.arrayBuffer();
   }
 
-  function imageFromBlob(buffer, type) {
-    const blob = new Blob([buffer], {
-      type: type || "image/png"
-    });
+  // ----------------------------------------------------------
+  // Read little-endian uint32
+  // ----------------------------------------------------------
 
-    return URL.createObjectURL(blob);
-  }
-
-  function hexToRGBA(v) {
-    if (typeof v !== "string") return null;
-
-    let s = v.trim();
-
-    if (s[0] === "#") s = s.slice(1);
-
-    if (s.length === 3) {
-      s = s.split("").map(x => x + x).join("");
-    }
-
-    if (s.length !== 6 && s.length !== 8) return null;
-
-    const n = parseInt(s, 16);
-
-    if (!Number.isFinite(n)) return null;
-
-    if (s.length === 6) {
-      return [
-        (n >> 16) & 255,
-        (n >> 8) & 255,
-        n & 255,
-        255
-      ];
-    }
-
-    return [
-      (n >> 24) & 255,
-      (n >> 16) & 255,
-      (n >> 8) & 255,
-      n & 255
-    ];
-  }
-
-  function colorToRGBA(v) {
-    if (Array.isArray(v)) {
-      if (v.length >= 4) {
-        return [
-          Number(v[0]) || 0,
-          Number(v[1]) || 0,
-          Number(v[2]) || 0,
-          Number(v[3]) || 0
-        ];
-      }
-
-      if (v.length >= 3) {
-        return [
-          Number(v[0]) || 0,
-          Number(v[1]) || 0,
-          Number(v[2]) || 0,
-          255
-        ];
-      }
-    }
-
-    if (typeof v === "string") {
-      return hexToRGBA(v);
-    }
-
-    if (v && typeof v === "object") {
-      if ("color" in v) return colorToRGBA(v.color);
-      if ("colour" in v) return colorToRGBA(v.colour);
-
-      if ("r" in v && "g" in v && "b" in v) {
-        return [
-          Number(v.r) || 0,
-          Number(v.g) || 0,
-          Number(v.b) || 0,
-          "a" in v ? Number(v.a) || 0 : 255
-        ];
-      }
-    }
-
-    return null;
-  }
-
-  function paletteArray(data) {
-    if (!data) return null;
-
-    if (Array.isArray(data)) return data;
-
-    if (Array.isArray(data.palette)) return data.palette;
-    if (Array.isArray(data.colors)) return data.colors;
-    if (Array.isArray(data.colours)) return data.colours;
-    if (Array.isArray(data.entries)) return data.entries;
-
-    if (data.palette && typeof data.palette === "object") {
-      return data.palette;
-    }
-
-    return data;
-  }
-
-  async function loadPalette(product) {
-    const candidates = [
-      "palettes.json",
-      "palettes/" + product + ".json",
-      "palette/" + product + ".json"
-    ];
-
-    for (const p of candidates) {
-      try {
-        const r = await fetch(api(p), { cache: "no-store" });
-
-        if (!r.ok) continue;
-
-        const json = await r.json();
-        return paletteArray(json);
-      } catch (_) {}
-    }
-
-    return null;
-  }
-
-  function getPaletteColor(palette, index) {
-    if (!palette) return null;
-
-    let value = null;
-
-    if (Array.isArray(palette)) {
-      value = palette[index];
-    } else if (typeof palette === "object") {
-      value =
-        palette[index] ??
-        palette[String(index)] ??
-        palette["i" + index];
-    }
-
-    return colorToRGBA(value);
-  }
-
-  /*
-    Если палитру не удалось получить, НЕ используем
-    выдуманные цвета для самого радара.
-    Вместо этого применяем нейтральную grayscale-шкалу,
-    чтобы хотя бы проверить наличие raster.
-  */
-  function fallbackColor(index) {
-    if (index === 0) return [0, 0, 0, 0];
-
-    if (index === 1) return [190, 190, 190, 80];
-
-    const v = Math.max(
-      0,
-      Math.min(255, Math.round((index / 255) * 255))
+  function u32(view, offset) {
+    return view.getUint32(
+      offset,
+      true
     );
-
-    return [v, v, v, 210];
   }
 
-  async function rasterToPNG(
-    buffer,
-    width,
-    height,
-    product
-  ) {
-    const expected = width * height;
+  // ----------------------------------------------------------
+  // Read IDMR header
+  // ----------------------------------------------------------
 
-    if (!expected || expected <= 0) {
-      throw new Error("Invalid raster dimensions");
+  function parseRDR(buffer) {
+    const bytes =
+      new Uint8Array(buffer);
+
+    if (bytes.length < 9) {
+      throw new Error(
+        "RDR file is too small"
+      );
     }
 
-    const bytes = new Uint8Array(buffer);
+    // IDMR
+    if (
+      bytes[0] !== 0x49 ||
+      bytes[1] !== 0x44 ||
+      bytes[2] !== 0x4d ||
+      bytes[3] !== 0x52
+    ) {
+      throw new Error(
+        "Invalid IDMR signature"
+      );
+    }
 
-    /*
-      Возможны небольшие служебные заголовки.
-      Поэтому сначала ищем участок, который может содержать
-      ровно width*height байт.
-    */
-    let data = null;
+    // Version
+    const version =
+      bytes[4];
 
-    if (bytes.byteLength === expected) {
-      data = bytes;
-    } else if (bytes.byteLength > expected) {
-      /*
-        Самый вероятный вариант — raster лежит в конце.
-      */
-      data = bytes.subarray(bytes.byteLength - expected);
+    if (version !== 1) {
+      throw new Error(
+        "Unsupported IDMR version: " +
+        version
+      );
+    }
 
-      /*
-        Если это очевидно не raster, попробуем начало.
-      */
-      if (data.length !== expected) {
-        data = bytes.subarray(0, expected);
+    // Header length
+    const view =
+      new DataView(buffer);
+
+    const headerLength =
+      u32(view, 5);
+
+    const headerStart = 9;
+    const headerEnd =
+      headerStart +
+      headerLength;
+
+    if (
+      headerEnd >
+      buffer.byteLength
+    ) {
+      throw new Error(
+        "Invalid IDMR header length"
+      );
+    }
+
+    // JSON header
+    const decoder =
+      new TextDecoder(
+        "utf-8"
+      );
+
+    const headerText =
+      decoder.decode(
+        bytes.subarray(
+          headerStart,
+          headerEnd
+        )
+      );
+
+    let header;
+
+    try {
+      header =
+        JSON.parse(headerText);
+    } catch (e) {
+      throw new Error(
+        "Invalid IDMR JSON header"
+      );
+    }
+
+    return {
+      version,
+      header,
+      bodyOffset: headerEnd
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Split compressed streams
+  // ----------------------------------------------------------
+
+  function getStreams(
+    buffer,
+    parsed
+  ) {
+    const header =
+      parsed.header;
+
+    const lengths =
+      header?.тело
+        ?.длины_потоков;
+
+    if (
+      !Array.isArray(lengths) ||
+      lengths.length < 3
+    ) {
+      throw new Error(
+        "RDR stream lengths missing"
+      );
+    }
+
+    const bytes =
+      new Uint8Array(buffer);
+
+    let offset =
+      parsed.bodyOffset;
+
+    const streams = [];
+
+    for (
+      const length of lengths
+    ) {
+      if (
+        !Number.isInteger(length) ||
+        length < 0 ||
+        offset + length >
+          bytes.length
+      ) {
+        throw new Error(
+          "Invalid RDR stream length"
+        );
+      }
+
+      streams.push(
+        bytes.slice(
+          offset,
+          offset + length
+        )
+      );
+
+      offset += length;
+    }
+
+    return streams;
+  }
+
+  // ----------------------------------------------------------
+  // Deflate decompression
+  // ----------------------------------------------------------
+
+  async function inflate(
+    data
+  ) {
+    if (
+      typeof DecompressionStream ===
+      "undefined"
+    ) {
+      throw new Error(
+        "Browser does not support DecompressionStream"
+      );
+    }
+
+    const stream =
+      new Blob([data])
+        .stream()
+        .pipeThrough(
+          new DecompressionStream(
+            "deflate"
+          )
+        );
+
+    const response =
+      new Response(stream);
+
+    return new Uint8Array(
+      await response.arrayBuffer()
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Variable-length integer decoding
+  // ----------------------------------------------------------
+
+  function decodeLengths(
+    bytes
+  ) {
+    const result = [];
+
+    let n = 0;
+    let shift = 0;
+
+    for (
+      const b of bytes
+    ) {
+      n |=
+        (b & 127) << shift;
+
+      if (b & 128) {
+        shift += 7;
+
+        if (shift > 28) {
+          throw new Error(
+            "Invalid RLE length"
+          );
+        }
+      } else {
+        result.push(n);
+
+        n = 0;
+        shift = 0;
       }
     }
 
-    if (!data || data.length !== expected) {
+    if (shift !== 0) {
       throw new Error(
-        "Raster size mismatch: got " +
-        bytes.byteLength +
-        ", expected " +
+        "Truncated RLE lengths"
+      );
+    }
+
+    return result;
+  }
+
+  // ----------------------------------------------------------
+  // Decode indexed raster
+  // ----------------------------------------------------------
+
+  async function decodeRDR(
+    buffer
+  ) {
+    const parsed =
+      parseRDR(buffer);
+
+    const header =
+      parsed.header;
+
+    const streams =
+      getStreams(
+        buffer,
+        parsed
+      );
+
+    const compression =
+      header?.тело?.жатьё ||
+      "deflate";
+
+    if (
+      compression !== "deflate"
+    ) {
+      throw new Error(
+        "Unsupported RDR compression: " +
+        compression
+      );
+    }
+
+    // --------------------------------------------------------
+    // Stream 0:
+    // values
+    // --------------------------------------------------------
+
+    const values =
+      await inflate(
+        streams[0]
+      );
+
+    // --------------------------------------------------------
+    // Stream 1:
+    // run lengths
+    // --------------------------------------------------------
+
+    const lengthBytes =
+      await inflate(
+        streams[1]
+      );
+
+    const lengths =
+      decodeLengths(
+        lengthBytes
+      );
+
+    // --------------------------------------------------------
+    // Reconstruct pixels
+    // --------------------------------------------------------
+
+    const width =
+      Number(
+        header.ширина
+      );
+
+    const height =
+      Number(
+        header.высота
+      );
+
+    if (
+      !width ||
+      !height
+    ) {
+      throw new Error(
+        "Invalid raster dimensions"
+      );
+    }
+
+    const expected =
+      width * height;
+
+    if (
+      values.length !==
+      lengths.length
+    ) {
+      throw new Error(
+        "RDR values/RLE mismatch"
+      );
+    }
+
+    const pixels =
+      new Uint8Array(
+        expected
+      );
+
+    let position = 0;
+
+    for (
+      let i = 0;
+      i < values.length;
+      i++
+    ) {
+      const value =
+        values[i];
+
+      const count =
+        lengths[i];
+
+      if (
+        position + count >
+        expected
+      ) {
+        throw new Error(
+          "RDR raster overflow"
+        );
+      }
+
+      pixels.fill(
+        value,
+        position,
+        position + count
+      );
+
+      position += count;
+    }
+
+    if (
+      position !== expected
+    ) {
+      throw new Error(
+        "RDR raster size mismatch: " +
+        position +
+        " / " +
         expected
       );
     }
 
-    const palette = await loadPalette(product);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d", {
-      willReadFrequently: false
-    });
-
-    const image = ctx.createImageData(width, height);
-    const out = image.data;
-
-    for (let i = 0; i < data.length; i++) {
-      const idx = data[i];
-
-      /*
-        0 = no coverage / NODATA
-      */
-      if (idx === 0) {
-        out[i * 4] = 0;
-        out[i * 4 + 1] = 0;
-        out[i * 4 + 2] = 0;
-        out[i * 4 + 3] = 0;
-        continue;
-      }
-
-      const c =
-        getPaletteColor(palette, idx) ||
-        fallbackColor(idx);
-
-      out[i * 4] = c[0];
-      out[i * 4 + 1] = c[1];
-      out[i * 4 + 2] = c[2];
-      out[i * 4 + 3] = c[3];
-    }
-
-    ctx.putImageData(image, 0, 0);
-
-    return await new Promise((resolve, reject) => {
-      canvas.toBlob(blob => {
-        if (!blob) {
-          reject(new Error("Canvas PNG conversion failed"));
-          return;
-        }
-
-        resolve(URL.createObjectURL(blob));
-      }, "image/png");
-    });
-  }
-
-  async function tiffToPNG(
-    buffer,
-    width,
-    height,
-    product
-  ) {
-    /*
-      GeoTIFF.js используется только если файл действительно TIFF.
-    */
-
-    let GeoTIFF;
-
-    try {
-      const mod = await import(
-        "https://unpkg.com/geotiff@2.1.3/+esm"
-      );
-
-      GeoTIFF = mod;
-    } catch (e) {
-      throw new Error(
-        "GeoTIFF library failed to load: " + e.message
-      );
-    }
-
-    const tiff = await GeoTIFF.fromArrayBuffer(buffer);
-    const image = await tiff.getImage();
-
-    const raster = await image.readRasters({
-      interleave: true
-    });
-
-    const w = image.getWidth() || width;
-    const h = image.getHeight() || height;
-
-    if (!w || !h) {
-      throw new Error("TIFF has no valid dimensions");
-    }
-
-    const palette = await loadPalette(product);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-
-    const ctx = canvas.getContext("2d");
-    const out = ctx.createImageData(w, h);
-    const pixels = out.data;
-
-    for (let i = 0; i < w * h; i++) {
-      const idx = Number(raster[i]) || 0;
-
-      if (idx === 0) {
-        pixels[i * 4] = 0;
-        pixels[i * 4 + 1] = 0;
-        pixels[i * 4 + 2] = 0;
-        pixels[i * 4 + 3] = 0;
-        continue;
-      }
-
-      const c =
-        getPaletteColor(palette, idx) ||
-        fallbackColor(idx);
-
-      pixels[i * 4] = c[0];
-      pixels[i * 4 + 1] = c[1];
-      pixels[i * 4 + 2] = c[2];
-      pixels[i * 4 + 3] = c[3];
-    }
-
-    ctx.putImageData(out, 0, 0);
-
-    return await new Promise((resolve, reject) => {
-      canvas.toBlob(blob => {
-        if (!blob) {
-          reject(new Error("TIFF PNG conversion failed"));
-          return;
-        }
-
-        resolve(URL.createObjectURL(blob));
-      }, "image/png");
-    });
-  }
-
-  async function tryPNG(path) {
-    const buffer = await fetchBuffer(path);
-
-    if (!isPNG(buffer)) {
-      throw new Error("Response is not PNG");
-    }
-
-    return imageFromBlob(buffer, "image/png");
-  }
-
-  async function tryRDR(
-    path,
-    width,
-    height,
-    product
-  ) {
-    const buffer = await fetchBuffer(path);
-
-    /*
-      Иногда сервер может вернуть PNG несмотря на .rdr.
-    */
-    if (isPNG(buffer)) {
-      return imageFromBlob(buffer, "image/png");
-    }
-
-    /*
-      Иногда .rdr фактически является TIFF.
-    */
-    if (isTIFF(buffer)) {
-      return await tiffToPNG(
-        buffer,
-        width,
-        height,
-        product
-      );
-    }
-
-    /*
-      Последняя попытка — индексный raster.
-    */
-    return await rasterToPNG(
-      buffer,
+    return {
+      header,
       width,
       height,
-      product
-    );
+      pixels
+    };
   }
 
-  async function frameToImageUrl(
-    path,
-    product,
-    width,
-    height
+  // ----------------------------------------------------------
+  // Embedded palette
+  // ----------------------------------------------------------
+
+  function getPalette(
+    header
   ) {
-    if (!path) {
-      throw new Error("Empty frame path");
+    const p =
+      header?.тело?.палитра;
+
+    if (!p) {
+      return null;
     }
 
     /*
-      1. Прямой .rdr
+      Palette format:
+      256 colors × 4 bytes:
+      R G B A
     */
-    try {
-      return await tryRDR(
-        path,
+
+    if (
+      Array.isArray(p)
+    ) {
+      return new Uint8Array(p);
+    }
+
+    return null;
+  }
+
+  // ----------------------------------------------------------
+  // Draw raster
+  // ----------------------------------------------------------
+
+  function rasterToCanvas(
+    raster
+  ) {
+    const {
+      width,
+      height,
+      pixels,
+      header
+    } = raster;
+
+    const palette =
+      getPalette(header);
+
+    if (
+      !palette ||
+      palette.length <
+        256 * 4
+    ) {
+      throw new Error(
+        "Embedded RDR palette is missing"
+      );
+    }
+
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    canvas.width =
+      width;
+
+    canvas.height =
+      height;
+
+    const ctx =
+      canvas.getContext(
+        "2d"
+      );
+
+    const image =
+      ctx.createImageData(
         width,
-        height,
-        product
+        height
       );
-    } catch (rdrError) {
-      console.warn(
-        "[CLOrad] RDR failed:",
-        rdrError
-      );
+
+    const out =
+      image.data;
+
+    for (
+      let i = 0;
+      i < pixels.length;
+      i++
+    ) {
+      const index =
+        pixels[i];
+
+      const p =
+        index * 4;
+
+      out[i * 4] =
+        palette[p];
+
+      out[i * 4 + 1] =
+        palette[p + 1];
+
+      out[i * 4 + 2] =
+        palette[p + 2];
+
+      out[i * 4 + 3] =
+        palette[p + 3];
     }
 
-    /*
-      2. Самый важный fallback:
-         тот же кадр, но .png
-    */
-    if (/\.rdr$/i.test(path)) {
-      const pngPath = path.replace(
-        /\.rdr$/i,
-        ".png"
-      );
+    ctx.putImageData(
+      image,
+      0,
+      0
+    );
 
-      try {
-        console.log(
-          "[CLOrad] Trying PNG:",
-          pngPath
-        );
+    return canvas;
+  }
 
-        return await tryPNG(pngPath);
-      } catch (pngError) {
-        console.warn(
-          "[CLOrad] PNG fallback failed:",
-          pngError
+  // ----------------------------------------------------------
+  // Canvas → PNG URL
+  // ----------------------------------------------------------
+
+  function canvasURL(
+    canvas
+  ) {
+    return new Promise(
+      (resolve, reject) => {
+        canvas.toBlob(
+          blob => {
+            if (!blob) {
+              reject(
+                new Error(
+                  "PNG conversion failed"
+                )
+              );
+
+              return;
+            }
+
+            resolve(
+              URL.createObjectURL(
+                blob
+              )
+            );
+          },
+          "image/png"
         );
       }
-    }
-
-    throw new Error(
-      "Unable to render frame: " + path
     );
   }
+
+  // ----------------------------------------------------------
+  // Render one .rdr
+  // ----------------------------------------------------------
+
+  async function frameToImageUrl(
+    path
+  ) {
+    if (!path) {
+      throw new Error(
+        "Empty frame path"
+      );
+    }
+
+    const buffer =
+      await fetchBuffer(path);
+
+    const raster =
+      await decodeRDR(
+        buffer
+      );
+
+    console.log(
+      "[CLOrad] RDR:",
+      path,
+      raster.width +
+        "×" +
+        raster.height,
+      raster.header
+    );
+
+    const canvas =
+      rasterToCanvas(
+        raster
+      );
+
+    return canvasURL(
+      canvas
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Public API
+  // ----------------------------------------------------------
 
   window.CLOIdarkRaster = {
     frameToImageUrl
   };
+
+  // ----------------------------------------------------------
+  // Test
+  // ----------------------------------------------------------
+
+  window.testIdarkmeteo =
+    async function (path) {
+      try {
+        const url =
+          await frameToImageUrl(
+            path
+          );
+
+        console.log(
+          "[CLOrad] iDarkMeteo OK:",
+          url
+        );
+
+        return url;
+      } catch (e) {
+        console.error(
+          "[CLOrad] iDarkMeteo ERROR:",
+          e
+        );
+
+        throw e;
+      }
+    };
 })();
