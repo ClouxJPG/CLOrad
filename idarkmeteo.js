@@ -1,704 +1,1975 @@
 /* =========================================================
-   CLOrad — iDarkMeteo
-   rain/.rdr renderer
+   CLOrad — IDARKMETEO CONTROLLER
+   Только управление продуктами, кадрами и слоями.
+   Декодирование RDR находится в idarkmeteo-raster.js
+========================================================= */
 
-   IDMR → JSON header → 3 streams → RLE → RGBA → PNG
-   ========================================================= */
+(function(){
 
-(function () {
-  "use strict";
+"use strict";
 
-  const API = "/api/idarkmeteo?path=";
 
-  // ---------------------------------------------------------
-  // API
-  // ---------------------------------------------------------
+/* =========================================================
+   CHECK
+========================================================= */
 
-  function api(path) {
-    return API + encodeURIComponent(path);
+if(!window.map){
+
+  console.error(
+    "CLOrad IDARKMETEO: window.map не найден"
+  );
+
+  return;
+
+}
+
+if(!window.CLOIdarkRaster){
+
+  console.error(
+    "CLOrad IDARKMETEO: idarkmeteo-raster.js не подключён"
+  );
+
+  return;
+
+}
+
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const map =
+  window.map;
+
+const API =
+  "/api/idarkmeteo?path=";
+
+
+/* =========================================================
+   PRODUCTS
+========================================================= */
+
+const PRODUCTS = {
+
+  rain:{
+    text:"Осадки-мм/ч",
+    path:"frames/rain/wide.json",
+    title:"Осадки",
+    units:"мм/ч"
+  },
+
+  smoke:{
+    text:"Дым/пепел",
+    path:"frames/smoke/swath.json",
+    title:"Дым / пепел",
+    units:""
+  },
+
+  satrain:{
+    text:"Спутниковые осадки",
+    path:"frames/satrain/coarse.json",
+    title:"Спутниковые осадки",
+    units:"мм/ч"
+  },
+
+  cloudphase:{
+    text:"Фаза облака",
+    path:"frames/cloudphase/swath.json",
+    title:"Фаза облака",
+    units:""
   }
 
-  async function fetchBuffer(path) {
-    const response = await fetch(api(path), {
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        "iDarkMeteo HTTP " +
-        response.status +
-        ": " +
-        path
-      );
-    }
-
-    return await response.arrayBuffer();
-  }
-
-  async function fetchJSON(path) {
-    const response = await fetch(api(path), {
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        "iDarkMeteo HTTP " +
-        response.status +
-        ": " +
-        path
-      );
-    }
-
-    return await response.json();
-  }
-
-  // ---------------------------------------------------------
-  // Decompression
-  // ---------------------------------------------------------
-
-  async function decompress(buffer, method) {
-    method = String(method || "deflate").toLowerCase();
-
-    if (method !== "deflate") {
-      throw new Error(
-        "RDR compression '" +
-        method +
-        "' is not supported by this browser renderer"
-      );
-    }
-
-    if (!("DecompressionStream" in window)) {
-      throw new Error(
-        "DecompressionStream is not supported"
-      );
-    }
-
-    const stream =
-      new Blob([buffer])
-        .stream()
-        .pipeThrough(
-          new DecompressionStream("deflate")
-        );
-
-    return await new Response(stream)
-      .arrayBuffer();
-  }
-
-  // ---------------------------------------------------------
-  // Little-endian uint32
-  // ---------------------------------------------------------
-
-  function readUint32LE(bytes, offset) {
-    return (
-      bytes[offset] |
-      (bytes[offset + 1] << 8) |
-      (bytes[offset + 2] << 16) |
-      (bytes[offset + 3] << 24)
-    ) >>> 0;
-  }
-
-  // ---------------------------------------------------------
-  // Varint decoder
-  // ---------------------------------------------------------
-
-  function decodeVarints(buffer) {
-    const bytes = new Uint8Array(buffer);
-
-    const result = [];
-
-    let value = 0;
-    let shift = 0;
-
-    for (let i = 0; i < bytes.length; i++) {
-      const b = bytes[i];
-
-      value +=
-        (b & 127) *
-        Math.pow(2, shift);
-
-      if (b & 128) {
-        shift += 7;
-
-        if (shift > 35) {
-          throw new Error(
-            "Invalid RDR varint"
-          );
-        }
-      } else {
-        result.push(value);
-
-        value = 0;
-        shift = 0;
-      }
-    }
-
-    if (shift !== 0) {
-      throw new Error(
-        "Truncated RDR varint stream"
-      );
-    }
-
-    return result;
-  }
-
-  // ---------------------------------------------------------
-  // RDR parser
-  // ---------------------------------------------------------
-
-  async function parseRDR(buffer) {
-    const bytes =
-      new Uint8Array(buffer);
-
-    if (bytes.length < 9) {
-      throw new Error(
-        "RDR file is too small"
-      );
-    }
-
-    // IDMR
-    if (
-      bytes[0] !== 0x49 ||
-      bytes[1] !== 0x44 ||
-      bytes[2] !== 0x4d ||
-      bytes[3] !== 0x52
-    ) {
-      throw new Error(
-        "Invalid RDR signature"
-      );
-    }
-
-    // version
-    if (bytes[4] !== 1) {
-      throw new Error(
-        "Unsupported RDR version: " +
-        bytes[4]
-      );
-    }
-
-    // header length
-    const headerLength =
-      readUint32LE(bytes, 5);
-
-    const headerStart = 9;
-    const headerEnd =
-      headerStart + headerLength;
-
-    if (
-      headerEnd > bytes.length
-    ) {
-      throw new Error(
-        "Invalid RDR header length"
-      );
-    }
-
-    // JSON header
-    const headerText =
-      new TextDecoder("utf-8")
-        .decode(
-          bytes.subarray(
-            headerStart,
-            headerEnd
-          )
-        );
-
-    let header;
-
-    try {
-      header =
-        JSON.parse(headerText);
-    } catch {
-      throw new Error(
-        "Invalid RDR JSON header"
-      );
-    }
-
-    // dimensions
-    const width =
-      Number(header.ширина);
-
-    const height =
-      Number(header.высота);
-
-    if (
-      !Number.isInteger(width) ||
-      !Number.isInteger(height) ||
-      width <= 0 ||
-      height <= 0
-    ) {
-      throw new Error(
-        "Invalid RDR dimensions"
-      );
-    }
-
-    // -------------------------------------------------------
-    // Streams
-    // -------------------------------------------------------
-
-    const body =
-      bytes.subarray(headerEnd);
-
-    const streamLengths =
-      header?.тело?.длины_потоков;
-
-    if (
-      !Array.isArray(streamLengths) ||
-      streamLengths.length < 3
-    ) {
-      throw new Error(
-        "RDR stream lengths are missing"
-      );
-    }
-
-    const streams = [];
-
-    let offset = 0;
-
-    for (const rawLength of streamLengths) {
-      const length =
-        Number(rawLength);
-
-      if (
-        !Number.isInteger(length) ||
-        length < 0 ||
-        offset + length > body.length
-      ) {
-        throw new Error(
-          "Invalid RDR stream length"
-        );
-      }
-
-      streams.push(
-        body.subarray(
-          offset,
-          offset + length
-        )
-      );
-
-      offset += length;
-    }
-
-    // -------------------------------------------------------
-    // Compression
-    // -------------------------------------------------------
-
-    const compression =
-      String(
-        header?.тело?.жатьё ||
-        "deflate"
-      ).toLowerCase();
-
-    // -------------------------------------------------------
-    // Stream 0 — values
-    // -------------------------------------------------------
-
-    const valuesBuffer =
-      await decompress(
-        streams[0],
-        compression
-      );
-
-    const values =
-      new Uint8Array(
-        valuesBuffer
-      );
-
-    // -------------------------------------------------------
-    // Stream 1 — RLE lengths
-    // -------------------------------------------------------
-
-    const lengthsBuffer =
-      await decompress(
-        streams[1],
-        compression
-      );
-
-    const runLengths =
-      decodeVarints(
-        lengthsBuffer
-      );
-
-    if (
-      values.length !==
-      runLengths.length
-    ) {
-      throw new Error(
-        "RDR RLE mismatch: values=" +
-        values.length +
-        " lengths=" +
-        runLengths.length
-      );
-    }
-
-    // -------------------------------------------------------
-    // Reconstruct raster
-    // -------------------------------------------------------
-
-    const pixelCount =
-      width * height;
-
-    const raster =
-      new Uint8Array(
-        pixelCount
-      );
-
-    let position = 0;
-
-    for (
-      let i = 0;
-      i < values.length;
-      i++
-    ) {
-      const count =
-        Number(runLengths[i]);
-
-      if (
-        !Number.isInteger(count) ||
-        count < 0
-      ) {
-        throw new Error(
-          "Invalid RDR run length"
-        );
-      }
-
-      if (
-        position + count >
-        pixelCount
-      ) {
-        throw new Error(
-          "RDR RLE exceeds raster size"
-        );
-      }
-
-      raster.fill(
-        values[i],
-        position,
-        position + count
-      );
-
-      position += count;
-    }
-
-    if (
-      position !== pixelCount
-    ) {
-      throw new Error(
-        "RDR raster size mismatch: " +
-        position +
-        " / " +
-        pixelCount
-      );
-    }
-
-    // -------------------------------------------------------
-    // Stream 2 — palette
-    // -------------------------------------------------------
-
-    const paletteBuffer =
-      await decompress(
-        streams[2],
-        compression
-      );
-
-    const palette =
-      new Uint8Array(
-        paletteBuffer
-      );
-
-    const bytesPerColor =
-      Number(
-        header?.тело?.палитра
-      );
-
-    if (
-      !Number.isInteger(
-        bytesPerColor
-      ) ||
-      bytesPerColor < 4
-    ) {
-      throw new Error(
-        "Invalid RDR palette size: " +
-        bytesPerColor
-      );
-    }
-
-    const requiredPaletteSize =
-      256 * bytesPerColor;
-
-    if (
-      palette.length <
-      requiredPaletteSize
-    ) {
-      throw new Error(
-        "RDR palette is too small: " +
-        palette.length +
-        " / " +
-        requiredPaletteSize
-      );
-    }
-
-    return {
-      width,
-      height,
-      raster,
-      palette,
-      bytesPerColor,
-      header
-    };
-  }
-
-  // ---------------------------------------------------------
-  // RDR → PNG
-  // ---------------------------------------------------------
-
-  async function rdrToPNG(buffer) {
-    const decoded =
-      await parseRDR(buffer);
-
-    const {
-      width,
-      height,
-      raster,
-      palette,
-      bytesPerColor
-    } = decoded;
-
-    const canvas =
-      document.createElement(
-        "canvas"
-      );
-
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx =
-      canvas.getContext("2d");
-
-    if (!ctx) {
-      throw new Error(
-        "Canvas 2D is unavailable"
-      );
-    }
-
-    const image =
-      ctx.createImageData(
-        width,
-        height
-      );
-
-    const pixels =
-      image.data;
-
-    for (
-      let i = 0;
-      i < raster.length;
-      i++
-    ) {
-      const index =
-        raster[i];
-
-      const paletteOffset =
-        index * bytesPerColor;
-
-      pixels[i * 4] =
-        palette[paletteOffset];
-
-      pixels[i * 4 + 1] =
-        palette[paletteOffset + 1];
-
-      pixels[i * 4 + 2] =
-        palette[paletteOffset + 2];
-
-      pixels[i * 4 + 3] =
-        palette[paletteOffset + 3];
-    }
-
-    ctx.putImageData(
-      image,
-      0,
-      0
-    );
-
-    const blob =
-      await new Promise(
-        (resolve, reject) => {
-          canvas.toBlob(
-            result => {
-              if (!result) {
-                reject(
-                  new Error(
-                    "PNG creation failed"
-                  )
-                );
-                return;
-              }
-
-              resolve(result);
-            },
-            "image/png"
-          );
-        }
-      );
-
-    return URL.createObjectURL(
-      blob
-    );
-  }
-
-  // ---------------------------------------------------------
-  // Frame → image URL
-  // ---------------------------------------------------------
-
-  async function frameToImageUrl(
-    path
-  ) {
-    const buffer =
-      await fetchBuffer(path);
-
-    return await rdrToPNG(
-      buffer
-    );
-  }
-
-  // ---------------------------------------------------------
-  // Rain metadata
-  // ---------------------------------------------------------
-
-  async function getRainFrames() {
-    return await fetchJSON(
-      "frames/rain/wide.json"
-    );
-  }
-
-  // ---------------------------------------------------------
-  // EPSG:3857 → Leaflet
-  // ---------------------------------------------------------
-
-  function mercatorToLatLng(
-    x,
-    y
-  ) {
-    const R =
-      6378137;
-
-    const lng =
-      (x / R) *
-      180 /
-      Math.PI;
-
-    const lat =
-      (
-        2 *
-        Math.atan(
-          Math.exp(
-            y / R
-          )
-        ) -
-        Math.PI / 2
-      ) *
-      180 /
-      Math.PI;
-
-    return [
-      lat,
-      lng
-    ];
-  }
-
-  function boxToBounds(
-    box
-  ) {
-    const southwest =
-      mercatorToLatLng(
-        Number(box[0]),
-        Number(box[1])
-      );
-
-    const northeast =
-      mercatorToLatLng(
-        Number(box[2]),
-        Number(box[3])
-      );
-
-    return [
-      southwest,
-      northeast
-    ];
-  }
-
-  // ---------------------------------------------------------
-  // Add rain overlay
-  // ---------------------------------------------------------
-
-  async function addRainOverlay(
-    map
-  ) {
-    if (!map) {
-      throw new Error(
-        "Leaflet map is required"
-      );
-    }
-
-    const data =
-      await getRainFrames();
-
-    if (
-      !data ||
-      !Array.isArray(
-        data.frames
-      ) ||
-      !data.frames.length
-    ) {
-      throw new Error(
-        "No iDarkMeteo rain frames"
-      );
-    }
-
-    const frame =
-      data.frames[0];
-
-    const imageUrl =
-      await frameToImageUrl(
-        frame.path
-      );
-
-    const bounds =
-      boxToBounds(
-        data.box
-      );
-
-    const overlay =
-      L.imageOverlay(
-        imageUrl,
-        bounds,
-        {
-          opacity: 1,
-          interactive: false
-        }
-      );
-
-    overlay.addTo(map);
-
-    return {
-      overlay,
-      frame,
-      bounds,
-      metadata: data
-    };
-  }
-
-  // ---------------------------------------------------------
-  // Public API
-  // ---------------------------------------------------------
-
-  window.CLOIdarkRaster = {
-    fetchJSON,
-    fetchBuffer,
-    parseRDR,
-    rdrToPNG,
-    frameToImageUrl,
-    getRainFrames,
-    boxToBounds,
-    addRainOverlay
+};
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+let activeProduct =
+  null;
+
+let activeFrames =
+  [];
+
+let activeMetadata =
+  null;
+
+let activeLayer =
+  null;
+
+let activeBlobUrl =
+  null;
+
+let frameIndex =
+  0;
+
+let requestGeneration =
+  0;
+
+let frameController =
+  null;
+
+let productController =
+  null;
+
+let refreshTimer =
+  null;
+
+let playTimer =
+  null;
+
+let playing =
+  false;
+
+let loading =
+  false;
+
+
+/* =========================================================
+   FRAME COUNT
+========================================================= */
+
+let frameCount =
+  24;
+
+
+/* =========================================================
+   ELEMENTS
+========================================================= */
+
+const $ =
+  id =>
+    document.getElementById(id);
+
+
+/* =========================================================
+   INITIAL STATE
+========================================================= */
+
+window.CLOIdarkMeteo =
+  {
+
+    loadProduct,
+
+    stopRadar,
+
+    getState:() => ({
+
+      activeProduct,
+
+      frameCount,
+
+      frameIndex,
+
+      frames:activeFrames.length,
+
+      loading
+
+    })
+
   };
+
+
+/* =========================================================
+   API URL
+========================================================= */
+
+function proxyUrl(path){
+
+  return (
+    API +
+    encodeURIComponent(
+      path
+    )
+  );
+
+}
+
+
+/* =========================================================
+   TIME FORMAT
+========================================================= */
+
+function formatTime(value){
+
+  if(!value){
+
+    return "—";
+
+  }
+
+  const date =
+    new Date(value);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+
+    return String(value);
+
+  }
+
+  return date.toLocaleTimeString(
+    "ru-RU",
+    {
+      hour:"2-digit",
+      minute:"2-digit",
+      timeZone:"Europe/Moscow"
+    }
+  );
+
+}
+
+
+/* =========================================================
+   BOUNDS
+========================================================= */
+
+function makeBounds(box){
+
+  if(
+    !Array.isArray(box) ||
+    box.length < 4
+  ){
+
+    throw new Error(
+      "Некорректный box"
+    );
+
+  }
+
+  const back =
+    (x,y) =>
+      L.Projection
+        .SphericalMercator
+        .unproject(
+          L.point(
+            Number(x),
+            Number(y)
+          )
+        );
+
+  return L.latLngBounds(
+
+    back(
+      box[0],
+      box[1]
+    ),
+
+    back(
+      box[2],
+      box[3]
+    )
+
+  );
+
+}
+
+
+/* =========================================================
+   FETCH WITH ABORT + TIMEOUT
+========================================================= */
+
+async function fetchJSON(
+  url,
+  signal,
+  timeout = 30000
+){
+
+  const controller =
+    new AbortController();
+
+  const abort =
+    () => controller.abort();
+
+  if(signal){
+
+    if(signal.aborted){
+
+      controller.abort();
+
+    }else{
+
+      signal.addEventListener(
+        "abort",
+        abort,
+        {once:true}
+      );
+
+    }
+
+  }
+
+  const timer =
+    setTimeout(
+      () => controller.abort(),
+      timeout
+    );
+
+  try{
+
+    return await fetch(
+      url,
+      {
+        method:"GET",
+        cache:"no-store",
+        headers:{
+          Accept:"application/json"
+        },
+        signal:
+          controller.signal
+      }
+    );
+
+  }finally{
+
+    clearTimeout(timer);
+
+    signal?.removeEventListener(
+      "abort",
+      abort
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   FETCH RDR WITH RETRY
+========================================================= */
+
+async function fetchRaster(
+  path,
+  signal,
+  attempts = 3
+){
+
+  let lastError =
+    null;
+
+  for(
+    let attempt = 1;
+    attempt <= attempts;
+    attempt++
+  ){
+
+    if(signal?.aborted){
+
+      throw new DOMException(
+        "Отменено",
+        "AbortError"
+      );
+
+    }
+
+    try{
+
+      const response =
+        await fetch(
+          proxyUrl(path),
+          {
+            method:"GET",
+            cache:"force-cache",
+            signal
+          }
+        );
+
+      if(
+        response.ok
+      ){
+
+        return await response.arrayBuffer();
+
+      }
+
+      /*
+         404 / 401 / 403 нет смысла
+         долбить повторно.
+      */
+
+      if(
+        response.status === 401 ||
+        response.status === 403 ||
+        response.status === 404
+      ){
+
+        throw new Error(
+          "Кадр: HTTP " +
+          response.status
+        );
+
+      }
+
+      throw new Error(
+        "Кадр: HTTP " +
+        response.status
+      );
+
+    }catch(error){
+
+      if(
+        error?.name === "AbortError"
+      ){
+
+        throw error;
+
+      }
+
+      lastError =
+        error;
+
+      if(
+        attempt < attempts
+      ){
+
+        await new Promise(
+          resolve =>
+            setTimeout(
+              resolve,
+              500 * attempt
+            )
+        );
+
+      }
+
+    }
+
+  }
+
+  throw (
+    lastError ||
+    new Error(
+      "Не удалось загрузить RDR"
+    )
+  );
+
+}
+
+
+/* =========================================================
+   UI
+========================================================= */
+
+function setLoading(value){
+
+  loading =
+    value;
+
+  const el =
+    $("loadingFrames");
+
+  if(!el){
+
+    return;
+
+  }
+
+  el.classList.toggle(
+    "show",
+    value
+  );
+
+}
+
+
+function setTime(text){
+
+  const el =
+    $("timeLabel");
+
+  if(el){
+
+    el.textContent =
+      text;
+
+  }
+
+}
+
+
+function setFramesInfo(text){
+
+  const el =
+    $("framesInfo");
+
+  if(el){
+
+    el.textContent =
+      text;
+
+  }
+
+}
+
+
+function setIntensity(){
+
+  const el =
+    $("intensityValue");
+
+  if(!el){
+
+    return;
+
+  }
+
+  el.textContent =
+    activeProduct === "rain"
+      ? "мм/ч"
+      : "—";
+
+}
+
+
+/* =========================================================
+   NAV BUTTON
+========================================================= */
+
+function findButton(product){
+
+  const config =
+    PRODUCTS[product];
+
+  if(!config){
+
+    return null;
+
+  }
+
+  return [
+    ...document.querySelectorAll(
+      ".n"
+    )
+  ].find(
+    button =>
+      button.textContent
+        .trim() ===
+      config.text
+  ) || null;
+
+}
+
+
+function setActiveButton(product){
+
+  const target =
+    findButton(
+      product
+    );
+
+  document
+    .querySelectorAll(".n")
+    .forEach(
+      button =>
+        button.classList.toggle(
+          "active",
+          button === target
+        )
+    );
+
+}
+
+
+/* =========================================================
+   REMOVE ACTIVE LAYER
+========================================================= */
+
+function removeActiveLayer(){
+
+  const layer =
+    activeLayer;
+
+  const url =
+    activeBlobUrl;
+
+  activeLayer =
+    null;
+
+  activeBlobUrl =
+    null;
+
+  if(layer){
+
+    try{
+
+      map.removeLayer(
+        layer
+      );
+
+    }catch{}
+
+  }
+
+  if(url){
+
+    try{
+
+      URL.revokeObjectURL(
+        url
+      );
+
+    }catch{}
+
+  }
+
+}
+
+
+/* =========================================================
+   CANCEL CURRENT FRAME
+========================================================= */
+
+function cancelFrame(){
+
+  if(frameController){
+
+    try{
+
+      frameController.abort();
+
+    }catch{}
+
+    frameController =
+      null;
+
+  }
+
+}
+
+
+/* =========================================================
+   SHOW FRAME
+========================================================= */
+
+async function showFrame(
+  frame,
+  generation,
+  index
+){
+
+  if(
+    !frame ||
+    !frame.path
+  ){
+
+    throw new Error(
+      "У кадра отсутствует path"
+    );
+
+  }
+
+
+  /*
+     Отменяем предыдущую загрузку.
+  */
+
+  cancelFrame();
+
+
+  frameController =
+    new AbortController();
+
+  const signal =
+    frameController.signal;
+
+
+  setLoading(
+    true
+  );
+
+
+  /*
+     Загружаем НОВЫЙ кадр,
+     старый пока НЕ удаляем.
+  */
+
+  const buffer =
+    await fetchRaster(
+      frame.path,
+      signal,
+      3
+    );
+
+
+  if(
+    generation !==
+    requestGeneration
+  ){
+
+    return;
+
+  }
+
+
+  const result =
+    await window
+      .CLOIdarkRaster
+      .frameToImageUrl(
+        buffer
+      );
+
+
+  /*
+     Поддерживаем оба варианта
+     результата декодера.
+  */
+
+  const imageUrl =
+    typeof result === "string"
+      ? result
+      : result?.url;
+
+  const header =
+    typeof result === "object"
+      ? result?.header
+      : null;
+
+
+  if(!imageUrl){
+
+    throw new Error(
+      "Декодер RDR не вернул изображение"
+    );
+
+  }
+
+
+  if(
+    generation !==
+    requestGeneration ||
+    signal.aborted
+  ){
+
+    try{
+
+      URL.revokeObjectURL(
+        imageUrl
+      );
+
+    }catch{}
+
+    return;
+
+  }
+
+
+  const box =
+    activeMetadata?.box ||
+    header?.box;
+
+
+  if(!box){
+
+    try{
+
+      URL.revokeObjectURL(
+        imageUrl
+      );
+
+    }catch{}
+
+    throw new Error(
+      "В RDR отсутствует box"
+    );
+
+  }
+
+
+  const bounds =
+    makeBounds(
+      box
+    );
+
+
+  /*
+     Создаём новый слой.
+  */
+
+  const newLayer =
+    L.imageOverlay(
+      imageUrl,
+      bounds,
+      {
+        opacity:1,
+        interactive:false,
+        crossOrigin:true,
+        zIndex:35
+      }
+    );
+
+
+  /*
+     Новый слой добавляем ПЕРВЫМ.
+  */
+
+  newLayer.addTo(
+    map
+  );
+
+
+  /*
+     Если за время addTo
+     пользователь переключил продукт,
+     сразу убираем новый слой.
+  */
+
+  if(
+    generation !==
+    requestGeneration
+  ){
+
+    map.removeLayer(
+      newLayer
+    );
+
+    try{
+
+      URL.revokeObjectURL(
+        imageUrl
+      );
+
+    }catch{}
+
+    return;
+
+  }
+
+
+  /*
+     Старый слой теперь можно удалить.
+  */
+
+  const oldLayer =
+    activeLayer;
+
+  const oldUrl =
+    activeBlobUrl;
+
+
+  activeLayer =
+    newLayer;
+
+  activeBlobUrl =
+    imageUrl;
+
+
+  if(oldLayer){
+
+    try{
+
+      map.removeLayer(
+        oldLayer
+      );
+
+    }catch{}
+
+  }
+
+
+  if(oldUrl){
+
+    try{
+
+      URL.revokeObjectURL(
+        oldUrl
+      );
+
+    }catch{}
+
+  }
+
+
+  frameIndex =
+    index;
+
+
+  const range =
+    $("range");
+
+  if(range){
+
+    range.value =
+      index;
+
+  }
+
+
+  const times =
+    $("times");
+
+  if(times){
+
+    times.innerHTML =
+      "<span>" +
+      formatTime(
+        activeFrames[0]?.t
+      ) +
+      "</span>" +
+      "<span>" +
+      formatTime(
+        activeFrames[
+          activeFrames.length - 1
+        ]?.t
+      ) +
+      "</span>";
+
+  }
+
+
+  setTime(
+    `${PRODUCTS[activeProduct].title} • ${formatTime(frame.t)}`
+  );
+
+
+  setIntensity();
+
+
+  setLoading(
+    false
+  );
+
+}
+
+
+/* =========================================================
+   LOAD SELECTED FRAME
+========================================================= */
+
+async function loadSelectedFrame(
+  index
+){
+
+  if(
+    !activeProduct ||
+    !activeFrames.length
+  ){
+
+    return;
+
+  }
+
+
+  const frame =
+    activeFrames[index];
+
+  if(!frame){
+
+    return;
+
+  }
+
+
+  const generation =
+    requestGeneration;
+
+
+  try{
+
+    await showFrame(
+      frame,
+      generation,
+      index
+    );
+
+  }catch(error){
+
+    if(
+      generation !==
+      requestGeneration
+    ){
+
+      return;
+
+    }
+
+    if(
+      error?.name === "AbortError"
+    ){
+
+      return;
+
+    }
+
+    console.error(
+      "CLOrad IDARKMETEO frame:",
+      error
+    );
+
+    setLoading(
+      false
+    );
+
+    setTime(
+      "Ошибка загрузки слоя"
+    );
+
+    msg(
+      error?.message ||
+      "Ошибка загрузки слоя"
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   LOAD PRODUCT
+========================================================= */
+
+async function loadProduct(
+  productName,
+  keepFrame = false
+){
+
+  const config =
+    PRODUCTS[productName];
+
+  if(!config){
+
+    return;
+
+  }
+
+
+  /*
+     Каждая загрузка продукта
+     получает собственное поколение.
+  */
+
+  const generation =
+    ++requestGeneration;
+
+
+  if(refreshTimer){
+
+    clearTimeout(
+      refreshTimer
+    );
+
+    refreshTimer =
+      null;
+
+  }
+
+
+  if(productController){
+
+    try{
+
+      productController.abort();
+
+    }catch{}
+
+  }
+
+
+  cancelFrame();
+
+
+  productController =
+    new AbortController();
+
+
+  const signal =
+    productController.signal;
+
+
+  activeProduct =
+    productName;
+
+  activeFrames =
+    [];
+
+  activeMetadata =
+    null;
+
+  frameIndex =
+    0;
+
+
+  setActiveButton(
+    productName
+  );
+
+
+  setLoading(
+    true
+  );
+
+  setTime(
+    "Подключение к радару…"
+  );
+
+  setFramesInfo(
+    "Подключение к радару…"
+  );
+
+
+  try{
+
+    const response =
+      await fetchJSON(
+        proxyUrl(
+          config.path
+        ),
+        signal,
+        30000
+      );
+
+
+    if(
+      generation !==
+      requestGeneration
+    ){
+
+      return;
+
+    }
+
+
+    if(
+      !response.ok
+    ){
+
+      throw new Error(
+        "frames: HTTP " +
+        response.status
+      );
+
+    }
+
+
+    const metadata =
+      await response.json();
+
+
+    if(
+      generation !==
+      requestGeneration
+    ){
+
+      return;
+
+    }
+
+
+    if(
+      !metadata ||
+      !Array.isArray(
+        metadata.frames
+      )
+    ){
+
+      throw new Error(
+        "Некорректный ответ frames"
+      );
+
+    }
+
+
+    activeMetadata =
+      metadata;
+
+
+    /*
+       API отдаёт:
+       newest → oldest
+
+       CLOrad использует:
+       oldest → newest
+    */
+
+    let frames =
+      metadata.frames
+        .filter(
+          frame =>
+            frame &&
+            frame.path
+        )
+        .slice(
+          0,
+          frameCount
+        )
+        .reverse();
+
+
+    activeFrames =
+      frames;
+
+
+    if(!frames.length){
+
+      throw new Error(
+        "Кадры отсутствуют"
+      );
+
+    }
+
+
+    const range =
+      $("range");
+
+
+    if(range){
+
+      range.min =
+        0;
+
+      range.max =
+        Math.max(
+          0,
+          frames.length - 1
+        );
+
+    }
+
+
+    let selectedIndex =
+      frames.length - 1;
+
+
+    if(keepFrame){
+
+      selectedIndex =
+        Math.min(
+          Number(
+            range?.value || 0
+          ),
+          frames.length - 1
+        );
+
+    }
+
+
+    frameIndex =
+      selectedIndex;
+
+
+    if(range){
+
+      range.value =
+        selectedIndex;
+
+    }
+
+
+    setFramesInfo(
+      "Загружено кадров: " +
+      frames.length
+    );
+
+
+    const times =
+      $("times");
+
+    if(times){
+
+      times.innerHTML =
+        "<span>" +
+        formatTime(
+          frames[0]?.t
+        ) +
+        "</span>" +
+        "<span>" +
+        formatTime(
+          frames[
+            frames.length - 1
+          ]?.t
+        ) +
+        "</span>";
+
+    }
+
+
+    await showFrame(
+      frames[selectedIndex],
+      generation,
+      selectedIndex
+    );
+
+
+    if(
+      generation !==
+      requestGeneration
+    ){
+
+      return;
+
+    }
+
+
+    setLoading(
+      false
+    );
+
+
+    /*
+       Автоматическое обновление
+       продукта каждые 10 минут.
+    */
+
+    refreshTimer =
+      setTimeout(
+        () => {
+
+          if(
+            generation ===
+            requestGeneration
+          ){
+
+            loadProduct(
+              productName,
+              true
+            );
+
+          }
+
+        },
+        10 * 60 * 1000
+      );
+
+
+  }catch(error){
+
+    if(
+      generation !==
+      requestGeneration
+    ){
+
+      return;
+
+    }
+
+
+    if(
+      error?.name === "AbortError"
+    ){
+
+      return;
+
+    }
+
+
+    console.error(
+      "CLOrad IDARKMETEO:",
+      error
+    );
+
+
+    setLoading(
+      false
+    );
+
+
+    removeActiveLayer();
+
+
+    setTime(
+      "Ошибка подключения"
+    );
+
+
+    setFramesInfo(
+      error?.message ||
+      "Ошибка загрузки кадра"
+    );
+
+
+    const intensity =
+      $("intensityValue");
+
+    if(intensity){
+
+      intensity.textContent =
+        "Нет данных";
+
+    }
+
+
+    msg(
+      error?.message ||
+      "Ошибка подключения"
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   STOP RADAR
+========================================================= */
+
+function stopRadar(){
+
+  ++requestGeneration;
+
+
+  if(refreshTimer){
+
+    clearTimeout(
+      refreshTimer
+    );
+
+    refreshTimer =
+      null;
+
+  }
+
+
+  if(productController){
+
+    try{
+
+      productController.abort();
+
+    }catch{}
+
+    productController =
+      null;
+
+  }
+
+
+  cancelFrame();
+
+
+  activeProduct =
+    null;
+
+  activeFrames =
+    [];
+
+  activeMetadata =
+    null;
+
+  frameIndex =
+    0;
+
+
+  removeActiveLayer();
+
+
+  const range =
+    $("range");
+
+  if(range){
+
+    range.max =
+      0;
+
+    range.value =
+      0;
+
+  }
+
+
+  const times =
+    $("times");
+
+  if(times){
+
+    times.textContent =
+      "";
+
+  }
+
+
+  setTime(
+    "Радар не подключён"
+  );
+
+
+  setFramesInfo(
+    "Радар пока не подключён"
+  );
+
+
+  setLoading(
+    false
+  );
+
+
+  const intensity =
+    $("intensityValue");
+
+  if(intensity){
+
+    intensity.textContent =
+      "Нет данных";
+
+  }
+
+}
+
+
+/* =========================================================
+   FRAME COUNT
+========================================================= */
+
+function reloadWithFrameCount(){
+
+  if(!activeProduct){
+
+    return;
+
+  }
+
+  loadProduct(
+    activeProduct,
+    true
+  );
+
+}
+
+
+$("frameMinus")?.addEventListener(
+  "click",
+  event => {
+
+    event.stopPropagation();
+
+    frameCount =
+      Math.max(
+        1,
+        frameCount - 1
+      );
+
+    $("frameInput").value =
+      frameCount;
+
+    reloadWithFrameCount();
+
+  }
+);
+
+
+$("framePlus")?.addEventListener(
+  "click",
+  event => {
+
+    event.stopPropagation();
+
+    frameCount++;
+
+    $("frameInput").value =
+      frameCount;
+
+    reloadWithFrameCount();
+
+  }
+);
+
+
+$("frameInput")?.addEventListener(
+  "change",
+  event => {
+
+    let value =
+      parseInt(
+        event.target.value,
+        10
+      );
+
+
+    if(
+      !Number.isFinite(value) ||
+      value < 1
+    ){
+
+      value =
+        1;
+
+    }
+
+
+    frameCount =
+      value;
+
+
+    event.target.value =
+      value;
+
+
+    reloadWithFrameCount();
+
+  }
+);
+
+
+/* =========================================================
+   PRODUCT BUTTONS
+========================================================= */
+
+function bindProductButton(
+  productName
+){
+
+  const button =
+    findButton(
+      productName
+    );
+
+  if(!button){
+
+    console.warn(
+      "CLOrad: кнопка не найдена:",
+      productName
+    );
+
+    return;
+
+  }
+
+
+  /*
+     Защита от повторного bind.
+  */
+
+  if(
+    button.dataset.idarkBound === "1"
+  ){
+
+    return;
+
+  }
+
+
+  button.dataset.idarkBound =
+    "1";
+
+
+  button.addEventListener(
+    "click",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+
+      setActiveButton(
+        productName
+      );
+
+
+      loadProduct(
+        productName
+      );
+
+    }
+  );
+
+}
+
+
+bindProductButton(
+  "rain"
+);
+
+bindProductButton(
+  "smoke"
+);
+
+bindProductButton(
+  "satrain"
+);
+
+bindProductButton(
+  "cloudphase"
+);
+
+
+/* =========================================================
+   MAP BUTTON
+========================================================= */
+
+const mapButton =
+  [
+    ...document.querySelectorAll(".n")
+  ].find(
+    button =>
+      button.textContent.trim() ===
+      "Карта"
+  );
+
+
+if(mapButton){
+
+  mapButton.addEventListener(
+    "click",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      setActiveButton(
+        "__none__"
+      );
+
+      stopRadar();
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   OTHER NAV BUTTONS
+========================================================= */
+
+const warningButton =
+  [
+    ...document.querySelectorAll(".n")
+  ].find(
+    button =>
+      button.textContent.trim() ===
+      "Предупр."
+  );
+
+
+if(warningButton){
+
+  warningButton.addEventListener(
+    "click",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      setActiveButton(
+        "__none__"
+      );
+
+      msg(
+        "Предупреждения"
+      );
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   TIMELINE
+========================================================= */
+
+$("range")?.addEventListener(
+  "input",
+  () => {
+
+    if(
+      !activeProduct ||
+      !activeFrames.length
+    ){
+
+      return;
+
+    }
+
+
+    const index =
+      Number(
+        $("range").value
+      );
+
+
+    if(
+      !Number.isInteger(index) ||
+      !activeFrames[index]
+    ){
+
+      return;
+
+    }
+
+
+    frameIndex =
+      index;
+
+
+    /*
+       Немедленно показываем время
+       выбранного кадра.
+    */
+
+    setTime(
+      `${PRODUCTS[activeProduct].title} • ${formatTime(activeFrames[index].t)}`
+    );
+
+
+    loadSelectedFrame(
+      index
+    );
+
+  }
+);
+
+
+/* =========================================================
+   PLAY
+========================================================= */
+
+function stopPlayback(){
+
+  playing =
+    false;
+
+
+  if(playTimer){
+
+    clearInterval(
+      playTimer
+    );
+
+    playTimer =
+      null;
+
+  }
+
+
+  const button =
+    $("play");
+
+  if(button){
+
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+
+  }
+
+}
+
+
+$("play")?.addEventListener(
+  "click",
+  () => {
+
+    if(
+      !activeFrames.length
+    ){
+
+      msg(
+        "Радар пока не подключён"
+      );
+
+      return;
+
+    }
+
+
+    if(playing){
+
+      stopPlayback();
+
+      return;
+
+    }
+
+
+    playing =
+      true;
+
+
+    $("play").innerHTML =
+      '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+
+
+    playTimer =
+      setInterval(
+        () => {
+
+          if(
+            !activeFrames.length ||
+            !activeProduct
+          ){
+
+            stopPlayback();
+
+            return;
+
+          }
+
+
+          let next =
+            frameIndex + 1;
+
+
+          if(
+            next >=
+            activeFrames.length
+          ){
+
+            next =
+              0;
+
+          }
+
+
+          const range =
+            $("range");
+
+
+          if(range){
+
+            range.value =
+              next;
+
+          }
+
+
+          frameIndex =
+            next;
+
+
+          loadSelectedFrame(
+            next
+          );
+
+        },
+        700
+      );
+
+  }
+);
+
+
+/* =========================================================
+   INITIAL
+========================================================= */
+
+$("range").max =
+  0;
+
+$("range").value =
+  0;
+
+setTime(
+  "Радар не подключён"
+);
+
+setFramesInfo(
+  "Радар пока не подключён"
+);
+
+setLoading(
+  false
+);
+
+
+/*
+   Осадки запускаются только один раз
+   после полной загрузки DOM.
+*/
+
+loadProduct(
+  "rain"
+);
 
 })();
