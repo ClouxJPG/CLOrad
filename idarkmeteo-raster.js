@@ -1,7 +1,16 @@
 /* =========================================================
-   CLOrad — IDARKMETEO RASTER
-   .rdr decoder + stable frame loading
-   Интерфейс не изменяется.
+   CLOrad — IDARKMETEO RASTER DECODER
+
+   Этот файл ТОЛЬКО:
+   .rdr → декодирование → Canvas → ObjectURL
+
+   Он НЕ управляет:
+   - кнопками
+   - продуктами
+   - таймлайном
+   - Leaflet-слоями
+
+   Управление всем этим остаётся в idarkmeteo.js.
 ========================================================= */
 
 (function () {
@@ -9,61 +18,11 @@
 
   const API = "/api/idarkmeteo?path=";
 
-  const PRODUCTS = {
-    rain: {
-      button: "Осадки-мм/ч",
-      mosaic: "wide",
-      title: "Осадки",
-      units: "мм/ч"
-    },
-
-    smoke: {
-      button: "Дым/пепел",
-      mosaic: "swath",
-      title: "Дым / пепел",
-      units: ""
-    },
-
-    satrain: {
-      button: "Спутниковые осадки",
-      mosaic: "coarse",
-      title: "Спутниковые осадки",
-      units: "мм/ч"
-    },
-
-    cloudphase: {
-      button: "Фаза облака",
-      mosaic: "swath",
-      title: "Фаза облака",
-      units: ""
-    }
-  };
-
-  const MAX_RETRIES = 3;
-  const RETRY_DELAYS = [250, 700];
-
-  let activeProduct = null;
-  let activeLayer = null;
-  let activeObjectUrl = null;
-
-  let frames = [];
-  let bounds = null;
-  let frameIndex = 0;
-
-  let refreshTimer = null;
-
-  let frameController = null;
-  let requestToken = 0;
-
-  let playing = false;
-  let playTimer = null;
-  let playBusy = false;
-
-  let paletteCache = null;
+  let palettePromise = null;
 
 
   /* =========================================================
-     BASIC
+     API
   ========================================================= */
 
   function api(path) {
@@ -71,333 +30,79 @@
   }
 
 
-  function sleep(ms, signal) {
-    return new Promise((resolve, reject) => {
-      if (signal?.aborted) {
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-
-      const timer = setTimeout(() => {
-        if (signal) {
-          signal.removeEventListener("abort", onAbort);
-        }
-
-        resolve();
-      }, ms);
-
-      function onAbort() {
-        clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      }
-
-      if (signal) {
-        signal.addEventListener("abort", onAbort, { once: true });
-      }
-    });
-  }
-
-
-  async function fetchWithTimeout(
-    url,
-    options = {},
-    timeout = 30000
-  ) {
-    const controller = new AbortController();
-
-    const externalSignal = options.signal;
-
-    let externalAbort = null;
-
-    if (externalSignal) {
-      if (externalSignal.aborted) {
-        controller.abort();
-      } else {
-        externalAbort = () => controller.abort();
-        externalSignal.addEventListener(
-          "abort",
-          externalAbort,
-          { once: true }
-        );
-      }
-    }
-
-    const timer = setTimeout(
-      () => controller.abort(),
-      timeout
-    );
-
-    try {
-      return await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timer);
-
-      if (externalSignal && externalAbort) {
-        externalSignal.removeEventListener(
-          "abort",
-          externalAbort
-        );
-      }
-    }
-  }
-
-
-  /* =========================================================
-     LEAFLET BOUNDS
-  ========================================================= */
-
-  function makeBounds(box) {
-    if (!Array.isArray(box) || box.length !== 4) {
-      throw new Error("Некорректный box");
-    }
-
-    const back = (x, y) =>
-      L.Projection.SphericalMercator.unproject(
-        L.point(x, y)
-      );
-
-    return L.latLngBounds(
-      back(box[0], box[1]),
-      back(box[2], box[3])
-    );
-  }
-
-
-  /* =========================================================
-     UI HELPERS
-  ========================================================= */
-
-  function getButton(product) {
-    return [...document.querySelectorAll(".n")]
-      .find(
-        el =>
-          el.textContent.trim() ===
-          PRODUCTS[product]?.button
-      );
-  }
-
-
-  function setButtonState(product) {
-    document.querySelectorAll(".n").forEach(el => {
-      el.classList.toggle(
-        "active",
-        el === getButton(product)
-      );
-    });
-  }
-
-
-  function setTimeLabel(text) {
-    const el =
-      document.getElementById("timeLabel");
-
-    if (el) {
-      el.textContent = text;
-    }
-  }
-
-
-  function setTimeline() {
-    const range =
-      document.getElementById("range");
-
-    const times =
-      document.getElementById("times");
-
-    if (range) {
-      range.min = 0;
-
-      range.max =
-        Math.max(
-          0,
-          frames.length - 1
-        );
-
-      range.value =
-        Math.max(
-          0,
-          Math.min(
-            frameIndex,
-            Math.max(0, frames.length - 1)
-          )
-        );
-    }
-
-    if (times) {
-      times.textContent =
-        frames.length
-          ? `${frameIndex + 1} / ${frames.length}`
-          : "";
-    }
-  }
-
-
-  function formatTime(t) {
-    if (!t) return "";
-
-    const d = new Date(t);
-
-    if (Number.isNaN(d.getTime())) {
-      return t;
-    }
-
-    return d.toLocaleString(
-      "ru-RU",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      }
-    );
-  }
-
-
   /* =========================================================
      PALETTE
   ========================================================= */
 
-  async function loadPalette() {
-    if (paletteCache) {
-      return paletteCache;
-    }
+  async function loadPalette(product) {
 
-    try {
-      const response =
-        await fetch(
-          "/palettes.json",
+    if (!palettePromise) {
+
+      palettePromise =
+        fetch(
+          api("palettes.json"),
           {
             cache: "force-cache"
           }
-        );
+        )
+        .then(response => {
 
-      if (!response.ok) {
-        throw new Error(
-          "palettes.json HTTP " +
-          response.status
-        );
-      }
+          if (!response.ok) {
+            throw new Error(
+              "palettes.json: HTTP " +
+              response.status
+            );
+          }
 
-      paletteCache =
-        await response.json();
-
-      return paletteCache;
-
-    } catch (error) {
-      console.warn(
-        "CLOrad palette:",
-        error
-      );
-
-      paletteCache = null;
-
-      return null;
+          return response.json();
+        });
     }
-  }
 
-
-  function getProductPalette(product) {
-    if (!paletteCache) {
-      return null;
-    }
+    const all =
+      await palettePromise;
 
     return (
-      paletteCache[product] ||
+      all?.[product] ||
+      all?.palettes?.[product] ||
       null
     );
   }
 
 
   /* =========================================================
-     RLE
+     FIND PALETTE BAND
   ========================================================= */
 
-  function readVarints(buffer) {
-    const result = [];
-
-    let value = 0;
-    let shift = 0;
-
-    for (const byte of buffer) {
-
-      value |=
-        (byte & 127) << shift;
-
-      if (byte & 128) {
-        shift += 7;
-      } else {
-        result.push(value);
-        value = 0;
-        shift = 0;
-      }
-    }
-
-    return result;
-  }
-
-
-  function expandValues(
-    values,
-    lengths,
-    expected
+  function findBand(
+    bands,
+    index
   ) {
-    const output =
-      new Uint8Array(expected);
-
-    let position = 0;
 
     for (
-      let i = 0;
-      i < values.length &&
-      i < lengths.length;
-      i++
+      const band of bands || []
     ) {
 
-      const value =
-        values[i];
-
-      const length =
-        lengths[i];
-
-      if (
-        !Number.isFinite(length) ||
-        length <= 0
-      ) {
-        continue;
-      }
-
-      const end =
-        Math.min(
-          expected,
-          position + length
+      const lo =
+        Number(
+          band.lo_i
         );
 
-      output.fill(
-        value,
-        position,
-        end
-      );
+      const hi =
+        Number(
+          band.hi_i
+        );
 
-      position = end;
-
-      if (position >= expected) {
-        break;
+      if (
+        Number.isFinite(lo) &&
+        Number.isFinite(hi) &&
+        index >= lo &&
+        index <= hi
+      ) {
+        return band;
       }
     }
 
-    if (position !== expected) {
-      throw new Error(
-        "RLE размер не совпадает: " +
-        position +
-        " / " +
-        expected
-      );
-    }
-
-    return output;
+    return null;
   }
 
 
@@ -405,7 +110,9 @@
      DEFLATE
   ========================================================= */
 
-  async function inflateDeflate(buffer) {
+  async function inflateDeflate(
+    buffer
+  ) {
 
     if (
       typeof DecompressionStream ===
@@ -434,18 +141,141 @@
 
 
   /* =========================================================
+     VARINT RLE
+  ========================================================= */
+
+  function readVarints(
+    buffer
+  ) {
+
+    const result = [];
+
+    let value = 0;
+    let shift = 0;
+
+    for (
+      const byte of buffer
+    ) {
+
+      value |=
+        (byte & 127) << shift;
+
+      if (
+        byte & 128
+      ) {
+
+        shift += 7;
+
+      } else {
+
+        result.push(
+          value
+        );
+
+        value = 0;
+        shift = 0;
+      }
+    }
+
+    return result;
+  }
+
+
+  /* =========================================================
+     EXPAND RLE
+  ========================================================= */
+
+  function expandRLE(
+    values,
+    lengths,
+    expected
+  ) {
+
+    const output =
+      new Uint8Array(
+        expected
+      );
+
+    let position = 0;
+
+    const count =
+      Math.min(
+        values.length,
+        lengths.length
+      );
+
+    for (
+      let i = 0;
+      i < count;
+      i++
+    ) {
+
+      const value =
+        values[i];
+
+      const length =
+        lengths[i];
+
+      if (
+        !Number.isFinite(length) ||
+        length <= 0
+      ) {
+        continue;
+      }
+
+      const end =
+        Math.min(
+          expected,
+          position + length
+        );
+
+      output.fill(
+        value,
+        position,
+        end
+      );
+
+      position =
+        end;
+
+      if (
+        position >= expected
+      ) {
+        break;
+      }
+    }
+
+    if (
+      position !== expected
+    ) {
+      throw new Error(
+        "RLE: получено " +
+        position +
+        " пикселей из " +
+        expected
+      );
+    }
+
+    return output;
+  }
+
+
+  /* =========================================================
      RDR DECODER
   ========================================================= */
 
   async function decodeRDR(
-    arrayBuffer,
-    product
+    arrayBuffer
   ) {
 
     const bytes =
-      new Uint8Array(arrayBuffer);
+      new Uint8Array(
+        arrayBuffer
+      );
 
-    if (bytes.length < 9) {
+    if (
+      bytes.length < 9
+    ) {
       throw new Error(
         "RDR слишком короткий"
       );
@@ -453,7 +283,7 @@
 
 
     /* -------------------------------------------------------
-       IDMR
+       SIGNATURE
     ------------------------------------------------------- */
 
     const signature =
@@ -464,9 +294,11 @@
         bytes[3]
       );
 
-    if (signature !== "IDMR") {
+    if (
+      signature !== "IDMR"
+    ) {
       throw new Error(
-        "Неверная сигнатура RDR: " +
+        "Неверная сигнатура: " +
         signature
       );
     }
@@ -479,9 +311,11 @@
     const version =
       bytes[4];
 
-    if (version !== 1) {
+    if (
+      version !== 1
+    ) {
       console.warn(
-        "Неизвестная версия RDR:",
+        "CLOrad: неизвестная версия RDR:",
         version
       );
     }
@@ -492,7 +326,9 @@
     ------------------------------------------------------- */
 
     const view =
-      new DataView(arrayBuffer);
+      new DataView(
+        arrayBuffer
+      );
 
     const headerLength =
       view.getUint32(
@@ -500,7 +336,8 @@
         true
       );
 
-    const headerStart = 9;
+    const headerStart =
+      9;
 
     const headerEnd =
       headerStart +
@@ -511,7 +348,7 @@
       bytes.length
     ) {
       throw new Error(
-        "Повреждён заголовок RDR"
+        "Повреждённый RDR header"
       );
     }
 
@@ -536,13 +373,16 @@
     let header;
 
     try {
+
       header =
         JSON.parse(
           headerText
         );
-    } catch (error) {
+
+    } catch {
+
       throw new Error(
-        "RDR JSON header не читается"
+        "RDR header не является JSON"
       );
     }
 
@@ -553,13 +393,13 @@
 
     const width =
       Number(
-        header.ширина ||
+        header.ширина ??
         header.width
       );
 
     const height =
       Number(
-        header.высота ||
+        header.высота ??
         header.height
       );
 
@@ -568,19 +408,14 @@
       !height
     ) {
       throw new Error(
-        "В RDR нет размеров"
+        "В RDR отсутствуют размеры"
       );
     }
 
 
     /* -------------------------------------------------------
-       BODY
+       STREAM LENGTHS
     ------------------------------------------------------- */
-
-    const body =
-      bytes.slice(
-        headerEnd
-      );
 
     const streamLengths =
       header?.тело?.длины_потоков;
@@ -592,55 +427,63 @@
       streamLengths.length < 2
     ) {
       throw new Error(
-        "В RDR нет длин потоков"
+        "В RDR отсутствуют потоки"
       );
     }
 
 
     /* -------------------------------------------------------
-       STREAMS
+       SPLIT BODY
     ------------------------------------------------------- */
 
-    let offset = 0;
+    const body =
+      bytes.slice(
+        headerEnd
+      );
 
     const streams = [];
 
+    let offset = 0;
+
     for (
-      const length of streamLengths
+      const rawLength
+      of streamLengths
     ) {
 
-      const len =
-        Number(length);
+      const length =
+        Number(
+          rawLength
+        );
 
       if (
-        !Number.isFinite(len) ||
-        len < 0 ||
-        offset + len >
+        !Number.isFinite(length) ||
+        length < 0 ||
+        offset + length >
         body.length
       ) {
         throw new Error(
-          "Некорректные длины потоков RDR"
+          "Некорректная длина RDR-потока"
         );
       }
 
       streams.push(
         body.slice(
           offset,
-          offset + len
+          offset + length
         )
       );
 
-      offset += len;
+      offset += length;
     }
 
 
-    /* -------------------------------------------------------
+    /* =======================================================
        COMPRESSION
-    ------------------------------------------------------- */
+    ======================================================= */
 
     const compression =
       String(
-        header?.тело?.жатьё ||
+        header?.тело?.жатьё ??
         "deflate"
       ).toLowerCase();
 
@@ -649,16 +492,15 @@
       "deflate"
     ) {
       throw new Error(
-        "RDR использует " +
-        compression +
-        ", нужен deflate"
+        "Неподдерживаемое сжатие RDR: " +
+        compression
       );
     }
 
 
-    /* -------------------------------------------------------
-       VALUES
-    ------------------------------------------------------- */
+    /* =======================================================
+       STREAM 0 — VALUES
+    ======================================================= */
 
     const values =
       await inflateDeflate(
@@ -666,84 +508,59 @@
       );
 
 
-    /* -------------------------------------------------------
-       RLE LENGTHS
-    ------------------------------------------------------- */
+    /* =======================================================
+       STREAM 1 — RLE LENGTHS
+    ======================================================= */
 
-    const lengthsBuffer =
+    const lengthsCompressed =
       await inflateDeflate(
         streams[1]
       );
 
     const lengths =
       readVarints(
-        lengthsBuffer
+        lengthsCompressed
       );
 
 
-    /* -------------------------------------------------------
-       PIXELS
-    ------------------------------------------------------- */
+    /* =======================================================
+       RESTORE PIXELS
+    ======================================================= */
 
     const expected =
       width * height;
 
-    const codes =
-      expandValues(
+    const pixels =
+      expandRLE(
         values,
         lengths,
         expected
       );
 
 
-    /* -------------------------------------------------------
-       PALETTE
-    ------------------------------------------------------- */
-
-    let palette =
-      null;
-
-    if (
-      streams.length >= 3
-    ) {
-      try {
-        palette =
-          await inflateDeflate(
-            streams[2]
-          );
-      } catch (error) {
-        console.warn(
-          "RDR palette stream:",
-          error
-        );
-      }
-    }
-
+    /* =======================================================
+       RETURN
+    ======================================================= */
 
     return {
       header,
       width,
       height,
-      codes,
-      palette,
-      product
+      pixels
     };
   }
 
 
   /* =========================================================
-     PALETTE → CANVAS
+     PIXELS → CANVAS
   ========================================================= */
 
-  function makeCanvas(decoded) {
-
-    const {
-      width,
-      height,
-      codes,
-      palette,
-      product
-    } = decoded;
+  function makeCanvas(
+    pixels,
+    width,
+    height,
+    palette
+  ) {
 
     const canvas =
       document.createElement(
@@ -758,10 +575,7 @@
 
     const ctx =
       canvas.getContext(
-        "2d",
-        {
-          willReadFrequently: false
-        }
+        "2d"
       );
 
     if (!ctx) {
@@ -776,143 +590,95 @@
         height
       );
 
-    const pixels =
+    const out =
       imageData.data;
 
+    const bands =
+      palette?.bands ||
+      [];
 
-    /* -------------------------------------------------------
-       RDR содержит 256 RGBA цветов.
-    ------------------------------------------------------- */
 
-    if (
-      palette &&
-      palette.length >=
-      256 * 4
+    /* =======================================================
+       DRAW
+    ======================================================= */
+
+    for (
+      let i = 0, p = 0;
+      i < pixels.length;
+      i++, p += 4
     ) {
 
-      for (
-        let i = 0;
-        i < codes.length;
-        i++
-      ) {
-
-        const code =
-          codes[i];
-
-        const src =
-          code * 4;
-
-        const dst =
-          i * 4;
-
-        pixels[dst] =
-          palette[src];
-
-        pixels[dst + 1] =
-          palette[src + 1];
-
-        pixels[dst + 2] =
-          palette[src + 2];
-
-        pixels[dst + 3] =
-          palette[src + 3];
-
-        /*
-         * Код 0:
-         * прибор не смотрел.
-         * Это не "нет осадков".
-         */
-        if (code === 0) {
-          pixels[dst + 3] = 0;
-        }
-      }
-
-    } else {
-
-      /*
-       * Запасной вариант.
-       * Если бинарной палитры нет,
-       * пытаемся использовать palettes.json.
-       */
-
-      const p =
-        getProductPalette(
-          product
+      const index =
+        Number(
+          pixels[i]
         );
 
-      for (
-        let i = 0;
-        i < codes.length;
-        i++
+
+      /*
+       * IDARKMETEO:
+       * 0 = прибор не смотрел.
+       * Это прозрачность, а НЕ отсутствие осадков.
+       */
+
+      if (
+        !Number.isFinite(index) ||
+        index === 0
       ) {
 
-        const code =
-          codes[i];
+        out[p + 3] =
+          0;
 
-        const dst =
-          i * 4;
-
-        if (
-          code === 0
-        ) {
-          pixels[dst + 3] = 0;
-          continue;
-        }
-
-        let color =
-          null;
-
-        if (
-          p &&
-          Array.isArray(p.bands)
-        ) {
-
-          color =
-            p.bands.find(
-              band =>
-                code >=
-                  Number(
-                    band.lo_i ??
-                    0
-                  ) &&
-                code <=
-                  Number(
-                    band.hi_i ??
-                    255
-                  )
-            );
-        }
-
-        if (
-          color &&
-          Array.isArray(
-            color.rgb
-          )
-        ) {
-
-          pixels[dst] =
-            color.rgb[0];
-
-          pixels[dst + 1] =
-            color.rgb[1];
-
-          pixels[dst + 2] =
-            color.rgb[2];
-
-          pixels[dst + 3] =
-            Number(
-              color.alpha ??
-              255
-            );
-
-        } else {
-
-          pixels[dst] = 255;
-          pixels[dst + 1] = 255;
-          pixels[dst + 2] = 255;
-          pixels[dst + 3] = 0;
-        }
+        continue;
       }
+
+
+      const band =
+        findBand(
+          bands,
+          index
+        );
+
+
+      if (
+        !band ||
+        !Array.isArray(
+          band.rgb
+        )
+      ) {
+
+        out[p + 3] =
+          0;
+
+        continue;
+      }
+
+
+      out[p] =
+        Number(
+          band.rgb[0]
+        ) || 0;
+
+      out[p + 1] =
+        Number(
+          band.rgb[1]
+        ) || 0;
+
+      out[p + 2] =
+        Number(
+          band.rgb[2]
+        ) || 0;
+
+      out[p + 3] =
+        Math.max(
+          0,
+          Math.min(
+            255,
+            Number(
+              band.alpha ??
+              255
+            )
+          )
+        );
     }
 
 
@@ -927,10 +693,10 @@
 
 
   /* =========================================================
-     CANVAS → BLOB URL
+     CANVAS → OBJECT URL
   ========================================================= */
 
-  async function canvasToObjectUrl(
+  async function canvasToUrl(
     canvas
   ) {
 
@@ -942,6 +708,7 @@
             result => {
 
               if (!result) {
+
                 reject(
                   new Error(
                     "Canvas toBlob failed"
@@ -965,830 +732,103 @@
 
 
   /* =========================================================
-     FRAME DOWNLOAD
-     ========================================================= */
+     MAIN FUNCTION
+  ========================================================= */
 
-  async function downloadAndDecodeFrame(
+  async function frameToImageUrl(
     path,
-    product,
-    signal
-  ) {
-
-    let lastError =
-      null;
-
-    for (
-      let attempt = 0;
-      attempt < MAX_RETRIES;
-      attempt++
-    ) {
-
-      if (
-        signal?.aborted
-      ) {
-        throw new DOMException(
-          "Aborted",
-          "AbortError"
-        );
-      }
-
-      try {
-
-        if (
-          attempt > 0
-        ) {
-
-          await sleep(
-            RETRY_DELAYS[
-              Math.min(
-                attempt - 1,
-                RETRY_DELAYS.length - 1
-              )
-            ],
-            signal
-          );
-        }
-
-
-        const response =
-          await fetchWithTimeout(
-            api(path),
-            {
-              signal,
-              cache: "force-cache"
-            },
-            40000
-          );
-
-
-        if (
-          !response.ok
-        ) {
-
-          /*
-           * 404 / 401 обычно бессмысленно
-           * повторять три раза.
-           */
-          if (
-            response.status === 401 ||
-            response.status === 404
-          ) {
-            throw new Error(
-              "HTTP " +
-              response.status
-            );
-          }
-
-          throw new Error(
-            "HTTP " +
-            response.status
-          );
-        }
-
-
-        const buffer =
-          await response.arrayBuffer();
-
-        if (
-          !buffer ||
-          buffer.byteLength < 9
-        ) {
-          throw new Error(
-            "Пустой или повреждённый RDR"
-          );
-        }
-
-
-        /*
-         * ВАЖНО:
-         * декодируем прямо здесь.
-         * Если декодирование упало —
-         * повторяем загрузку целиком.
-         */
-        const decoded =
-          await decodeRDR(
-            buffer,
-            product
-          );
-
-        return decoded;
-
-      } catch (error) {
-
-        if (
-          error?.name ===
-          "AbortError"
-        ) {
-          throw error;
-        }
-
-        lastError =
-          error;
-
-        console.warn(
-          `CLOrad: кадр не загрузился, попытка ${
-            attempt + 1
-          }/${MAX_RETRIES}`,
-          error
-        );
-      }
-    }
-
-    throw (
-      lastError ||
-      new Error(
-        "Не удалось загрузить кадр"
-      )
-    );
-  }
-
-
-  /* =========================================================
-     CLEAR CURRENT RASTER
-  ========================================================= */
-
-  function clearRaster() {
-
-    if (
-      activeLayer
-    ) {
-
-      try {
-        map.removeLayer(
-          activeLayer
-        );
-      } catch (e) {}
-
-      activeLayer =
-        null;
-    }
-
-    if (
-      activeObjectUrl
-    ) {
-
-      try {
-        URL.revokeObjectURL(
-          activeObjectUrl
-        );
-      } catch (e) {}
-
-      activeObjectUrl =
-        null;
-    }
-  }
-
-
-  /* =========================================================
-     ABORT CURRENT REQUEST
-  ========================================================= */
-
-  function abortFrameRequest() {
-
-    if (
-      frameController
-    ) {
-
-      try {
-        frameController.abort();
-      } catch (e) {}
-
-      frameController =
-        null;
-    }
-  }
-
-
-  /* =========================================================
-     SHOW FRAME
-  ========================================================= */
-
-  async function showFrame(
-    index
-  ) {
-
-    if (
-      !frames[index] ||
-      !bounds ||
-      !activeProduct
-    ) {
-      return false;
-    }
-
-
-    /*
-     * Новый запрос получает собственный token.
-     * Старый после этого уже не имеет права
-     * менять карту.
-     */
-    const token =
-      ++requestToken;
-
-
-    abortFrameRequest();
-
-
-    const controller =
-      new AbortController();
-
-    frameController =
-      controller;
-
-
-    const frame =
-      frames[index];
-
-    const product =
-      activeProduct;
-
-
-    try {
-
-      /*
-       * НЕ удаляем старый слой здесь.
-       * Он останется на карте, пока новый
-       * полностью не загрузится.
-       */
-
-      const decoded =
-        await downloadAndDecodeFrame(
-          frame.path,
-          product,
-          controller.signal
-        );
-
-
-      /*
-       * Проверяем, что запрос всё ещё актуален.
-       */
-      if (
-        token !== requestToken ||
-        controller.signal.aborted ||
-        product !== activeProduct
-      ) {
-        return false;
-      }
-
-
-      const canvas =
-        makeCanvas(
-          decoded
-        );
-
-
-      const objectUrl =
-        await canvasToObjectUrl(
-          canvas
-        );
-
-
-      /*
-       * После тяжёлого Canvas тоже
-       * проверяем актуальность.
-       */
-      if (
-        token !== requestToken ||
-        controller.signal.aborted ||
-        product !== activeProduct
-      ) {
-
-        try {
-          URL.revokeObjectURL(
-            objectUrl
-          );
-        } catch (e) {}
-
-        return false;
-      }
-
-
-      /* -----------------------------------------------------
-         ATOMIC SWAP
-      ----------------------------------------------------- */
-
-      const oldLayer =
-        activeLayer;
-
-      const oldUrl =
-        activeObjectUrl;
-
-
-      /*
-       * Сначала добавляем НОВЫЙ кадр.
-       */
-      const newLayer =
-        L.imageOverlay(
-          objectUrl,
-          bounds,
-          {
-            opacity: 1,
-            interactive: false,
-            zIndex: 35
-          }
-        );
-
-
-      newLayer.addTo(
-        map
-      );
-
-
-      /*
-       * Теперь новый кадр гарантированно
-       * находится на карте.
-       */
-      activeLayer =
-        newLayer;
-
-      activeObjectUrl =
-        objectUrl;
-
-
-      /*
-       * И только теперь удаляем старый.
-       */
-      if (
-        oldLayer
-      ) {
-
-        try {
-          map.removeLayer(
-            oldLayer
-          );
-        } catch (e) {}
-      }
-
-
-      if (
-        oldUrl &&
-        oldUrl !== objectUrl
-      ) {
-
-        try {
-          URL.revokeObjectURL(
-            oldUrl
-          );
-        } catch (e) {}
-      }
-
-
-      frameIndex =
-        index;
-
-      setTimeline();
-
-
-      setTimeLabel(
-        `${PRODUCTS[product].title} • ${formatTime(frame.t)}`
-      );
-
-
-      map.invalidateSize(
-        false
-      );
-
-      map.fire(
-        "moveend"
-      );
-
-
-      return true;
-
-    } catch (error) {
-
-      /*
-       * Отмена старого запроса —
-       * НЕ ошибка пользователя.
-       */
-      if (
-        error?.name ===
-        "AbortError"
-      ) {
-        return false;
-      }
-
-
-      /*
-       * Если запрос уже устарел —
-       * вообще ничего не показываем.
-       */
-      if (
-        token !== requestToken
-      ) {
-        return false;
-      }
-
-
-      console.error(
-        "CLOrad IDARKMETEO frame:",
-        error
-      );
-
-
-      /*
-       * Старый хороший кадр остаётся.
-       * Никакого удаления activeLayer.
-       */
-      if (!playing) {
-        setTimeLabel(
-          "Кадр временно недоступен"
-        );
-      }
-
-      return false;
-
-    } finally {
-
-      if (
-        frameController ===
-        controller
-      ) {
-        frameController =
-          null;
-      }
-    }
-  }
-
-
-  /* =========================================================
-     LOAD PRODUCT
-  ========================================================= */
-
-  async function loadProduct(
     product
   ) {
 
-    const cfg =
-      PRODUCTS[product];
-
-    if (!cfg) {
-      return;
+    if (
+      !path
+    ) {
+      throw new Error(
+        "Путь к RDR не указан"
+      );
     }
 
 
-    clearTimeout(
-      refreshTimer
-    );
+    /* -------------------------------------------------------
+       Скачиваем именно .rdr.
 
-    stopPlayback();
+       PNG больше НЕ проверяем:
+       по API PNG отключены.
+    ------------------------------------------------------- */
 
-    requestToken++;
-
-    abortFrameRequest();
-
-
-    const productToken =
-      requestToken;
-
-
-    try {
-
-      const response =
-        await fetchWithTimeout(
-          api(
-            `frames/${product}/${cfg.mosaic}.json`
-          ),
-          {
-            cache: "no-store"
-          },
-          20000
-        );
+    const response =
+      await fetch(
+        api(path),
+        {
+          cache: "force-cache"
+        }
+      );
 
 
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          "frames HTTP " +
-          response.status
-        );
-      }
+    if (
+      !response.ok
+    ) {
+      throw new Error(
+        "Raster HTTP " +
+        response.status
+      );
+    }
 
 
-      const data =
-        await response.json();
+    const buffer =
+      await response.arrayBuffer();
 
 
-      /*
-       * Пока метаданные грузились,
-       * пользователь мог выбрать другой слой.
-       */
-      if (
-        productToken !==
-        requestToken
-      ) {
-        return;
-      }
+    if (
+      !buffer ||
+      buffer.byteLength < 9
+    ) {
+      throw new Error(
+        "Получен пустой RDR"
+      );
+    }
 
 
-      activeProduct =
-        product;
+    /* -------------------------------------------------------
+       Decode
+    ------------------------------------------------------- */
+
+    const decoded =
+      await decodeRDR(
+        buffer
+      );
 
 
-      frames =
-        Array.isArray(
-          data.frames
-        )
-          ? data.frames.slice().reverse()
-          : [];
+    /* -------------------------------------------------------
+       Palette
+    ------------------------------------------------------- */
 
-
-      bounds =
-        makeBounds(
-          data.box
-        );
-
-
-      frameIndex =
-        Math.max(
-          0,
-          frames.length - 1
-        );
-
-
-      setButtonState(
+    const palette =
+      await loadPalette(
         product
       );
 
-      setTimeline();
 
+    /* -------------------------------------------------------
+       Canvas
+    ------------------------------------------------------- */
 
-      if (
-        frames.length
-      ) {
-
-        const success =
-          await showFrame(
-            frameIndex
-          );
-
-
-        /*
-         * Если первый кадр продукта
-         * не загрузился, старый слой
-         * всё равно остаётся.
-         */
-        if (
-          !success &&
-          !activeLayer
-        ) {
-          setTimeLabel(
-            "Кадр недоступен"
-          );
-        }
-
-      } else {
-
-        setTimeLabel(
-          "Данных нет"
-        );
-      }
-
-
-      /*
-       * Обновляем список кадров раз в 10 минут.
-       */
-      refreshTimer =
-        setTimeout(
-          () =>
-            loadProduct(
-              product
-            ),
-          10 * 60 * 1000
-        );
-
-    } catch (error) {
-
-      if (
-        error?.name ===
-        "AbortError"
-      ) {
-        return;
-      }
-
-      console.error(
-        "CLOrad IDARKMETEO:",
-        error
-      );
-
-      setTimeLabel(
-        "Данные радара недоступны"
-      );
-    }
-  }
-
-
-  /* =========================================================
-     BUTTONS
-  ========================================================= */
-
-  function bindButtons() {
-
-    for (
-      const [
-        product,
-        cfg
-      ]
-      of Object.entries(
-        PRODUCTS
-      )
-    ) {
-
-      const button =
-        getButton(
-          product
-        );
-
-      if (!button) {
-        continue;
-      }
-
-
-      button.addEventListener(
-        "click",
-        event => {
-
-          event.preventDefault();
-
-          loadProduct(
-            product
-          );
-        }
-      );
-    }
-  }
-
-
-  /* =========================================================
-     TIMELINE
-  ========================================================= */
-
-  function bindTimeline() {
-
-    const range =
-      document.getElementById(
-        "range"
-      );
-
-    const play =
-      document.getElementById(
-        "play"
+    const canvas =
+      makeCanvas(
+        decoded.pixels,
+        decoded.width,
+        decoded.height,
+        palette
       );
 
 
-    if (range) {
+    /* -------------------------------------------------------
+       Object URL
+    ------------------------------------------------------- */
 
-      range.addEventListener(
-        "input",
-        () => {
-
-          const index =
-            Number(
-              range.value
-            );
-
-          /*
-           * Каждое движение ползунка
-           * отменяет предыдущий запрос.
-           */
-          showFrame(
-            index
-          );
-        }
-      );
-    }
-
-
-    if (play) {
-
-      play.addEventListener(
-        "click",
-        () => {
-
-          if (
-            playing
-          ) {
-            stopPlayback();
-          } else {
-            startPlayback();
-          }
-        }
-      );
-    }
-  }
-
-
-  /* =========================================================
-     PLAYBACK
-  ========================================================= */
-
-  function startPlayback() {
-
-    if (
-      playing ||
-      !frames.length
-    ) {
-      return;
-    }
-
-    playing = true;
-
-    const play =
-      document.getElementById(
-        "play"
-      );
-
-    if (play) {
-      play.textContent =
-        "Ⅱ";
-    }
-
-
-    playTimer =
-      setInterval(
-        async () => {
-
-          if (
-            !frames.length ||
-            !activeProduct
-          ) {
-            stopPlayback();
-            return;
-          }
-
-
-          /*
-           * Не начинаем следующий кадр,
-           * пока предыдущий ещё декодируется.
-           */
-          if (
-            playBusy
-          ) {
-            return;
-          }
-
-
-          playBusy = true;
-
-
-          try {
-
-            let next =
-              frameIndex + 1;
-
-
-            if (
-              next >=
-              frames.length
-            ) {
-              next = 0;
-            }
-
-
-            await showFrame(
-              next
-            );
-
-          } finally {
-
-            playBusy = false;
-          }
-
-        },
-        900
-      );
-  }
-
-
-  function stopPlayback() {
-
-    playing = false;
-
-    playBusy = false;
-
-
-    if (
-      playTimer
-    ) {
-
-      clearInterval(
-        playTimer
-      );
-
-      playTimer =
-        null;
-    }
-
-
-    const play =
-      document.getElementById(
-        "play"
-      );
-
-    if (play) {
-      play.textContent =
-        "▶";
-    }
+    return await canvasToUrl(
+      canvas
+    );
   }
 
 
@@ -1796,24 +836,8 @@
      PUBLIC API
   ========================================================= */
 
-  window.CLOIdarkMeteo = {
-    loadProduct,
-    showFrame,
-    startPlayback,
-    stopPlayback
+  window.CLOIdarkRaster = {
+    frameToImageUrl
   };
-
-
-  /* =========================================================
-     START
-  ========================================================= */
-
-  bindButtons();
-
-  bindTimeline();
-
-  loadProduct(
-    "rain"
-  );
 
 })();
