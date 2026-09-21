@@ -1,30 +1,16 @@
-// ============================================================
-// CLOrad — Meteoinfo GIF Radar
-// Тест API + вывод GIF без автоматического проигрывания
-// ============================================================
-
 (function () {
   "use strict";
 
   const API = "/api/radar-gif";
-
   const nav = document.getElementById("nav");
 
-  if (!nav) {
-    console.error("CLOrad GIF: #nav не найден");
-    return;
-  }
-
-  // ============================================================
-  // КНОПКА
-  // ============================================================
+  if (!nav) return;
 
   const btn = document.createElement("button");
 
   btn.className = "n";
   btn.id = "gifRadarBtn";
   btn.type = "button";
-  btn.title = "Радар Meteoinfo";
 
   btn.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -33,17 +19,13 @@
     <span>GIF</span>
   `;
 
-  const rainButton = document.getElementById("rainProduct");
+  const rain = document.getElementById("rainProduct");
 
-  if (rainButton) {
-    rainButton.insertAdjacentElement("afterend", btn);
+  if (rain) {
+    rain.insertAdjacentElement("afterend", btn);
   } else {
     nav.appendChild(btn);
   }
-
-  // ============================================================
-  // СТИЛЬ
-  // ============================================================
 
   const style = document.createElement("style");
 
@@ -66,81 +48,59 @@
 
   document.head.appendChild(style);
 
-  // ============================================================
-  // GIF
-  // ============================================================
+  let enabled = false;
 
-  let gifImage = null;
-  let gifEnabled = false;
-
-  function removeGIF() {
-    if (
-      gifImage &&
-      window.map &&
-      window.map.hasLayer(gifImage)
-    ) {
-      window.map.removeLayer(gifImage);
-    }
-
-    gifImage = null;
+  function showError(text) {
+    msg("GIF: " + text);
   }
 
-  async function enableGIF() {
-    if (gifEnabled) return;
+  async function enable() {
+    enabled = true;
 
-    gifEnabled = true;
-
-    // Отключаем обычные слои CLOrad
     document
       .querySelectorAll(".n")
-      .forEach(function (item) {
-        item.classList.remove("active");
+      .forEach(function (el) {
+        el.classList.remove("active");
       });
 
     btn.classList.add("active");
 
-    // Если существует стандартная остановка радара
     if (typeof window.stopRadar === "function") {
       window.stopRadar();
     }
 
-    msg("Загрузка Meteoinfo GIF...");
+    msg("GIF: проверяем API...");
 
     try {
       const response = await fetch(
         API + "?t=" + Date.now(),
         {
+          method: "GET",
           cache: "no-store"
         }
       );
 
-      console.log(
-        "CLOrad GIF API status:",
-        response.status
-      );
-
-      console.log(
-        "CLOrad GIF content-type:",
-        response.headers.get("content-type")
-      );
-
       if (!response.ok) {
         throw new Error(
-          "API HTTP " + response.status
+          "HTTP " + response.status
+        );
+      }
+
+      const type =
+        response.headers.get("content-type") || "";
+
+      if (!type.includes("gif")) {
+        const text = await response.text();
+
+        throw new Error(
+          "API вернул не GIF (" +
+          type +
+          "). Ответ: " +
+          text.slice(0, 120)
         );
       }
 
       const blob = await response.blob();
-
-      console.log(
-        "CLOrad GIF size:",
-        blob.size
-      );
-
-      console.log(
-        "CLOrad GIF type:",
-        blob.type
-      );
 
       if (!blob.size) {
         throw new Error(
@@ -148,106 +108,54 @@
         );
       }
 
-      const url = URL.createObjectURL(blob);
-
-      /*
-       * ВАЖНО:
-       * Пока мы только проверяем получение настоящего GIF.
-       * Он НЕ запускается как обычная картинка на странице.
-       */
-
-      gifImage = {
-        url: url,
-        blob: blob
-      };
-
       msg(
-        "Meteoinfo GIF загружен: " +
+        "GIF API работает: " +
         Math.round(blob.size / 1024) +
         " КБ"
       );
 
-      console.log(
-        "CLOrad GIF успешно получен",
-        gifImage
-      );
-
     } catch (error) {
 
-      console.error(
-        "CLOrad GIF ERROR:",
-        error
-      );
-
-      gifEnabled = false;
+      enabled = false;
 
       btn.classList.remove("active");
 
-      msg(
-        "Ошибка загрузки Meteoinfo GIF"
+      showError(
+        error?.message ||
+        String(error)
       );
     }
   }
 
-  function disableGIF() {
-    gifEnabled = false;
-
-    removeGIF();
-
+  function disable() {
+    enabled = false;
     btn.classList.remove("active");
-
-    msg("Meteoinfo GIF выключен");
+    msg("GIF выключен");
   }
 
-  // ============================================================
-  // КНОПКА GIF
-  // ============================================================
+  btn.addEventListener("click", function (e) {
+    e.preventDefault();
+    e.stopPropagation();
 
-  btn.addEventListener(
-    "click",
-    function (event) {
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (gifEnabled) {
-        disableGIF();
-      } else {
-        enableGIF();
-      }
+    if (enabled) {
+      disable();
+    } else {
+      enable();
     }
-  );
-
-  // ============================================================
-  // ДРУГОЙ .n → ВЫКЛЮЧАЕМ GIF
-  // ============================================================
+  });
 
   nav.addEventListener(
     "click",
-    function (event) {
+    function (e) {
+      const other = e.target.closest(".n");
 
-      const other =
-        event.target.closest(".n");
+      if (!other || other === btn) return;
 
-      if (!other) return;
-
-      if (other === btn) return;
-
-      if (gifEnabled) {
-        disableGIF();
+      if (enabled) {
+        disable();
       }
-
     },
     true
   );
-
-  // ============================================================
-  // GLOBAL
-  // ============================================================
-
-  window.CLOradGIF = {
-    enable: enableGIF,
-    disable: disableGIF
-  };
 
 })();
