@@ -1,69 +1,226 @@
 // ============================================================
 // CLOrad — Meteoinfo GIF Radar API
+// Server-side GIF frame extraction via Sharp
 // ============================================================
+
+import sharp from "sharp";
 
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
+async function getGIF() {
+
+  const response = await fetch(SOURCE_GIF, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "image/gif,*/*",
+      "Referer": "https://meteoinfo.ru/radanim"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      "Meteoinfo HTTP " + response.status
+    );
+  }
+
+  const arrayBuffer =
+    await response.arrayBuffer();
+
+  const buffer =
+    Buffer.from(arrayBuffer);
+
+  if (!buffer.length) {
+    throw new Error(
+      "Meteoinfo вернул пустой GIF"
+    );
+  }
+
+  return buffer;
+}
+
+
 export default async function handler(req, res) {
+
   try {
-    const response = await fetch(SOURCE_GIF, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "image/gif,*/*",
-        "Referer": "https://meteoinfo.ru/radanim"
-      },
-      cache: "no-store"
-    });
 
-    if (!response.ok) {
-      return res.status(502).json({
-        error: "Meteoinfo HTTP " + response.status
+    const mode =
+      String(req.query?.mode || "");
+
+    const requestedFrame =
+      Number(req.query?.frame);
+
+    const gif =
+      await getGIF();
+
+
+    // ==========================================================
+    // METADATA
+    // ==========================================================
+
+    if (mode === "meta") {
+
+      const metadata =
+        await sharp(
+          gif,
+          {
+            animated: true
+          }
+        ).metadata();
+
+
+      const pages =
+        Number(
+          metadata.pages || 1
+        );
+
+
+      const width =
+        Number(
+          metadata.width || 0
+        );
+
+
+      const height =
+        Number(
+          metadata.pageHeight ||
+          metadata.height ||
+          0
+        );
+
+
+      const delays =
+        Array.isArray(
+          metadata.delay
+        )
+          ? metadata.delay
+          : [];
+
+
+      res.setHeader(
+        "Content-Type",
+        "application/json; charset=utf-8"
+      );
+
+
+      res.setHeader(
+        "Cache-Control",
+        "public, s-maxage=30, stale-while-revalidate=120"
+      );
+
+
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+      );
+
+
+      return res.status(200).json({
+
+        ok: true,
+
+        frames:
+          pages,
+
+        width,
+
+        height,
+
+        delays
+
       });
+
     }
 
-    const arrayBuffer = await response.arrayBuffer();
 
-    const buffer = Buffer.from(arrayBuffer);
+    // ==========================================================
+    // FRAME
+    // ==========================================================
 
-    if (!buffer.length) {
-      return res.status(502).json({
-        error: "Meteoinfo вернул пустой GIF"
+    if (
+      !Number.isInteger(
+        requestedFrame
+      )
+    ) {
+
+      return res.status(400).json({
+        error:
+          "Укажи номер кадра: ?frame=0"
       });
+
     }
+
+
+    const metadata =
+      await sharp(
+        gif,
+        {
+          animated: true
+        }
+      ).metadata();
+
+
+    const pages =
+      Number(
+        metadata.pages || 1
+      );
+
+
+    const frame =
+      Math.max(
+        0,
+        Math.min(
+          requestedFrame,
+          pages - 1
+        )
+      );
+
+
+    const png =
+      await sharp(
+        gif,
+        {
+          animated: true,
+          page: frame,
+          pages: 1
+        }
+      )
+        .png()
+        .toBuffer();
+
 
     res.setHeader(
       "Content-Type",
-      "image/gif"
+      "image/png"
     );
+
 
     res.setHeader(
       "Content-Length",
-      String(buffer.length)
+      String(
+        png.length
+      )
     );
+
 
     res.setHeader(
       "Cache-Control",
-      "no-store, no-cache, must-revalidate"
+      "public, s-maxage=30, stale-while-revalidate=120"
     );
 
-    res.setHeader(
-      "Pragma",
-      "no-cache"
-    );
-
-    res.setHeader(
-      "Expires",
-      "0"
-    );
 
     res.setHeader(
       "Access-Control-Allow-Origin",
       "*"
     );
 
-    return res.status(200).send(buffer);
+
+    return res
+      .status(200)
+      .send(png);
+
 
   } catch (error) {
 
@@ -72,11 +229,18 @@ export default async function handler(req, res) {
       error
     );
 
+
     return res.status(500).json({
-      error: "GIF API error",
+
+      error:
+        "GIF API error",
+
       message:
         error?.message ||
         String(error)
+
     });
+
   }
+
 }
