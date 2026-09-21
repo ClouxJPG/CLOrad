@@ -1,16 +1,33 @@
+// ============================================================
+// CLOrad — Meteoinfo GIF Radar
+// Кадры GIF + ручное переключение
+// ============================================================
+
 (function () {
   "use strict";
 
   const API = "/api/radar-gif";
-  const nav = document.getElementById("nav");
 
-  if (!nav) return;
+  const nav = document.getElementById("nav");
+  const range = document.getElementById("range");
+  const timeLabel = document.getElementById("timeLabel");
+  const framesInfo = document.getElementById("framesInfo");
+
+  if (!nav) {
+    console.error("CLOrad GIF: nav не найден");
+    return;
+  }
+
+  // ============================================================
+  // КНОПКА
+  // ============================================================
 
   const btn = document.createElement("button");
 
   btn.className = "n";
   btn.id = "gifRadarBtn";
   btn.type = "button";
+  btn.title = "Радар Meteoinfo";
 
   btn.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -19,13 +36,21 @@
     <span>GIF</span>
   `;
 
-  const rain = document.getElementById("rainProduct");
+  const rainButton =
+    document.getElementById("rainProduct");
 
-  if (rain) {
-    rain.insertAdjacentElement("afterend", btn);
+  if (rainButton) {
+    rainButton.insertAdjacentElement(
+      "afterend",
+      btn
+    );
   } else {
     nav.appendChild(btn);
   }
+
+  // ============================================================
+  // СТИЛЬ
+  // ============================================================
 
   const style = document.createElement("style");
 
@@ -48,108 +73,465 @@
 
   document.head.appendChild(style);
 
-  let enabled = false;
+  // ============================================================
+  // СОСТОЯНИЕ
+  // ============================================================
 
-  function showError(text) {
-    msg("GIF: " + text);
+  let enabled = false;
+  let frames = [];
+  let currentFrame = -1;
+  let decoderLoaded = false;
+
+  // ============================================================
+  // ЗАГРУЗКА GIF-DECODER
+  // ============================================================
+
+  function loadDecoder() {
+    return new Promise(function (resolve, reject) {
+
+      if (
+        window.gifuct &&
+        window.gifuct.parseGIF &&
+        window.gifuct.decompressFrames
+      ) {
+        decoderLoaded = true;
+        resolve();
+        return;
+      }
+
+      const old =
+        document.getElementById(
+          "clorad-gifuct"
+        );
+
+      if (old) {
+        old.addEventListener(
+          "load",
+          function () {
+            decoderLoaded = true;
+            resolve();
+          }
+        );
+
+        old.addEventListener(
+          "error",
+          reject
+        );
+
+        return;
+      }
+
+      const script =
+        document.createElement("script");
+
+      script.id =
+        "clorad-gifuct";
+
+      script.src =
+        "https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct.min.js";
+
+      script.onload = function () {
+
+        if (
+          window.gifuct &&
+          window.gifuct.parseGIF &&
+          window.gifuct.decompressFrames
+        ) {
+          decoderLoaded = true;
+          resolve();
+        } else {
+          reject(
+            new Error(
+              "gifuct-js загрузился, но decoder не найден"
+            )
+          );
+        }
+      };
+
+      script.onerror = function () {
+        reject(
+          new Error(
+            "Не удалось загрузить GIF decoder"
+          )
+        );
+      };
+
+      document.head.appendChild(script);
+    });
   }
 
-  async function enable() {
-    enabled = true;
+  // ============================================================
+  // CANVAS → DATA URL
+  // ============================================================
 
-    document
-      .querySelectorAll(".n")
-      .forEach(function (el) {
-        el.classList.remove("active");
-      });
+  function canvasFrameToURL(
+    frame,
+    gifWidth,
+    gifHeight
+  ) {
 
-    btn.classList.add("active");
+    const canvas =
+      document.createElement("canvas");
 
-    if (typeof window.stopRadar === "function") {
-      window.stopRadar();
-    }
+    canvas.width = gifWidth;
+    canvas.height = gifHeight;
 
-    msg("GIF: проверяем API...");
+    const ctx =
+      canvas.getContext("2d");
 
-    try {
-      const response = await fetch(
+    const imageData =
+      ctx.createImageData(
+        frame.dims.width,
+        frame.dims.height
+      );
+
+    imageData.data.set(
+      frame.patch
+    );
+
+    ctx.putImageData(
+      imageData,
+      frame.dims.left,
+      frame.dims.top
+    );
+
+    return canvas.toDataURL(
+      "image/png"
+    );
+  }
+
+  // ============================================================
+  // ЗАГРУЗКА И РАЗБОР GIF
+  // ============================================================
+
+  async function loadFrames() {
+
+    msg("Загрузка кадров Meteoinfo...");
+
+    await loadDecoder();
+
+    const response =
+      await fetch(
         API + "?t=" + Date.now(),
         {
-          method: "GET",
           cache: "no-store"
         }
       );
 
-      if (!response.ok) {
-        throw new Error(
-          "HTTP " + response.status
+    if (!response.ok) {
+      throw new Error(
+        "API HTTP " +
+        response.status
+      );
+    }
+
+    const buffer =
+      await response.arrayBuffer();
+
+    if (!buffer.byteLength) {
+      throw new Error(
+        "GIF пустой"
+      );
+    }
+
+    const gif =
+      window.gifuct.parseGIF(
+        buffer
+      );
+
+    const decoded =
+      window.gifuct.decompressFrames(
+        gif,
+        true
+      );
+
+    if (!decoded.length) {
+      throw new Error(
+        "В GIF нет кадров"
+      );
+    }
+
+    const width =
+      gif.lsd.width;
+
+    const height =
+      gif.lsd.height;
+
+    frames = [];
+
+    for (
+      let i = 0;
+      i < decoded.length;
+      i++
+    ) {
+
+      const frame =
+        decoded[i];
+
+      const url =
+        canvasFrameToURL(
+          frame,
+          width,
+          height
         );
+
+      frames.push({
+        url: url,
+        width: width,
+        height: height,
+        delay:
+          frame.delay || 0
+      });
+    }
+
+    if (!frames.length) {
+      throw new Error(
+        "Кадры не были созданы"
+      );
+    }
+
+    msg(
+      "Meteoinfo: " +
+      frames.length +
+      " кадров"
+    );
+  }
+
+  // ============================================================
+  // ПОКАЗ КАДРА
+  // ============================================================
+
+  function showFrame(index) {
+
+    if (!frames.length) {
+      return;
+    }
+
+    index = Math.max(
+      0,
+      Math.min(
+        frames.length - 1,
+        Number(index)
+      )
+    );
+
+    currentFrame = index;
+
+    const frame =
+      frames[index];
+
+    /*
+      Пока не задаём bounds.
+      Здесь проверяем именно получение
+      и переключение кадров.
+    */
+
+    if (framesInfo) {
+      framesInfo.textContent =
+        "GIF • кадр " +
+        (index + 1) +
+        " / " +
+        frames.length;
+    }
+
+    if (timeLabel) {
+      timeLabel.textContent =
+        "Кадр " +
+        (index + 1) +
+        " / " +
+        frames.length;
+    }
+
+    console.log(
+      "CLOrad GIF frame:",
+      index,
+      frame
+    );
+  }
+
+  // ============================================================
+  // ПОДКЛЮЧЕНИЕ К TIMELINE
+  // ============================================================
+
+  function setupTimeline() {
+
+    if (!range) return;
+
+    range.min = "0";
+
+    range.max =
+      String(
+        Math.max(
+          0,
+          frames.length - 1
+        )
+      );
+
+    range.step = "1";
+
+    range.value =
+      String(
+        frames.length - 1
+      );
+
+    range.oninput =
+      function () {
+
+        showFrame(
+          Number(
+            range.value
+          )
+        );
+      };
+
+    showFrame(
+      frames.length - 1
+    );
+  }
+
+  // ============================================================
+  // ОЧИСТКА
+  // ============================================================
+
+  function clearGIF() {
+
+    frames = [];
+    currentFrame = -1;
+
+    if (range) {
+      range.oninput = null;
+    }
+
+    if (framesInfo) {
+      framesInfo.textContent = "";
+    }
+
+    if (timeLabel) {
+      timeLabel.textContent = "";
+    }
+  }
+
+  // ============================================================
+  // ВКЛЮЧЕНИЕ
+  // ============================================================
+
+  async function enable() {
+
+    if (enabled) return;
+
+    enabled = true;
+
+    document
+      .querySelectorAll(".n")
+      .forEach(function (item) {
+        item.classList.remove(
+          "active"
+        );
+      });
+
+    btn.classList.add("active");
+
+    // Выключаем обычный радар.
+    if (
+      typeof window.stopRadar ===
+      "function"
+    ) {
+      window.stopRadar();
+    }
+
+    try {
+
+      if (!decoderLoaded || !frames.length) {
+        await loadFrames();
       }
 
-      const type =
-        response.headers.get("content-type") || "";
+      if (!enabled) return;
 
-      if (!type.includes("gif")) {
-        const text = await response.text();
-
-        throw new Error(
-          "API вернул не GIF (" +
-          type +
-          "). Ответ: " +
-          text.slice(0, 120)
-        );
-      }
-
-      const blob = await response.blob();
-
-      if (!blob.size) {
-        throw new Error(
-          "API вернул пустой файл"
-        );
-      }
+      setupTimeline();
 
       msg(
-        "GIF API работает: " +
-        Math.round(blob.size / 1024) +
-        " КБ"
+        "Meteoinfo GIF включён"
       );
 
     } catch (error) {
 
+      console.error(
+        "CLOrad GIF:",
+        error
+      );
+
       enabled = false;
 
-      btn.classList.remove("active");
+      btn.classList.remove(
+        "active"
+      );
 
-      showError(
-        error?.message ||
-        String(error)
+      clearGIF();
+
+      msg(
+        "GIF: " +
+        (
+          error?.message ||
+          String(error)
+        )
       );
     }
   }
 
+  // ============================================================
+  // ВЫКЛЮЧЕНИЕ
+  // ============================================================
+
   function disable() {
+
     enabled = false;
-    btn.classList.remove("active");
-    msg("GIF выключен");
+
+    clearGIF();
+
+    btn.classList.remove(
+      "active"
+    );
+
+    msg(
+      "Meteoinfo GIF выключен"
+    );
   }
 
-  btn.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
+  // ============================================================
+  // КНОПКА
+  // ============================================================
 
-    if (enabled) {
-      disable();
-    } else {
-      enable();
+  btn.addEventListener(
+    "click",
+    function (event) {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (enabled) {
+        disable();
+      } else {
+        enable();
+      }
     }
-  });
+  );
+
+  // ============================================================
+  // ДРУГИЕ СЛОИ → GIF OFF
+  // ============================================================
 
   nav.addEventListener(
     "click",
-    function (e) {
-      const other = e.target.closest(".n");
+    function (event) {
 
-      if (!other || other === btn) return;
+      const other =
+        event.target.closest(
+          ".n"
+        );
+
+      if (!other) return;
+
+      if (other === btn) return;
 
       if (enabled) {
         disable();
@@ -157,5 +539,15 @@
     },
     true
   );
+
+  // ============================================================
+  // GLOBAL
+  // ============================================================
+
+  window.CLOradGIF = {
+    enable: enable,
+    disable: disable,
+    showFrame: showFrame
+  };
 
 })();
