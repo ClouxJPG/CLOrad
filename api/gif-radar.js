@@ -25,41 +25,21 @@ export default async function handler(req, res) {
       return;
     }
 
-    const contentType =
-      response.headers.get("content-type") || "image/gif";
-
     const arrayBuffer = await response.arrayBuffer();
-
     const buffer = Buffer.from(arrayBuffer);
 
     res.status(200);
 
-    res.setHeader(
-      "Content-Type",
-      contentType.includes("gif")
-        ? "image/gif"
-        : "image/gif"
-    );
+    res.setHeader("Content-Type", "image/gif");
 
     res.setHeader(
       "Cache-Control",
       "no-store, no-cache, must-revalidate, proxy-revalidate"
     );
 
-    res.setHeader(
-      "Pragma",
-      "no-cache"
-    );
-
-    res.setHeader(
-      "Expires",
-      "0"
-    );
-
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      "*"
-    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
     res.send(buffer);
 
