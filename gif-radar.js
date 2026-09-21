@@ -1,621 +1,971 @@
 /* =========================================================
-   CLOrad — GIF Radar
-   Независимый GIF-слой для phenomena.gif
-   Не вмешивается в RDR / iDarkMeteo
-   ========================================================= */
+   CLOrad GIF RADAR
+   Независимый радарный GIF-слой
+========================================================= */
 
 (() => {
+
   "use strict";
 
-  const API = "/api/radar-gif";
 
-  let gifEnabled = false;
-  let gifLayer = null;
+  /* =======================================================
+     CONFIG
+  ======================================================= */
+
+  const API_URL =
+    "/api/radar-gif";
+
+
+  /*
+     GIF полностью независим от основного
+     RDR / iDarkMeteo слоя.
+  */
+
   let gifFrames = [];
+  let gifLayer = null;
   let gifFrameIndex = 0;
   let gifTimer = null;
+  let gifEnabled = false;
   let gifRequest = 0;
 
-  let map = null;
 
-  /* =========================================================
-     Поиск карты
-     ========================================================= */
+  /* =======================================================
+     BUTTON
+  ======================================================= */
 
-  function findMap() {
-    if (window.map && typeof window.map.addLayer === "function") {
-      return window.map;
-    }
+  function createButton(){
 
-    for (const key of Object.keys(window)) {
-      try {
-        const value = window[key];
+    const head =
+      document.querySelector(".header .head");
 
-        if (
-          value &&
-          typeof value.addLayer === "function" &&
-          typeof value.removeLayer === "function" &&
-          typeof value.getBounds === "function"
-        ) {
-          return value;
-        }
-      } catch (_) {}
-    }
+    if(!head){
 
-    return null;
-  }
+      console.error(
+        "CLOrad GIF: .header .head не найден"
+      );
 
-  /* =========================================================
-     Кнопка GIF
-     ========================================================= */
-
-  function createButton() {
-    if (document.getElementById("cloradGifButton")) {
       return;
+
     }
+
 
     /*
-      Ищем верхнюю панель.
-      Используем существующие элементы CLOrad,
-      чтобы кнопка визуально была частью текущего интерфейса.
+       Не создаём кнопку повторно.
     */
 
-    const candidates = [
-      ".topbar",
-      ".top-panel",
-      ".topbar-actions",
-      ".header-tools",
-      ".header-actions",
-      ".tools",
-      "header"
-    ];
+    if(
+      document.getElementById(
+        "gifRadarBtn"
+      )
+    ){
 
-    let container = null;
-
-    for (const selector of candidates) {
-      const el = document.querySelector(selector);
-
-      if (el) {
-        container = el;
-        break;
-      }
-    }
-
-    if (!container) {
-      console.warn("CLOrad GIF: верхняя панель не найдена.");
       return;
+
     }
 
-    const button = document.createElement("button");
 
-    button.id = "cloradGifButton";
-    button.type = "button";
-    button.title = "Радарная GIF-анимация";
-    button.setAttribute("aria-label", "GIF");
+    const button =
+      document.createElement("button");
+
+
+    button.className =
+      "h";
+
+
+    button.id =
+      "gifRadarBtn";
+
+
+    button.type =
+      "button";
+
+
+    button.setAttribute(
+      "aria-label",
+      "GIF радар"
+    );
+
+
+    button.title =
+      "GIF радар";
+
+
+    /*
+       Иконка — квадрат.
+       Сделана в том же стиле SVG,
+       что и остальные кнопки .h.
+    */
 
     button.innerHTML = `
-      <span class="clorad-gif-icon"></span>
-      <span class="clorad-gif-text">GIF</span>
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <rect
+          x="5"
+          y="5"
+          width="14"
+          height="14"
+          rx="1.5"
+        />
+      </svg>
     `;
 
-    button.addEventListener("click", toggleGIF);
 
-    container.appendChild(button);
+    /*
+       Вставляем перед меню.
+       Получается:
 
-    addButtonStyles();
-  }
+       Поиск
+       Тема
+       Настройки
+       GIF
+       Меню
+    */
 
-  /* =========================================================
-     Стили кнопки
-     ========================================================= */
+    const menuButton =
+      document.getElementById(
+        "menuBtn"
+      );
 
-  function addButtonStyles() {
-    if (document.getElementById("cloradGifStyles")) {
-      return;
+
+    if(menuButton){
+
+      head.insertBefore(
+        button,
+        menuButton
+      );
+
+    }else{
+
+      head.appendChild(
+        button
+      );
+
     }
 
-    const style = document.createElement("style");
 
-    style.id = "cloradGifStyles";
+    button.addEventListener(
+      "click",
+      event => {
+
+        event.stopPropagation();
+
+        toggleGIF();
+
+      }
+    );
+
+
+    /*
+       Добавляем стили только для GIF.
+       Основной index.html не изменяется.
+    */
+
+    addStyles();
+
+
+    console.log(
+      "CLOrad GIF: кнопка создана"
+    );
+
+  }
+
+
+  /* =======================================================
+     STYLES
+  ======================================================= */
+
+  function addStyles(){
+
+    if(
+      document.getElementById(
+        "cloradGifStyles"
+      )
+    ){
+
+      return;
+
+    }
+
+
+    const style =
+      document.createElement("style");
+
+
+    style.id =
+      "cloradGifStyles";
+
 
     style.textContent = `
-      #cloradGifButton {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 7px;
 
-        height: 38px;
-        min-width: 66px;
-
-        padding: 0 11px;
-
-        border: 1px solid rgba(255,255,255,.10);
-        border-radius: 10px;
-
-        background: rgba(255,255,255,.055);
-        color: rgba(255,255,255,.78);
-
-        font-family: inherit;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: .3px;
-
-        cursor: pointer;
-        user-select: none;
-
-        transition:
-          background .18s ease,
-          border-color .18s ease,
-          color .18s ease,
-          transform .12s ease;
+      #gifRadarBtn{
+        flex:none;
       }
 
-      #cloradGifButton:hover {
-        background: rgba(255,255,255,.09);
-        color: #fff;
+      #gifRadarBtn.active{
+        background:#222b34;
+        border:1px solid #35404a;
+        color:#53e39b;
       }
 
-      #cloradGifButton:active {
-        transform: scale(.96);
+      body.light #gifRadarBtn.active{
+        background:#e1e5e8;
+        border-color:#c4ccd1;
+        color:#36bd78;
       }
 
-      #cloradGifButton.active {
-        background: rgba(74, 222, 128, .13);
-        border-color: rgba(74, 222, 128, .38);
-        color: #63e88b;
-      }
-
-      .clorad-gif-icon {
-        width: 13px;
-        height: 13px;
-
-        box-sizing: border-box;
-
-        display: inline-block;
-
-        border: 2px solid currentColor;
-        border-radius: 2px;
-
-        opacity: .9;
-      }
-
-      .clorad-gif-text {
-        line-height: 1;
-      }
-
-      @media (max-width: 600px) {
-        #cloradGifButton {
-          min-width: 42px;
-          width: 42px;
-          padding: 0;
-          gap: 0;
-        }
-
-        #cloradGifButton .clorad-gif-text {
-          display: none;
-        }
-      }
     `;
 
-    document.head.appendChild(style);
+
+    document.head.appendChild(
+      style
+    );
+
   }
 
-  /* =========================================================
-     GIF bounds
-     
-     ВАЖНО:
-     Эти координаты специально вынесены отдельно.
-     Их можно заменить после точного определения географии
-     исходной карты Meteoinfo.
-     ========================================================= */
 
-  const GIF_BOUNDS = [
-    [35.0, 20.0],
-    [75.0, 180.0]
-  ];
+  /* =======================================================
+     MESSAGE
+  ======================================================= */
 
-  /* =========================================================
-     Установка кадра
-     ========================================================= */
+  function message(text){
 
-  async function showFrame(index, requestId) {
-    if (!gifEnabled) {
+    /*
+       Используем существующий msg()
+       из index.html, если он есть.
+    */
+
+    if(
+      typeof window.msg ===
+      "function"
+    ){
+
+      window.msg(text);
+
       return;
+
     }
 
-    if (requestId !== gifRequest) {
-      return;
-    }
 
-    if (!gifFrames.length) {
-      return;
-    }
+    console.log(
+      "CLOrad GIF:",
+      text
+    );
 
-    map = findMap();
+  }
 
-    if (!map) {
-      console.warn("CLOrad GIF: Leaflet map не найдена.");
-      return;
-    }
 
-    const frame = gifFrames[index];
+  /* =======================================================
+     FETCH
+  ======================================================= */
 
-    if (!frame) {
-      return;
-    }
+  async function fetchGIFData(){
 
-    const url =
-      `${API}?frame=${encodeURIComponent(index)}` +
-      `&v=${encodeURIComponent(gifFrames.version || "")}`;
-
-    try {
-      const response = await fetch(url, {
-        cache: "no-store"
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const blob = await response.blob();
-
-      if (requestId !== gifRequest || !gifEnabled) {
-        return;
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-
-      const newLayer = L.imageOverlay(
-        objectUrl,
-        GIF_BOUNDS,
+    const response =
+      await fetch(
+        API_URL,
         {
-          opacity: 1,
-          interactive: false,
-          crossOrigin: true,
-          zIndex: 250
+          method:"GET",
+          cache:"no-store",
+          headers:{
+            "Accept":
+              "application/json"
+          }
         }
       );
 
-      newLayer.addTo(map);
 
-      const oldLayer = gifLayer;
+    if(
+      !response.ok
+    ){
 
-      gifLayer = newLayer;
-      gifFrameIndex = index;
+      let detail = "";
 
-      if (oldLayer) {
-        try {
-          map.removeLayer(oldLayer);
+      try{
 
-          if (oldLayer._url && oldLayer._url.startsWith("blob:")) {
-            URL.revokeObjectURL(oldLayer._url);
-          }
-        } catch (_) {}
-      }
+        const data =
+          await response.json();
 
-      updateGIFTimeline(frame);
+        detail =
+          data.message ||
+          data.error ||
+          "";
 
-    } catch (error) {
-      console.error("CLOrad GIF: ошибка загрузки кадра:", error);
+      }catch{}
+
+
+      throw new Error(
+        "GIF API: HTTP " +
+        response.status +
+        (
+          detail
+            ? " — " + detail
+            : ""
+        )
+      );
+
     }
+
+
+    const data =
+      await response.json();
+
+
+    if(
+      !data ||
+      !Array.isArray(
+        data.frames
+      )
+    ){
+
+      throw new Error(
+        "GIF API вернул некорректные кадры"
+      );
+
+    }
+
+
+    if(
+      !data.frames.length
+    ){
+
+      throw new Error(
+        "GIF не содержит кадров"
+      );
+
+    }
+
+
+    if(
+      !data.bounds
+    ){
+
+      throw new Error(
+        "GIF API не вернул географические bounds"
+      );
+
+    }
+
+
+    return data;
+
   }
 
-  /* =========================================================
-     Информация о времени
-     ========================================================= */
 
-  function updateGIFTimeline(frame) {
-    if (!frame) {
+  /* =======================================================
+     BOUNDS
+  ======================================================= */
+
+  function getBounds(bounds){
+
+    /*
+       Ожидаемый формат:
+
+       [
+         [south, west],
+         [north, east]
+       ]
+
+       либо:
+
+       {
+         south,
+         west,
+         north,
+         east
+       }
+    */
+
+
+    if(
+      Array.isArray(bounds) &&
+      bounds.length === 2 &&
+      Array.isArray(bounds[0]) &&
+      Array.isArray(bounds[1])
+    ){
+
+      return L.latLngBounds(
+        [
+          Number(bounds[0][0]),
+          Number(bounds[0][1])
+        ],
+        [
+          Number(bounds[1][0]),
+          Number(bounds[1][1])
+        ]
+      );
+
+    }
+
+
+    if(
+      bounds &&
+      Number.isFinite(
+        Number(bounds.south)
+      ) &&
+      Number.isFinite(
+        Number(bounds.west)
+      ) &&
+      Number.isFinite(
+        Number(bounds.north)
+      ) &&
+      Number.isFinite(
+        Number(bounds.east)
+      )
+    ){
+
+      return L.latLngBounds(
+        [
+          Number(bounds.south),
+          Number(bounds.west)
+        ],
+        [
+          Number(bounds.north),
+          Number(bounds.east)
+        ]
+      );
+
+    }
+
+
+    throw new Error(
+      "Некорректные bounds GIF"
+    );
+
+  }
+
+
+  /* =======================================================
+     REMOVE GIF LAYER
+  ======================================================= */
+
+  function removeGIFLayer(){
+
+    if(
+      gifLayer
+    ){
+
+      try{
+
+        map.removeLayer(
+          gifLayer
+        );
+
+      }catch{}
+
+      gifLayer =
+        null;
+
+    }
+
+  }
+
+
+  /* =======================================================
+     STOP GIF
+  ======================================================= */
+
+  function stopGIF(){
+
+    if(
+      gifTimer
+    ){
+
+      clearInterval(
+        gifTimer
+      );
+
+      gifTimer =
+        null;
+
+    }
+
+  }
+
+
+  /* =======================================================
+     SHOW FRAME
+  ======================================================= */
+
+  function showGIFFrame(){
+
+    if(
+      !gifEnabled ||
+      !gifFrames.length
+    ){
+
       return;
+
     }
 
-    const label = document.getElementById("timeLabel");
 
-    if (label && frame.time) {
-      label.textContent = frame.time;
+    const frame =
+      gifFrames[
+        gifFrameIndex
+      ];
+
+
+    if(
+      !frame ||
+      !frame.url
+    ){
+
+      return;
+
     }
+
+
+    /*
+       Только GIF-слой.
+       Никакой activeLayer здесь нет.
+    */
+
+    if(
+      gifLayer
+    ){
+
+      map.removeLayer(
+        gifLayer
+      );
+
+      gifLayer =
+        null;
+
+    }
+
+
+    const bounds =
+      getBounds(
+        frame.bounds ||
+        window.__cloradGifBounds
+      );
+
+
+    gifLayer =
+      L.imageOverlay(
+        frame.url,
+        bounds,
+        {
+          opacity:1,
+          interactive:false,
+          zIndex:5
+        }
+      );
+
+
+    gifLayer.addTo(
+      map
+    );
+
+
+    /*
+       Если API передал время —
+       показываем его в консоли.
+       Основной timeline не трогаем.
+    */
+
+    if(
+      frame.t
+    ){
+
+      console.log(
+        "CLOrad GIF:",
+        frame.t
+      );
+
+    }
+
   }
 
-  /* =========================================================
-     Получение списка кадров
-     ========================================================= */
 
-  async function loadGIF() {
-    const requestId = ++gifRequest;
+  /* =======================================================
+     START ANIMATION
+  ======================================================= */
 
-    try {
-      const response = await fetch(API, {
-        cache: "no-store"
-      });
+  function startAnimation(){
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+    stopGIF();
 
-      const data = await response.json();
 
-      if (requestId !== gifRequest || !gifEnabled) {
+    /*
+       Первый кадр сразу.
+    */
+
+    gifFrameIndex = 0;
+
+    showGIFFrame();
+
+
+    /*
+       Время кадра берём из API,
+       если оно есть.
+    */
+
+    let delay = 500;
+
+
+    if(
+      gifFrames[0]?.duration
+    ){
+
+      delay =
+        Math.max(
+          100,
+          Number(
+            gifFrames[0].duration
+          )
+        );
+
+    }
+
+
+    gifTimer =
+      setInterval(
+        () => {
+
+          if(
+            !gifEnabled ||
+            !gifFrames.length
+          ){
+
+            return;
+
+          }
+
+
+          gifFrameIndex++;
+
+
+          if(
+            gifFrameIndex >=
+            gifFrames.length
+          ){
+
+            gifFrameIndex = 0;
+
+          }
+
+
+          showGIFFrame();
+
+
+        },
+        delay
+      );
+
+  }
+
+
+  /* =======================================================
+     LOAD GIF
+  ======================================================= */
+
+  async function loadGIF(){
+
+    const request =
+      ++gifRequest;
+
+
+    message(
+      "Загрузка GIF радара…"
+    );
+
+
+    try{
+
+      const data =
+        await fetchGIFData();
+
+
+      if(
+        request !== gifRequest
+      ){
+
         return;
+
       }
 
-      if (!Array.isArray(data.frames) || !data.frames.length) {
-        throw new Error("Сервер не вернул кадры GIF.");
+
+      gifFrames =
+        data.frames
+          .map(
+            frame => {
+
+              if(
+                typeof frame ===
+                "string"
+              ){
+
+                return {
+                  url:frame
+                };
+
+              }
+
+
+              return {
+                url:
+                  frame.url ||
+                  frame.path,
+
+                t:
+                  frame.t ||
+                  frame.time,
+
+                duration:
+                  frame.duration,
+
+                bounds:
+                  frame.bounds
+              };
+
+            }
+          )
+          .filter(
+            frame =>
+              frame.url
+          );
+
+
+      if(
+        !gifFrames.length
+      ){
+
+        throw new Error(
+          "После обработки GIF кадров нет"
+        );
+
       }
 
-      gifFrames = data.frames;
+
+      window.__cloradGifBounds =
+        data.bounds;
+
 
       /*
-        Сохраняем версию отдельно.
-        Она нужна только для того, чтобы браузер
-        не подставлял старый PNG из своего cache.
+         Если API прислал bounds
+         отдельно — применяем их
+         ко всем кадрам.
       */
 
-      gifFrames.version = data.version || Date.now();
+      gifFrames =
+        gifFrames.map(
+          frame => ({
+            ...frame,
+            bounds:
+              frame.bounds ||
+              data.bounds
+          })
+        );
+
+
+      startAnimation();
+
+
+      message(
+        "GIF радар включён"
+      );
+
+
+    }catch(error){
+
+      console.error(
+        "CLOrad GIF:",
+        error
+      );
+
+
+      gifEnabled =
+        false;
+
+
+      const button =
+        document.getElementById(
+          "gifRadarBtn"
+        );
+
+
+      button?.classList.remove(
+        "active"
+      );
+
+
+      stopGIF();
+      removeGIFLayer();
+
+
+      message(
+        error?.message ||
+        "Не удалось загрузить GIF"
+      );
+
+    }
+
+  }
+
+
+  /* =======================================================
+     TOGGLE
+  ======================================================= */
+
+  async function toggleGIF(){
+
+    const button =
+      document.getElementById(
+        "gifRadarBtn"
+      );
+
+
+    gifEnabled =
+      !gifEnabled;
+
+
+    if(
+      !gifEnabled
+    ){
+
+      /*
+         Выключаем ТОЛЬКО GIF.
+         Остальные слои не трогаем.
+      */
+
+      stopGIF();
+      removeGIFLayer();
+
+
+      if(button){
+
+        button.classList.remove(
+          "active"
+        );
+
+      }
+
+
+      message(
+        "GIF радар выключен"
+      );
+
+
+      return;
+
+    }
+
+
+    if(button){
+
+      button.classList.add(
+        "active"
+      );
+
+    }
+
+
+    /*
+       Если кадры уже были получены —
+       не скачиваем GIF повторно.
+    */
+
+    if(
+      gifFrames.length
+    ){
+
+      startAnimation();
+
+      message(
+        "GIF радар включён"
+      );
+
+      return;
+
+    }
+
+
+    await loadGIF();
+
+  }
+
+
+  /* =======================================================
+     PUBLIC API
+  ======================================================= */
+
+  window.CLOradGIF = {
+
+    enable:() => {
+
+      if(!gifEnabled){
+
+        toggleGIF();
+
+      }
+
+    },
+
+    disable:() => {
+
+      if(gifEnabled){
+
+        toggleGIF();
+
+      }
+
+    },
+
+    reload:() => {
+
+      gifFrames = [];
 
       gifFrameIndex = 0;
 
-      setupGIFTimeline(data);
+      stopGIF();
+      removeGIFLayer();
 
-      await showFrame(0, requestId);
+      if(
+        gifEnabled
+      ){
 
-      startGIFAnimation();
+        loadGIF();
 
-    } catch (error) {
-      console.error("CLOrad GIF:", error);
-
-      disableGIF();
-
-      alert(
-        "Не удалось загрузить GIF-радар.\n\n" +
-        "Проверь /api/radar-gif и источник Meteoinfo."
-      );
-    }
-  }
-
-  /* =========================================================
-     Подключение к существующему таймлайну
-     ========================================================= */
-
-  function setupGIFTimeline(data) {
-    const range = document.getElementById("range");
-
-    if (!range) {
-      return;
-    }
-
-    /*
-      GIF использует существующий range,
-      но не меняет количество кадров RDR постоянно.
-      При выключении GIF исходные значения можно
-      вернуть через сохранённое состояние.
-    */
-
-    if (!range.dataset.gifOriginalMax) {
-      range.dataset.gifOriginalMax = range.max || "0";
-    }
-
-    range.max = String(Math.max(0, data.frames.length - 1));
-    range.value = "0";
-
-    range.dataset.gifMode = "1";
-
-    if (!range.dataset.gifListener) {
-      range.addEventListener("input", onGIFRange);
-
-      range.dataset.gifListener = "1";
-    }
-
-    const times = document.getElementById("times");
-
-    if (times) {
-      times.innerHTML = "";
-
-      data.frames.forEach((frame, index) => {
-        const item = document.createElement("span");
-
-        item.textContent =
-          frame.time ||
-          frame.t ||
-          `${index + 1}`;
-
-        item.style.cursor = "pointer";
-
-        item.addEventListener("click", () => {
-          range.value = String(index);
-          showFrame(index, gifRequest);
-        });
-
-        times.appendChild(item);
-      });
-    }
-  }
-
-  /* =========================================================
-     Range GIF
-     ========================================================= */
-
-  function onGIFRange(event) {
-    if (!gifEnabled) {
-      return;
-    }
-
-    const index = Number(event.target.value);
-
-    stopGIFAnimation();
-
-    showFrame(index, gifRequest);
-  }
-
-  /* =========================================================
-     Автовоспроизведение GIF
-     ========================================================= */
-
-  function startGIFAnimation() {
-    stopGIFAnimation();
-
-    if (!gifEnabled || gifFrames.length < 2) {
-      return;
-    }
-
-    gifTimer = setInterval(() => {
-      if (!gifEnabled || !gifFrames.length) {
-        stopGIFAnimation();
-        return;
       }
 
-      let next = gifFrameIndex + 1;
+    },
 
-      if (next >= gifFrames.length) {
-        next = 0;
-      }
+    isEnabled:() =>
+      gifEnabled
 
-      const range = document.getElementById("range");
+  };
 
-      if (range) {
-        range.value = String(next);
-      }
 
-      showFrame(next, gifRequest);
+  /* =======================================================
+     INIT
+  ======================================================= */
 
-    }, 900);
-  }
+  function init(){
 
-  function stopGIFAnimation() {
-    if (gifTimer) {
-      clearInterval(gifTimer);
-      gifTimer = null;
-    }
-  }
-
-  /* =========================================================
-     Удаление GIF
-     ========================================================= */
-
-  function removeGIFLayer() {
-    stopGIFAnimation();
-
-    if (gifLayer && map) {
-      try {
-        map.removeLayer(gifLayer);
-      } catch (_) {}
-
-      try {
-        if (
-          gifLayer._url &&
-          gifLayer._url.startsWith("blob:")
-        ) {
-          URL.revokeObjectURL(gifLayer._url);
-        }
-      } catch (_) {}
-    }
-
-    gifLayer = null;
-  }
-
-  /* =========================================================
-     Выключение
-     ========================================================= */
-
-  function disableGIF() {
-    gifEnabled = false;
-
-    gifRequest++;
-
-    removeGIFLayer();
-
-    const button = document.getElementById("cloradGifButton");
-
-    if (button) {
-      button.classList.remove("active");
-    }
-
-    const range = document.getElementById("range");
-
-    if (range) {
-      range.dataset.gifMode = "0";
-
-      if (range.dataset.gifOriginalMax) {
-        range.max = range.dataset.gifOriginalMax;
-      }
-    }
-
-    gifFrames = [];
-    gifFrameIndex = 0;
-  }
-
-  /* =========================================================
-     Переключатель GIF
-     ========================================================= */
-
-  function toggleGIF() {
-    map = findMap();
-
-    if (!map) {
-      console.warn("CLOrad GIF: карта ещё не готова.");
-      return;
-    }
-
-    gifEnabled = !gifEnabled;
-
-    const button = document.getElementById("cloradGifButton");
-
-    if (gifEnabled) {
-      if (button) {
-        button.classList.add("active");
-      }
-
-      loadGIF();
-
-    } else {
-      disableGIF();
-    }
-  }
-
-  /* =========================================================
-     Инициализация
-     ========================================================= */
-
-  function init() {
     createButton();
 
-    /*
-      Иногда index.html создаёт Leaflet-карту
-      немного позже загрузки этого файла.
-    */
-
-    if (!findMap()) {
-      setTimeout(init, 300);
-    }
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
+
+  if(
+    document.readyState ===
+    "loading"
+  ){
+
+    document.addEventListener(
+      "DOMContentLoaded",
+      init,
+      {
+        once:true
+      }
+    );
+
+  }else{
+
     init();
+
   }
-
-  /* =========================================================
-     Публичное API
-     ========================================================= */
-
-  window.CLOradGIF = {
-    enable: () => {
-      if (!gifEnabled) {
-        toggleGIF();
-      }
-    },
-
-    disable: () => {
-      if (gifEnabled) {
-        toggleGIF();
-      }
-    },
-
-    toggle: toggleGIF,
-
-    isEnabled: () => gifEnabled
-  };
 
 })();
