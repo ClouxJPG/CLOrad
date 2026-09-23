@@ -1,6 +1,22 @@
 // ============================================================
 // CLOrad — Meteoinfo GIF Radar API
-// Server-side GIF frame extraction via Sharp
+// Server-side GIF decoding via Sharp
+//
+// Быстрая схема:
+//
+// Meteoinfo GIF
+//      ↓
+// Vercel memory cache
+//      ↓
+// Sharp
+//      ↓
+// PNG frame
+//      ↓
+// Leaflet
+//
+// GIF НЕ сохраняется на диск.
+// После смены исходного GIF старый buffer исчезает
+// из памяти при обновлении cache.
 // ============================================================
 
 import sharp from "sharp";
@@ -8,57 +24,146 @@ import sharp from "sharp";
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
-async function getGIF() {
 
-  const response = await fetch(SOURCE_GIF, {
-    method: "GET",
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "image/gif,*/*",
-      "Referer": "https://meteoinfo.ru/radanim"
-    },
-    cache: "no-store"
-  });
+// ============================================================
+// SERVER MEMORY CACHE
+// ============================================================
 
-  if (!response.ok) {
-    throw new Error(
-      "Meteoinfo HTTP " + response.status
-    );
+let gifCache = null;
+
+let gifCacheTime = 0;
+
+let gifLoading = null;
+
+
+// GIF держим в памяти максимум 60 секунд.
+// Это НЕ постоянное хранилище.
+const GIF_CACHE_MS = 60 * 1000;
+
+
+// ============================================================
+// СКАЧИВАНИЕ GIF
+// ============================================================
+
+async function downloadGIF() {
+
+  const now = Date.now();
+
+  // Есть свежий GIF в памяти
+  if (
+    gifCache &&
+    now - gifCacheTime < GIF_CACHE_MS
+  ) {
+    return gifCache;
   }
 
-  const arrayBuffer =
-    await response.arrayBuffer();
 
-  const buffer =
-    Buffer.from(arrayBuffer);
-
-  if (!buffer.length) {
-    throw new Error(
-      "Meteoinfo вернул пустой GIF"
-    );
+  // Если другой запрос уже скачивает GIF —
+  // ждём его, а не создаём второй запрос.
+  if (gifLoading) {
+    return gifLoading;
   }
 
-  return buffer;
+
+  gifLoading = (async () => {
+
+    const response = await fetch(
+      SOURCE_GIF,
+      {
+        method: "GET",
+
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept":
+            "image/gif,image/*,*/*",
+          "Referer":
+            "https://meteoinfo.ru/radanim"
+        },
+
+        cache: "no-store"
+      }
+    );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        "Meteoinfo HTTP " +
+        response.status
+      );
+
+    }
+
+
+    const arrayBuffer =
+      await response.arrayBuffer();
+
+
+    const buffer =
+      Buffer.from(arrayBuffer);
+
+
+    if (!buffer.length) {
+      throw new Error(
+        "Meteoinfo вернул пустой GIF"
+      );
+    }
+
+
+    // Новый GIF заменяет старый.
+    gifCache = buffer;
+    gifCacheTime = Date.now();
+
+
+    return buffer;
+
+  })();
+
+
+  try {
+
+    return await gifLoading;
+
+  } finally {
+
+    gifLoading = null;
+
+  }
+
 }
 
 
-export default async function handler(req, res) {
+// ============================================================
+// HANDLER
+// ============================================================
+
+export default async function handler(
+  req,
+  res
+) {
 
   try {
 
     const mode =
-      String(req.query?.mode || "");
+      String(
+        req.query?.mode || ""
+      );
+
 
     const requestedFrame =
-      Number(req.query?.frame);
+      Number(
+        req.query?.frame
+      );
+
 
     const gif =
-      await getGIF();
+      await downloadGIF();
 
 
-    // ==========================================================
-    // METADATA
-    // ==========================================================
+    // ========================================================
+    // META
+    // ========================================================
 
     if (mode === "meta") {
 
@@ -107,7 +212,7 @@ export default async function handler(req, res) {
 
       res.setHeader(
         "Cache-Control",
-        "public, s-maxage=30, stale-while-revalidate=120"
+        "public, max-age=30, s-maxage=30, stale-while-revalidate=120"
       );
 
 
@@ -121,8 +226,7 @@ export default async function handler(req, res) {
 
         ok: true,
 
-        frames:
-          pages,
+        frames: pages,
 
         width,
 
@@ -135,9 +239,9 @@ export default async function handler(req, res) {
     }
 
 
-    // ==========================================================
+    // ========================================================
     // FRAME
-    // ==========================================================
+    // ========================================================
 
     if (
       !Number.isInteger(
@@ -146,8 +250,10 @@ export default async function handler(req, res) {
     ) {
 
       return res.status(400).json({
+
         error:
           "Укажи номер кадра: ?frame=0"
+
       });
 
     }
@@ -178,18 +284,38 @@ export default async function handler(req, res) {
       );
 
 
+    // ========================================================
+    // DECODE FRAME
+    // ========================================================
+
     const png =
       await sharp(
         gif,
         {
           animated: true,
+
           page: frame,
+
           pages: 1
         }
       )
-        .png()
-        .toBuffer();
 
+      // Без изменения размеров.
+      // Никакого ресайза.
+      //
+      // compressionLevel 0:
+      // максимально быстрая упаковка PNG.
+      .png({
+        compressionLevel: 0,
+        adaptiveFiltering: false
+      })
+
+      .toBuffer();
+
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
 
     res.setHeader(
       "Content-Type",
@@ -205,9 +331,13 @@ export default async function handler(req, res) {
     );
 
 
+    // Кэшируем конкретный кадр.
+    //
+    // Это сильно ускоряет повторное переключение
+    // по timeline.
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=30, stale-while-revalidate=120"
+      "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
     );
 
 
