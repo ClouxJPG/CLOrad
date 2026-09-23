@@ -1940,7 +1940,23 @@ let activeProduct = null;
 let activeFrames = [];
 let activeLayer = null;
 let activeMetadata = null;
+
+/*
+   activeRequest —
+   отменяет старые загрузки продукта.
+
+   activeFrameRequest —
+   отдельно отменяет старые загрузки
+   отдельных кадров.
+
+   Это важно при быстром движении
+   таймлайна: старый кадр больше
+   не сможет добавить свой слой
+   поверх нового.
+*/
+
 let activeRequest = 0;
+let activeFrameRequest = 0;
 
 
 /* =========================================================
@@ -2745,9 +2761,17 @@ function removeActiveLayer(){
     activeLayer
   ){
 
-    map.removeLayer(
-      activeLayer
-    );
+    if(
+      map.hasLayer(
+        activeLayer
+      )
+    ){
+
+      map.removeLayer(
+        activeLayer
+      );
+
+    }
 
     activeLayer =
       null;
@@ -2765,6 +2789,19 @@ async function loadFrame(
   frame,
   requestId
 ){
+
+  /*
+     Каждый новый запрос кадра получает
+     собственный номер.
+
+     Если пользователь быстро двигает
+     таймлайн, старые запросы больше
+     не смогут создать второй слой.
+  */
+
+  const frameRequestId =
+    ++activeFrameRequest;
+
 
   if(
     requestId !== activeRequest
@@ -2787,8 +2824,16 @@ async function loadFrame(
   }
 
 
-  removeActiveLayer();
+  /*
+     Старый слой НЕ удаляем здесь.
 
+     Он остаётся видимым, пока новый
+     кадр полностью не скачан,
+     распакован и подготовлен.
+
+     Это убирает пустой экран
+     между кадрами.
+  */
 
   const response =
     await fetchWithTimeout(
@@ -2801,6 +2846,21 @@ async function loadFrame(
       },
       60000
     );
+
+
+  /*
+     Проверяем актуальность сразу
+     после network await.
+  */
+
+  if(
+    requestId !== activeRequest ||
+    frameRequestId !== activeFrameRequest
+  ){
+
+    return;
+
+  }
 
 
   if(
@@ -2819,8 +2879,14 @@ async function loadFrame(
     await response.arrayBuffer();
 
 
+  /*
+     Пользователь мог выбрать другой
+     кадр во время скачивания.
+  */
+
   if(
-    requestId !== activeRequest
+    requestId !== activeRequest ||
+    frameRequestId !== activeFrameRequest
   ){
 
     return;
@@ -2834,13 +2900,22 @@ async function loadFrame(
     );
 
 
+  /*
+     Проверяем ещё раз после декодирования.
+  */
+
   if(
-    requestId !== activeRequest
+    requestId !== activeRequest ||
+    frameRequestId !== activeFrameRequest
   ){
 
-    URL.revokeObjectURL(
-      result.url
-    );
+    try{
+
+      URL.revokeObjectURL(
+        result.url
+      );
+
+    }catch{}
 
     return;
 
@@ -2856,9 +2931,13 @@ async function loadFrame(
     !box
   ){
 
-    URL.revokeObjectURL(
-      result.url
-    );
+    try{
+
+      URL.revokeObjectURL(
+        result.url
+      );
+
+    }catch{}
 
     throw new Error(
       "В RDR отсутствует box"
@@ -2873,6 +2952,10 @@ async function loadFrame(
     );
 
 
+  const oldLayer =
+    activeLayer;
+
+
   const layer =
     L.imageOverlay(
       result.url,
@@ -2880,10 +2963,40 @@ async function loadFrame(
       {
         opacity:1,
         interactive:false,
-        crossOrigin:true
+        crossOrigin:true,
+        zIndex:5,
+        className:"clorad-radar-raster"
       }
     );
 
+
+  /*
+     Ещё одна защита от устаревшего
+     кадра перед добавлением на карту.
+  */
+
+  if(
+    requestId !== activeRequest ||
+    frameRequestId !== activeFrameRequest
+  ){
+
+    try{
+
+      URL.revokeObjectURL(
+        result.url
+      );
+
+    }catch{}
+
+    return;
+
+  }
+
+
+  /*
+     Новый слой становится активным
+     только после всех проверок.
+  */
 
   activeLayer =
     layer;
@@ -2894,15 +3007,42 @@ async function loadFrame(
   );
 
 
+  /*
+     Теперь старый слой можно удалить.
+
+     Таким образом одновременно
+     существует максимум один
+     iDarkMeteo-слой.
+  */
+
+  if(
+    oldLayer &&
+    oldLayer !== layer &&
+    map.hasLayer(oldLayer)
+  ){
+
+    map.removeLayer(
+      oldLayer
+    );
+
+  }
+
+
   $("timeLabel").textContent =
     formatFrameTime(
       frame.t
     );
 
 
+  $("intensityValue").textContent =
+    activeProduct === "rain"
+      ? "мм/ч"
+      : "—";
+
+
   /*
-     Освобождаем старый blob URL
-     после удаления слоя.
+     Освобождаем blob URL после
+     удаления соответствующего слоя.
   */
 
   layer.once(
@@ -2910,24 +3050,15 @@ async function loadFrame(
     () => {
 
       try{
+
         URL.revokeObjectURL(
           result.url
         );
+
       }catch{}
 
     }
   );
-
-
-  /*
-     В интенсивности показываем
-     единицы продукта.
-  */
-
-  $("intensityValue").textContent =
-    activeProduct === "rain"
-      ? "мм/ч"
-      : "—";
 
 }
 
@@ -2955,6 +3086,16 @@ async function loadProduct(
 
   const requestId =
     ++activeRequest;
+
+
+  /*
+     При смене продукта старые
+     запросы кадров также становятся
+     недействительными.
+  */
+
+  activeFrameRequest++;
+
 
   activeProduct =
     productName;
@@ -3045,6 +3186,15 @@ async function loadProduct(
 
     const metadata =
       await response.json();
+
+
+    if(
+      requestId !== activeRequest
+    ){
+
+      return;
+
+    }
 
 
     if(
@@ -3243,6 +3393,16 @@ async function loadProduct(
 
 function stopRadar(){
 
+  /*
+     Отменяем все предыдущие запросы
+     продукта и кадров.
+  */
+
+  activeRequest++;
+
+  activeFrameRequest++;
+
+
   activeProduct =
     null;
 
@@ -3252,8 +3412,36 @@ function stopRadar(){
   activeMetadata =
     null;
 
-  activeRequest++;
 
+  /*
+     Останавливаем воспроизведение,
+     если оно было запущено.
+  */
+
+  if(
+    playing
+  ){
+
+    playing =
+      false;
+
+    clearInterval(
+      playTimer
+    );
+
+    playTimer =
+      null;
+
+    $("play").innerHTML =
+      '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+
+  }
+
+
+  /*
+     Удаляем единственный активный
+     iDarkMeteo-слой.
+  */
 
   removeActiveLayer();
 
@@ -3283,6 +3471,18 @@ function stopRadar(){
 }
 
 
+/*
+   Делаем функцию доступной
+   для gif-radar.js.
+
+   При включении GIF он сможет
+   полностью остановить iDarkMeteo.
+*/
+
+window.CLOradStopRadar =
+  stopRadar;
+
+
 /* =========================================================
    RAIN BUTTON
 ========================================================= */
@@ -3291,6 +3491,11 @@ $("rainProduct").onclick =
   event => {
 
     event.stopPropagation();
+
+    /*
+       Если GIF активен, gif-radar.js
+       перехватит переключение раньше.
+    */
 
     setActiveNav(
       $("rainProduct")
@@ -3350,6 +3555,36 @@ navButtons.forEach(
       "click",
       () => {
 
+        /*
+           Если активен GIF,
+           перед переходом на другой
+           раздел останавливаем его.
+
+           layersNav специально исключён:
+           открытие "Слои" не должно
+           выключать GIF.
+        */
+
+        if(
+          typeof window.CLOradDeactivateGIF ===
+          "function"
+        ){
+
+          window.CLOradDeactivateGIF();
+
+        }
+
+
+        if(
+          typeof window.CLOradStopRadar ===
+          "function"
+        ){
+
+          window.CLOradStopRadar();
+
+        }
+
+
         setActiveNav(
           button
         );
@@ -3371,6 +3606,25 @@ navButtons.forEach(
 
 $("range").oninput =
   async () => {
+
+    /*
+       Если gif-radar.js активен,
+       он сам обрабатывает таймлайн.
+
+       Этот обработчик нужен только
+       для iDarkMeteo.
+    */
+
+    if(
+      typeof window.CLOradGIFActive ===
+      "function" &&
+      window.CLOradGIFActive()
+    ){
+
+      return;
+
+    }
+
 
     if(
       !activeProduct ||
@@ -3455,6 +3709,22 @@ let playTimer = null;
 
 $("play").onclick =
   () => {
+
+    /*
+       GIF имеет собственный обработчик
+       в gif-radar.js.
+    */
+
+    if(
+      typeof window.CLOradGIFActive ===
+      "function" &&
+      window.CLOradGIFActive()
+    ){
+
+      return;
+
+    }
+
 
     if(
       !activeFrames.length
@@ -3569,6 +3839,12 @@ activeLayer =
 activeMetadata =
   null;
 
+activeRequest =
+  0;
+
+activeFrameRequest =
+  0;
+
 $("timeLabel").textContent =
   "Радар не подключён";
 
@@ -3606,7 +3882,6 @@ setTimeout(
 
 </script>
 
-<!-- CLOrad Lightning -->
 <!-- CLOrad Lightning -->
 <script src="lightning.js"></script>
 
