@@ -1,135 +1,186 @@
 // ============================================================
 // CLOrad — Meteoinfo GIF Radar API
-// Server-side GIF decoding via Sharp
-//
-// Быстрая схема:
-//
-// Meteoinfo GIF
-//      ↓
-// Vercel memory cache
-//      ↓
-// Sharp
-//      ↓
-// PNG frame
-//      ↓
-// Leaflet
-//
-// GIF НЕ сохраняется на диск.
-// После смены исходного GIF старый buffer исчезает
-// из памяти при обновлении cache.
+// Server-side GIF -> PNG
 // ============================================================
 
 import sharp from "sharp";
+
+
+// ============================================================
+// SOURCE
+// ============================================================
 
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
 
 // ============================================================
-// SERVER MEMORY CACHE
+// SERVER CACHE
+//
+// Не скачиваем один и тот же GIF заново на каждый кадр.
 // ============================================================
 
-let gifCache = null;
-
-let gifCacheTime = 0;
-
-let gifLoading = null;
+const GIF_CACHE_MS =
+  30000;
 
 
-// GIF держим в памяти максимум 60 секунд.
-// Это НЕ постоянное хранилище.
-const GIF_CACHE_MS = 60 * 1000;
+let cachedGIF =
+  null;
+
+
+let cachedAt =
+  0;
+
+
+let loadingGIF =
+  null;
 
 
 // ============================================================
-// СКАЧИВАНИЕ GIF
+// GET GIF
 // ============================================================
 
-async function downloadGIF() {
+async function getGIF(){
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  // Есть свежий GIF в памяти
-  if (
-    gifCache &&
-    now - gifCacheTime < GIF_CACHE_MS
-  ) {
-    return gifCache;
+
+  if(
+    cachedGIF &&
+    now - cachedAt <
+      GIF_CACHE_MS
+  ){
+
+    return cachedGIF;
+
   }
 
 
-  // Если другой запрос уже скачивает GIF —
-  // ждём его, а не создаём второй запрос.
-  if (gifLoading) {
-    return gifLoading;
+  /*
+   * Если другой запрос уже скачивает GIF,
+   * ждём именно его.
+   */
+
+  if(loadingGIF){
+
+    return loadingGIF;
+
   }
 
 
-  gifLoading = (async () => {
+  loadingGIF =
+    (async function(){
 
-    const response = await fetch(
-      SOURCE_GIF,
-      {
-        method: "GET",
+      const response =
+        await fetch(
+          SOURCE_GIF,
+          {
+            method:"GET",
 
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept":
-            "image/gif,image/*,*/*",
-          "Referer":
-            "https://meteoinfo.ru/radanim"
-        },
+            headers:{
+              "User-Agent":
+                "Mozilla/5.0",
 
-        cache: "no-store"
+              "Accept":
+                "image/gif,*/*",
+
+              "Referer":
+                "https://meteoinfo.ru/radanim"
+            },
+
+            cache:"no-store"
+          }
+        );
+
+
+      if(
+        !response.ok
+      ){
+
+        throw new Error(
+          "Meteoinfo HTTP " +
+          response.status
+        );
+
       }
-    );
 
 
-    if (!response.ok) {
-
-      throw new Error(
-        "Meteoinfo HTTP " +
-        response.status
-      );
-
-    }
+      const arrayBuffer =
+        await response.arrayBuffer();
 
 
-    const arrayBuffer =
-      await response.arrayBuffer();
+      const buffer =
+        Buffer.from(
+          arrayBuffer
+        );
 
 
-    const buffer =
-      Buffer.from(arrayBuffer);
+      if(
+        !buffer.length
+      ){
+
+        throw new Error(
+          "Meteoinfo вернул пустой GIF"
+        );
+
+      }
 
 
-    if (!buffer.length) {
-      throw new Error(
-        "Meteoinfo вернул пустой GIF"
-      );
-    }
+      cachedGIF =
+        buffer;
 
 
-    // Новый GIF заменяет старый.
-    gifCache = buffer;
-    gifCacheTime = Date.now();
+      cachedAt =
+        Date.now();
 
 
-    return buffer;
+      return buffer;
 
-  })();
+    })();
 
 
-  try {
+  try{
 
-    return await gifLoading;
+    return await loadingGIF;
 
-  } finally {
+  }finally{
 
-    gifLoading = null;
+    loadingGIF =
+      null;
 
   }
+
+}
+
+
+// ============================================================
+// HEADERS
+// ============================================================
+
+function setCORS(res){
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+}
+
+
+function setCache(
+  res
+){
+
+  /*
+   * Браузер может держать кадр 5 секунд.
+   * Vercel Edge/CDN — 30 секунд.
+   */
+
+  res.setHeader(
+    "Cache-Control",
+    "public, max-age=5, s-maxage=30, stale-while-revalidate=60"
+  );
 
 }
 
@@ -141,13 +192,14 @@ async function downloadGIF() {
 export default async function handler(
   req,
   res
-) {
+){
 
-  try {
+  try{
 
     const mode =
       String(
-        req.query?.mode || ""
+        req.query?.mode ||
+        ""
       );
 
 
@@ -157,34 +209,42 @@ export default async function handler(
       );
 
 
+    // ========================================================
+    // GET GIF
+    // ========================================================
+
     const gif =
-      await downloadGIF();
+      await getGIF();
 
 
     // ========================================================
     // META
     // ========================================================
 
-    if (mode === "meta") {
+    if(
+      mode === "meta"
+    ){
 
       const metadata =
         await sharp(
           gif,
           {
-            animated: true
+            animated:true
           }
         ).metadata();
 
 
-      const pages =
+      const frames =
         Number(
-          metadata.pages || 1
+          metadata.pages ||
+          1
         );
 
 
       const width =
         Number(
-          metadata.width || 0
+          metadata.width ||
+          0
         );
 
 
@@ -204,79 +264,84 @@ export default async function handler(
           : [];
 
 
+      setCORS(res);
+
+      setCache(res);
+
+
       res.setHeader(
         "Content-Type",
         "application/json; charset=utf-8"
       );
 
 
-      res.setHeader(
-        "Cache-Control",
-        "public, max-age=30, s-maxage=30, stale-while-revalidate=120"
-      );
+      return res
+        .status(200)
+        .json({
 
+          ok:true,
 
-      res.setHeader(
-        "Access-Control-Allow-Origin",
-        "*"
-      );
+          frames,
 
+          width,
 
-      return res.status(200).json({
+          height,
 
-        ok: true,
+          delays
 
-        frames: pages,
-
-        width,
-
-        height,
-
-        delays
-
-      });
+        });
 
     }
 
 
     // ========================================================
-    // FRAME
+    // FRAME NUMBER
     // ========================================================
 
-    if (
+    if(
       !Number.isInteger(
         requestedFrame
       )
-    ) {
+    ){
 
-      return res.status(400).json({
+      setCORS(res);
 
-        error:
-          "Укажи номер кадра: ?frame=0"
+      return res
+        .status(400)
+        .json({
 
-      });
+          error:
+            "Укажи номер кадра: ?frame=0"
+
+        });
 
     }
 
+
+    // ========================================================
+    // META FOR FRAME LIMIT
+    // ========================================================
 
     const metadata =
       await sharp(
         gif,
         {
-          animated: true
+          animated:true
         }
       ).metadata();
 
 
     const pages =
       Number(
-        metadata.pages || 1
+        metadata.pages ||
+        1
       );
 
 
     const frame =
       Math.max(
         0,
+
         Math.min(
           requestedFrame,
           pages - 1
@@ -285,37 +350,56 @@ export default async function handler(
 
 
     // ========================================================
-    // DECODE FRAME
+    // EXTRACT FRAME
     // ========================================================
+
+    /*
+     * ВАЖНО:
+     *
+     * palette:false
+     * -> не превращаем результат обратно
+     *    в ограниченную PNG-палитру.
+     *
+     * compressionLevel:0
+     * -> минимальная работа CPU,
+     *    PNG остаётся lossless.
+     *
+     * adaptiveFiltering:false
+     * -> не добавляем дополнительную
+     *    обработку изображения.
+     */
 
     const png =
       await sharp(
         gif,
         {
-          animated: true,
+          animated:true,
 
-          page: frame,
+          page:frame,
 
-          pages: 1
+          pages:1
         }
       )
+        .png({
 
-      // Без изменения размеров.
-      // Никакого ресайза.
-      //
-      // compressionLevel 0:
-      // максимально быстрая упаковка PNG.
-      .png({
-        compressionLevel: 0,
-        adaptiveFiltering: false
-      })
+          compressionLevel:0,
 
-      .toBuffer();
+          adaptiveFiltering:false,
+
+          palette:false
+
+        })
+        .toBuffer();
 
 
     // ========================================================
     // RESPONSE
     // ========================================================
+
+    setCORS(res);
+
+    setCache(res);
+
 
     res.setHeader(
       "Content-Type",
@@ -331,28 +415,14 @@ export default async function handler(
     );
 
 
-    // Кэшируем конкретный кадр.
-    //
-    // Это сильно ускоряет повторное переключение
-    // по timeline.
-    res.setHeader(
-      "Cache-Control",
-      "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
-    );
-
-
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      "*"
-    );
-
-
     return res
       .status(200)
-      .send(png);
+      .send(
+        png
+      );
 
 
-  } catch (error) {
+  }catch(error){
 
     console.error(
       "CLOrad radar-gif error:",
@@ -360,16 +430,21 @@ export default async function handler(
     );
 
 
-    return res.status(500).json({
+    setCORS(res);
 
-      error:
-        "GIF API error",
 
-      message:
-        error?.message ||
-        String(error)
+    return res
+      .status(500)
+      .json({
 
-    });
+        error:
+          "GIF API error",
+
+        message:
+          error?.message ||
+          String(error)
+
+      });
 
   }
 
