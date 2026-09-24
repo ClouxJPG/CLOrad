@@ -1,7 +1,7 @@
 /* =========================================================
    CLOrad — Meteoinfo GIF Radar
-   Сервер декодирует GIF → PNG.
-   Телефон получает уже готовые кадры.
+   Сервер декодирует GIF → прозрачный PNG.
+   Leaflet получает уже подготовленный радарный растр.
 ========================================================= */
 
 (() => {
@@ -16,26 +16,20 @@
   const API =
     "/api/radar-gif";
 
-  /*
-     Географическая привязка исходной карты Meteoinfo.
 
-     Это калибровочные границы исходного изображения.
+  /*
+     Географический охват исходной карты Meteoinfo.
+
+     ВАЖНО:
+     Мы больше НЕ вращаем изображение.
+
+     Leaflet сам масштабирует этот слой при zoom.
   */
 
   const GIF_BOUNDS = [
     [40, 20],
     [70, 70]
   ];
-
-  /*
-     Небольшая коррекция наклона исходной карты.
-
-     Если направление наклона окажется противоположным,
-     меняется только знак этого числа.
-  */
-
-  const GIF_ROTATION_DEG =
-    -1.2;
 
 
   /* =======================================================
@@ -98,7 +92,7 @@
 
 
   /* =======================================================
-     PIXEL-PERFECT CSS
+     RASTER CSS
   ======================================================= */
 
   function installGIFStyle(){
@@ -115,7 +109,10 @@
 
 
     const style =
-      document.createElement("style");
+      document.createElement(
+        "style"
+      );
+
 
     style.id =
       "clorad-gif-style";
@@ -124,11 +121,22 @@
     style.textContent = `
 
       .clorad-gif-radar-image{
+        position:absolute !important;
+        display:block !important;
+
+        pointer-events:none !important;
+        user-select:none !important;
+        -webkit-user-drag:none !important;
+
         image-rendering:pixelated !important;
         image-rendering:crisp-edges !important;
-        -webkit-user-drag:none !important;
-        user-select:none !important;
-        pointer-events:none !important;
+
+        transform:none !important;
+
+        backface-visibility:hidden !important;
+        -webkit-backface-visibility:hidden !important;
+
+        will-change:left,top,width,height;
       }
 
     `;
@@ -142,10 +150,10 @@
 
 
   /* =======================================================
-     ROTATED IMAGE LAYER
+     DOUBLE-BUFFER IMAGE LAYER
   ======================================================= */
 
-  const RotatedImageLayer =
+  const GIFImageLayer =
     L.Layer.extend({
 
       initialize(
@@ -165,6 +173,12 @@
         this.options =
           options;
 
+        this._front =
+          null;
+
+        this._back =
+          null;
+
       },
 
 
@@ -174,27 +188,129 @@
           map;
 
 
+        const pane =
+          map.getPanes()
+            .overlayPane;
+
+
+        this._front =
+          this._createImage(
+            pane
+          );
+
+
+        this._back =
+          this._createImage(
+            pane
+          );
+
+
+        /*
+           Сначала показываем front.
+        */
+
+        this._front.style.opacity =
+          "0";
+
+        this._back.style.opacity =
+          "0";
+
+
+        this._reset();
+
+
+        /*
+           Загружаем первый кадр.
+        */
+
+        this._loadInto(
+          this._front,
+          this._url,
+          true
+        );
+
+      },
+
+
+      onRemove(){
+
+        if(
+          this._front
+        ){
+
+          this._front.remove();
+
+        }
+
+
+        if(
+          this._back
+        ){
+
+          this._back.remove();
+
+        }
+
+
+        this._front =
+          null;
+
+        this._back =
+          null;
+
+        this._map =
+          null;
+
+      },
+
+
+      getEvents(){
+
+        return {
+
+          /*
+             Только после окончания zoom.
+
+             НИКАКОГО zoomanim.
+
+             Поэтому слой не борется
+             с анимацией Leaflet.
+          */
+
+          zoomend:
+            this._reset,
+
+          viewreset:
+            this._reset,
+
+          moveend:
+            this._reset
+
+        };
+
+      },
+
+
+      _createImage(
+        pane
+      ){
+
         const img =
-          this._image =
-            L.DomUtil.create(
-              "img",
-              "clorad-gif-radar-image",
-              map.getPanes().overlayPane
-            );
+          L.DomUtil.create(
+            "img",
+            "clorad-gif-radar-image",
+            pane
+          );
 
-
-        img.src =
-          this._url;
 
         img.alt =
           "";
 
-        img.decoding =
-          "async";
-
         img.draggable =
           false;
 
+        img.decoding =
+          "async";
 
         img.style.position =
           "absolute";
@@ -208,11 +324,8 @@
         img.style.imageRendering =
           "pixelated";
 
-        img.style.transformOrigin =
-          "50% 50%";
-
-        img.style.willChange =
-          "transform,left,top,width,height";
+        img.style.opacity =
+          "0";
 
         img.style.zIndex =
           String(
@@ -220,77 +333,19 @@
           );
 
 
-        this._reset();
+        return img;
 
       },
 
 
-      onRemove(){
-
-        if(
-          this._image
-        ){
-
-          this._image.remove();
-
-        }
-
-
-        this._image =
-          null;
-
-        this._map =
-          null;
-
-      },
-
-
-      getEvents(){
-
-        return {
-
-          zoom:
-            this._reset,
-
-          viewreset:
-            this._reset,
-
-          zoomanim:
-            this._animateZoom
-
-        };
-
-      },
-
-
-      setUrl(url){
-
-        this._url =
-          url;
-
-
-        if(
-          this._image
-        ){
-
-          this._image.src =
-            url;
-
-        }
-
-
-        return this;
-
-      },
-
-
-      _setPosition(
-        nw,
-        se
+      _loadInto(
+        img,
+        url,
+        first = false
       ){
 
         if(
-          !this._image
+          !img
         ){
 
           return;
@@ -298,38 +353,196 @@
         }
 
 
-        const width =
-          Math.max(
-            1,
-            se.x - nw.x
-          );
+        const generation =
+          ++this._generation;
 
 
-        const height =
-          Math.max(
-            1,
-            se.y - nw.y
-          );
+        img.onload =
+          () => {
+
+            /*
+               Старый запрос уже не актуален.
+            */
+
+            if(
+              generation !==
+              this._generation
+            ){
+
+              return;
+
+            }
 
 
-        this._image.style.left =
-          `${nw.x}px`;
+            /*
+               Сначала выставляем геометрию.
+            */
+
+            this._reset();
 
 
-        this._image.style.top =
-          `${nw.y}px`;
+            /*
+               Затем показываем готовый кадр.
+            */
+
+            img.style.opacity =
+              "1";
 
 
-        this._image.style.width =
-          `${width}px`;
+            /*
+               Если это новый back/front,
+               второй кадр скрываем.
+            */
+
+            if(
+              this._front === img
+            ){
+
+              if(
+                this._back
+              ){
+
+                this._back.style.opacity =
+                  "0";
+
+              }
+
+            }else{
+
+              if(
+                this._front
+              ){
+
+                this._front.style.opacity =
+                  "0";
+
+              }
+
+            }
+
+          };
 
 
-        this._image.style.height =
-          `${height}px`;
+        img.onerror =
+          () => {
+
+            console.error(
+              "CLOrad: ошибка GIF image"
+            );
+
+          };
 
 
-        this._image.style.transform =
-          `rotate(${GIF_ROTATION_DEG}deg)`;
+        img.src =
+          url;
+
+      },
+
+
+      setUrl(
+        url
+      ){
+
+        this._url =
+          url;
+
+
+        /*
+           Если front сейчас отображается,
+           новый кадр загружаем в back.
+
+           Если back отображается,
+           загружаем в front.
+
+           Старый кадр остаётся видимым
+           до полного onload нового.
+        */
+
+        const frontVisible =
+          this._front &&
+          this._front.style.opacity ===
+            "1";
+
+
+        const target =
+          frontVisible
+            ? this._back
+            : this._front;
+
+
+        if(
+          !target
+        ){
+
+          return this;
+
+        }
+
+
+        const oldFront =
+          this._front;
+
+
+        const oldBack =
+          this._back;
+
+
+        const generation =
+          ++this._generation;
+
+
+        target.onload =
+          () => {
+
+            if(
+              generation !==
+              this._generation
+            ){
+
+              return;
+
+            }
+
+
+            this._reset();
+
+
+            target.style.opacity =
+              "1";
+
+
+            if(
+              target === oldFront
+            ){
+
+              oldBack.style.opacity =
+                "0";
+
+            }else{
+
+              oldFront.style.opacity =
+                "0";
+
+            }
+
+          };
+
+
+        target.onerror =
+          () => {
+
+            console.error(
+              "CLOrad: ошибка загрузки GIF кадра"
+            );
+
+          };
+
+
+        target.src =
+          url;
+
+
+        return this;
 
       },
 
@@ -337,8 +550,7 @@
       _reset(){
 
         if(
-          !this._map ||
-          !this._image
+          !this._map
         ){
 
           return;
@@ -358,45 +570,52 @@
           );
 
 
-        this._setPosition(
-          nw,
-          se
-        );
-
-      },
-
-
-      _animateZoom(e){
-
-        if(
-          !this._map ||
-          !this._image
-        ){
-
-          return;
-
-        }
-
-
-        const nw =
-          this._map._latLngToNewLayerPoint(
-            this._bounds.getNorthWest(),
-            e.zoom,
-            e.center
+        const width =
+          Math.max(
+            1,
+            se.x - nw.x
           );
 
 
-        const se =
-          this._map._latLngToNewLayerPoint(
-            this._bounds.getSouthEast(),
-            e.zoom,
-            e.center
+        const height =
+          Math.max(
+            1,
+            se.y - nw.y
           );
 
 
-        this._setPosition(
-          nw,
-          se
+        [
+          this._front,
+          this._back
+        ]
+        .forEach(
+          img => {
+
+            if(
+              !img
+            ){
+
+              return;
+
+            }
+
+
+            img.style.left =
+              `${nw.x}px`;
+
+
+            img.style.top =
+              `${nw.y}px`;
+
+
+            img.style.width =
+              `${width}px`;
+
+
+            img.style.height =
+              `${height}px`;
+
+          }
         );
 
       }
@@ -408,10 +627,14 @@
      LOAD IMAGE
   ======================================================= */
 
-  function loadImage(url){
+  function loadImage(
+    url
+  ){
 
     if(
-      gifImageCache.has(url)
+      gifImageCache.has(
+        url
+      )
     ){
 
       return gifImageCache.get(
@@ -430,6 +653,7 @@
 
           const img =
             new Image();
+
 
           img.decoding =
             "async";
@@ -523,9 +747,13 @@
 
     if(
       !Number.isInteger(
-        Number(data.frames)
+        Number(
+          data.frames
+        )
       ) ||
-      Number(data.frames) < 1
+      Number(
+        data.frames
+      ) < 1
     ){
 
       throw new Error(
@@ -545,7 +773,7 @@
 
 
   /* =======================================================
-     BUILD FRAME URLS
+     FRAME URLS
   ======================================================= */
 
   function buildFrameUrls(
@@ -554,6 +782,7 @@
 
     const result =
       [];
+
 
     for(
       let i = 0;
@@ -584,16 +813,6 @@
     const result =
       [];
 
-
-    /*
-       Meteoinfo описывает GIF как
-       последние 3 часа.
-
-       Сам endpoint кадров абсолютные
-       timestamp каждого кадра не отдаёт,
-       поэтому здесь используется
-       расчётная временная шкала.
-    */
 
     const newest =
       new Date();
@@ -663,7 +882,7 @@
 
 
   /* =======================================================
-     UPDATE TIMELINE
+     TIMELINE
   ======================================================= */
 
   function updateGIFTimeline(
@@ -685,6 +904,7 @@
 
     $("range").min =
       0;
+
 
     $("range").max =
       Math.max(
@@ -714,6 +934,7 @@
         "—"
       ) +
       "</span>" +
+
       "<span>" +
       (
         gifFrameTimes[
@@ -736,7 +957,7 @@
 
 
   /* =======================================================
-     PRELOAD NEIGHBOURS
+     PRELOAD
   ======================================================= */
 
   function preloadGIFNeighbors(
@@ -763,7 +984,8 @@
 
           loadImage(
             gifFrames[i]
-          ).catch(
+          )
+          .catch(
             () => {}
           );
 
@@ -794,6 +1016,7 @@
     index =
       Math.max(
         0,
+
         Math.min(
           Number(index),
           gifFrames.length - 1
@@ -814,6 +1037,14 @@
 
     try{
 
+      /*
+         Сначала полностью загружаем
+         PNG в память браузера.
+
+         Поэтому новый кадр не может
+         появиться наполовину.
+      */
+
       await loadImage(
         url
       );
@@ -821,7 +1052,8 @@
 
       if(
         !gifActive ||
-        requestId !== gifFrameRequest
+        requestId !==
+          gifFrameRequest
       ){
 
         return;
@@ -830,10 +1062,7 @@
 
 
       /*
-         Один постоянный слой.
-
-         При смене кадра сам Leaflet-слой
-         не уничтожается.
+         Первый слой.
       */
 
       if(
@@ -841,7 +1070,7 @@
       ){
 
         gifLayer =
-          new RotatedImageLayer(
+          new GIFImageLayer(
             url,
             GIF_BOUNDS,
             {
@@ -856,11 +1085,14 @@
 
       }else{
 
+        /*
+           Старый кадр остаётся видимым,
+           пока новый не загрузится.
+        */
+
         gifLayer.setUrl(
           url
         );
-
-        gifLayer._reset();
 
       }
 
@@ -925,13 +1157,11 @@
     }
 
 
-    gifActive =
-      true;
-
-
     /*
-       Останавливаем iDarkMeteo
-       ДО загрузки GIF.
+       Самое важное:
+
+       сначала полностью выключаем
+       iDarkMeteo.
     */
 
     if(
@@ -942,6 +1172,14 @@
       window.CLOradStopRadar();
 
     }
+
+
+    /*
+       Теперь активируем GIF.
+    */
+
+    gifActive =
+      true;
 
 
     setActiveNav(
@@ -991,11 +1229,6 @@
         );
 
 
-      /*
-         Последний кадр =
-         самый новый.
-      */
-
       const newestIndex =
         gifFrames.length - 1;
 
@@ -1003,8 +1236,10 @@
       $("range").min =
         0;
 
+
       $("range").max =
         newestIndex;
+
 
       $("range").value =
         newestIndex;
@@ -1061,21 +1296,15 @@
 
   function deactivateGIF(){
 
-    if(
-      !gifActive &&
-      !gifLayer
-    ){
+    /*
+       Отменяем ВСЕ старые async frame requests.
+    */
 
-      return;
-
-    }
+    gifFrameRequest++;
 
 
     gifActive =
       false;
-
-
-    gifFrameRequest++;
 
 
     stopGIFPlayback();
@@ -1083,6 +1312,7 @@
 
     if(
       gifLayer &&
+      window.map &&
       window.map.hasLayer(
         gifLayer
       )
@@ -1102,8 +1332,10 @@
     gifFrames =
       [];
 
+
     gifFrameTimes =
       [];
+
 
     gifMeta =
       null;
@@ -1112,29 +1344,63 @@
     gifImageCache.clear();
 
 
-    $("range").max =
-      0;
+    if(
+      $("range")
+    ){
 
-    $("range").value =
-      0;
+      $("range").max =
+        0;
 
-    $("times").textContent =
-      "";
+      $("range").value =
+        0;
 
-    $("timeLabel").textContent =
-      "Радар не подключён";
+    }
 
-    $("framesInfo").textContent =
-      "Радар пока не подключён";
 
-    $("intensityValue").textContent =
-      "Нет данных";
+    if(
+      $("times")
+    ){
+
+      $("times").textContent =
+        "";
+
+    }
+
+
+    if(
+      $("timeLabel")
+    ){
+
+      $("timeLabel").textContent =
+        "Радар не подключён";
+
+    }
+
+
+    if(
+      $("framesInfo")
+    ){
+
+      $("framesInfo").textContent =
+        "Радар пока не подключён";
+
+    }
+
+
+    if(
+      $("intensityValue")
+    ){
+
+      $("intensityValue").textContent =
+        "Нет данных";
+
+    }
 
   }
 
 
   /* =======================================================
-     PLAY GIF
+     PLAY
   ======================================================= */
 
   function playGIF(){
@@ -1316,7 +1582,7 @@
 
 
   /* =======================================================
-     NAV ACTIVE
+     ACTIVE NAV
   ======================================================= */
 
   function setActiveNav(
@@ -1374,7 +1640,7 @@
 
 
   /* =======================================================
-     PLAY BUTTON
+     PLAY
   ======================================================= */
 
   $("play").addEventListener(
@@ -1392,6 +1658,7 @@
 
       event.stopImmediatePropagation();
 
+
       playGIF();
 
     },
@@ -1408,6 +1675,7 @@
     event => {
 
       event.stopPropagation();
+
 
       activateGIF();
 
@@ -1438,10 +1706,6 @@
       }
 
 
-      /*
-         Слои НЕ выключают GIF.
-      */
-
       if(
         button.id ===
         "layersNav"
@@ -1452,10 +1716,6 @@
       }
 
 
-      /*
-         Сам GIF не выключает себя.
-      */
-
       if(
         button ===
         gifButton
@@ -1465,11 +1725,6 @@
 
       }
 
-
-      /*
-         Любой другой раздел
-         выключает GIF.
-      */
 
       deactivateGIF();
 
