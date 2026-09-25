@@ -69,25 +69,17 @@ const CLORAD_PALETTE = [
 
 
 // ============================================================
-// FAST PALETTE LOOKUP
+// LIGHTWEIGHT PALETTE LOOKUP
 // ============================================================
 //
-// 64 × 64 × 64 = 262144 ячейки.
+// 32 × 32 × 32 = 32768 ячеек.
 //
-// Каждый RGB сначала переводится в 6-битные компоненты,
-// после чего мгновенно получает один из 19 цветов.
-//
-// Это намного дешевле, чем искать ближайший цвет среди
-// 19 вариантов для каждого из ~1.2 млн пикселей.
-//
-// Результат ВСЕГДА является индексом CLORAD_PALETTE.
+// Это специально маленькая таблица, чтобы Vercel не тратил
+// лишнее время при холодном запуске функции.
 // ============================================================
 
 const PALETTE_SIZE =
-  64;
-
-const PALETTE_SHIFT =
-  2;
+  32;
 
 const PALETTE_LOOKUP =
   new Uint8Array(
@@ -106,7 +98,7 @@ function buildPaletteLookup(){
   ){
 
     const r =
-      r6 * 4 + 2;
+      r6 * 8 + 4;
 
 
     for(
@@ -116,7 +108,7 @@ function buildPaletteLookup(){
     ){
 
       const g =
-        g6 * 4 + 2;
+        g6 * 8 + 4;
 
 
       for(
@@ -126,7 +118,7 @@ function buildPaletteLookup(){
       ){
 
         const b =
-          b6 * 4 + 2;
+          b6 * 8 + 4;
 
 
         let best =
@@ -209,7 +201,7 @@ function buildPaletteLookup(){
 buildPaletteLookup();
 
 
-function paletteIndex(
+function getPaletteIndex(
   r,
   g,
   b
@@ -217,16 +209,16 @@ function paletteIndex(
 
   const index =
     (
-      (r >> PALETTE_SHIFT) *
+      (r >> 3) *
       PALETTE_SIZE *
       PALETTE_SIZE
     ) +
     (
-      (g >> PALETTE_SHIFT) *
+      (g >> 3) *
       PALETTE_SIZE
     ) +
     (
-      b >> PALETTE_SHIFT
+      b >> 3
     );
 
 
@@ -319,6 +311,7 @@ function mercatorY(
     Math.PI /
     180;
 
+
   return Math.log(
     Math.tan(
       Math.PI / 4 +
@@ -342,45 +335,38 @@ function geoToSource(
     (lon - UC_LON) /
     US_LON;
 
+
   const y =
     (mercY - UC_MERC) /
     US_MERC;
 
 
-  const basis = [
+  const xx =
+    x * x;
 
-    1,
-    x,
-    y,
-    x * x,
-    x * y,
-    y * y
+  const xy =
+    x * y;
 
-  ];
+  const yy =
+    y * y;
 
 
-  let sx =
-    0;
+  const sx =
+    PX[0] +
+    PX[1] * x +
+    PX[2] * y +
+    PX[3] * xx +
+    PX[4] * xy +
+    PX[5] * yy;
 
-  let sy =
-    0;
 
-
-  for(
-    let i = 0;
-    i < 6;
-    i++
-  ){
-
-    sx +=
-      PX[i] *
-      basis[i];
-
-    sy +=
-      PY[i] *
-      basis[i];
-
-  }
+  const sy =
+    PY[0] +
+    PY[1] * x +
+    PY[2] * y +
+    PY[3] * xx +
+    PY[4] * xy +
+    PY[5] * yy;
 
 
   return [
@@ -408,12 +394,14 @@ function isRadarPixel(
       b
     );
 
+
   const min =
     Math.min(
       r,
       g,
       b
     );
+
 
   const chroma =
     max -
@@ -483,13 +471,13 @@ function isServiceArea(
     CALIBRATION_WIDTH /
     width;
 
+
   const sy =
     y *
     CALIBRATION_HEIGHT /
     height;
 
 
-  // Легенда слева сверху
   if(
     sx <= 145 &&
     sy <= 365
@@ -500,7 +488,6 @@ function isServiceArea(
   }
 
 
-  // Верхняя служебная область
   if(
     sy <= 58
   ){
@@ -510,7 +497,6 @@ function isServiceArea(
   }
 
 
-  // Логотип РГГ/ЦАО слева снизу
   if(
     sx <= 160 &&
     sy >= 965
@@ -521,7 +507,6 @@ function isServiceArea(
   }
 
 
-  // Нижняя служебная строка
   if(
     sy >= 1105
   ){
@@ -531,7 +516,6 @@ function isServiceArea(
   }
 
 
-  // Нижний правый timestamp
   if(
     sx >= 760 &&
     sy >= 1060
@@ -542,7 +526,6 @@ function isServiceArea(
   }
 
 
-  // Верхний правый timestamp
   if(
     sx >= 735 &&
     sy <= 65
@@ -600,6 +583,7 @@ async function getGIF(){
               "GET",
 
             headers:{
+
               "User-Agent":
                 "Mozilla/5.0",
 
@@ -651,8 +635,6 @@ async function getGIF(){
       }
 
 
-      // Новый GIF → старые обработанные кадры больше
-      // не нужны.
       processedFrameCache.clear();
 
       cachedMetadata =
@@ -661,6 +643,7 @@ async function getGIF(){
 
       cachedGIF =
         buffer;
+
 
       cachedAt =
         Date.now();
@@ -777,10 +760,6 @@ function fillSmallRadarHoles(
     );
 
 
-  // ----------------------------------------------------------
-  // INITIAL MASK
-  // ----------------------------------------------------------
-
   for(
     let i = 0;
     i < pixelCount;
@@ -808,17 +787,9 @@ function fillSmallRadarHoles(
   }
 
 
-  // ----------------------------------------------------------
-  // TWO SMALL PASSES
-  // ----------------------------------------------------------
-
-  const passes =
-    2;
-
-
   for(
     let pass = 0;
-    pass < passes;
+    pass < 2;
     pass++
   ){
 
@@ -924,8 +895,7 @@ function fillSmallRadarHoles(
         ){
 
           const cp =
-            candidate *
-            4;
+            candidate * 4;
 
 
           const cr =
@@ -948,8 +918,7 @@ function fillSmallRadarHoles(
           ){
 
             const op =
-              other *
-              4;
+              other * 4;
 
 
             if(
@@ -1064,23 +1033,7 @@ function fillSmallRadarHoles(
 
 
 // ============================================================
-// STRICT CLOrad PALETTE
-// ============================================================
-//
-// ВАЖНО:
-//
-// Эта функция вызывается ТОЛЬКО после:
-//
-// 1. геопривязки
-// 2. удаления служебных областей
-// 3. удаления моря/фона
-// 4. заполнения мелких дыр
-//
-// Поэтому фон НЕ превращается в цвет радара.
-//
-// Каждый оставшийся непрозрачный радарный пиксель получает
-// ровно один из 19 цветов CLOrad.
-//
+// STRICT PALETTE
 // ============================================================
 
 function enforceStrictPalette(
@@ -1123,10 +1076,7 @@ function enforceStrictPalette(
       buffer[p + 2];
 
 
-    // --------------------------------------------------------
-    // Повторно защищаемся от фона.
-    // --------------------------------------------------------
-
+    // Фон никогда не превращаем в радар.
     if(
       !isRadarPixel(
         r,
@@ -1143,8 +1093,8 @@ function enforceStrictPalette(
     }
 
 
-    const index =
-      paletteIndex(
+    const paletteIndex =
+      getPaletteIndex(
         r,
         g,
         b
@@ -1152,7 +1102,9 @@ function enforceStrictPalette(
 
 
     const color =
-      CLORAD_PALETTE[index];
+      CLORAD_PALETTE[
+        paletteIndex
+      ];
 
 
     buffer[p] =
@@ -1199,7 +1151,7 @@ async function renderFrame(
 
 
   // ----------------------------------------------------------
-  // DECODE
+  // DECODE GIF FRAME
   // ----------------------------------------------------------
 
   const decoded =
@@ -1229,8 +1181,10 @@ async function renderFrame(
   const width =
     decoded.info.width;
 
+
   const height =
     decoded.info.height;
+
 
   const source =
     decoded.data;
@@ -1258,10 +1212,12 @@ async function renderFrame(
   const east =
     GIF_BOUNDS.east;
 
+
   const southMerc =
     mercatorY(
       GIF_BOUNDS.south
     );
+
 
   const northMerc =
     mercatorY(
@@ -1450,7 +1406,7 @@ async function renderFrame(
 
 
   // ==========================================================
-  // STRICT PALETTE
+  // STRICT CLOrad PALETTE
   // ==========================================================
 
   enforceStrictPalette(
@@ -1460,9 +1416,9 @@ async function renderFrame(
   );
 
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // PNG
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const png =
     await sharp(
@@ -1488,9 +1444,9 @@ async function renderFrame(
     .toBuffer();
 
 
-  // ----------------------------------------------------------
-  // RAM CACHE
-  // ----------------------------------------------------------
+  // ==========================================================
+  // CACHE
+  // ==========================================================
 
   processedFrameCache.set(
     cacheKey,
@@ -1554,7 +1510,7 @@ export default async function handler(
 
 
     // --------------------------------------------------------
-    // GET GIF
+    // GIF
     // --------------------------------------------------------
 
     const gif =
@@ -1613,6 +1569,7 @@ export default async function handler(
       setCORS(
         res
       );
+
 
       setCache(
         res
@@ -1700,6 +1657,7 @@ export default async function handler(
     setCORS(
       res
     );
+
 
     setCache(
       res
