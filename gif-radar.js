@@ -1,8 +1,6 @@
 /* =========================================================
    CLOrad — Meteoinfo GIF Radar
-   Сервер декодирует GIF → прозрачный PNG.
-   Leaflet получает подготовленный радарный растр.
-========================================================= */
+   ========================================================= */
 
 (() => {
 
@@ -18,16 +16,21 @@
 
 
   /*
-     Временная географическая рамка исходной карты.
-
-     Она НЕ используется для ручного движения изображения.
-     Сам слой теперь является штатным Leaflet ImageOverlay,
-     поэтому zoom / drag / pinch идут синхронно с картой.
+     Уже перепроецированный Web Mercator PNG.
   */
 
   const GIF_BOUNDS = [
-    [40, 20],
-    [70, 70]
+
+    [
+      38.2155955810,
+      14.9892981264
+    ],
+
+    [
+      69.6543707199,
+      72.9237642948
+    ]
+
   ];
 
 
@@ -59,15 +62,22 @@
   let gifPlayTimer =
     null;
 
-  let gifFront =
-    null;
+  /*
+     ВАЖНО:
 
-  let gifBack =
+     Теперь существует только ОДИН
+     ImageOverlay на всё время работы GIF.
+
+     Мы больше НЕ создаём новый overlay
+     на каждый кадр.
+  */
+
+  let gifLayer =
     null;
 
 
   /* =======================================================
-     HELPERS
+     HELPER
   ======================================================= */
 
   const $ =
@@ -94,7 +104,7 @@
 
 
   /* =======================================================
-     CSS
+     STYLE
   ======================================================= */
 
   function installGIFStyle(){
@@ -123,17 +133,28 @@
     style.textContent = `
 
       .clorad-gif-radar-image{
-        image-rendering:pixelated !important;
-        image-rendering:crisp-edges !important;
 
-        pointer-events:none !important;
-        user-select:none !important;
-        -webkit-user-drag:none !important;
+        image-rendering:
+          pixelated !important;
 
-        max-width:none !important;
-        max-height:none !important;
+        image-rendering:
+          crisp-edges !important;
 
-        transform-origin:center center !important;
+        pointer-events:
+          none !important;
+
+        user-select:
+          none !important;
+
+        -webkit-user-drag:
+          none !important;
+
+        max-width:
+          none !important;
+
+        max-height:
+          none !important;
+
       }
 
     `;
@@ -147,7 +168,7 @@
 
 
   /* =======================================================
-     LOAD IMAGE
+     IMAGE PRELOAD
   ======================================================= */
 
   function loadImage(
@@ -237,8 +258,11 @@
       await fetch(
         `${API}?mode=meta`,
         {
-          method:"GET",
-          cache:"no-store"
+          method:
+            "GET",
+
+          cache:
+            "no-store"
         }
       );
 
@@ -280,7 +304,9 @@
 
 
     if(
-      !Number.isInteger(count) ||
+      !Number.isInteger(
+        count
+      ) ||
       count < 1
     ){
 
@@ -354,7 +380,8 @@
 
     newest.setMinutes(
       Math.floor(
-        newest.getMinutes() / 10
+        newest.getMinutes() /
+        10
       ) * 10
     );
 
@@ -384,7 +411,8 @@
       const date =
         new Date(
           newest.getTime() -
-          minutesAgo * 60000
+          minutesAgo *
+          60000
         );
 
 
@@ -392,10 +420,16 @@
         date.toLocaleTimeString(
           "ru-RU",
           {
-            hour:"2-digit",
-            minute:"2-digit",
+
+            hour:
+              "2-digit",
+
+            minute:
+              "2-digit",
+
             timeZone:
               "Europe/Moscow"
+
           }
         )
       );
@@ -484,7 +518,7 @@
 
 
   /* =======================================================
-     PRELOAD
+     PRELOAD NEIGHBORS
   ======================================================= */
 
   function preloadGIFNeighbors(
@@ -492,10 +526,12 @@
   ){
 
     [
+
       index - 2,
       index - 1,
       index + 1,
       index + 2
+
     ]
     .filter(
       i =>
@@ -519,21 +555,35 @@
 
 
   /* =======================================================
-     CREATE OVERLAY
+     CREATE SINGLE OVERLAY
   ======================================================= */
 
-  function createGIFOverlay(
-    url,
-    opacity
+  function createGIFLayer(
+    url
   ){
+
+    /*
+       Этот объект создаётся ОДИН РАЗ.
+
+       Leaflet дальше сам управляет:
+
+       zoom
+       zoom animation
+       drag
+       pinch
+       view reset
+
+       При смене кадра объект НЕ удаляется.
+    */
 
     const layer =
       L.imageOverlay(
         url,
         GIF_BOUNDS,
         {
+
           opacity:
-            opacity,
+            1,
 
           interactive:
             false,
@@ -543,20 +593,10 @@
 
           className:
             "clorad-gif-radar-image"
+
         }
       );
 
-
-    /*
-       Leaflet сам добавляет:
-
-       zoom
-       viewreset
-       zoomanim
-
-       Поэтому overlay физически следует
-       за картой во время движения и zoom.
-    */
 
     layer.addTo(
       window.map
@@ -604,14 +644,14 @@
       gifFrames[index];
 
 
-    showLoading();
-
-
     try{
 
       /*
-         Полностью загружаем PNG
-         до его показа.
+         Сначала полностью загружаем
+         PNG в память.
+
+         Поэтому текущий кадр
+         остаётся на экране.
       */
 
       await loadImage(
@@ -631,80 +671,59 @@
 
 
       /*
-         Первый кадр.
+         ПЕРВЫЙ КАДР
       */
 
       if(
-        !gifFront
+        !gifLayer
       ){
 
-        gifFront =
-          createGIFOverlay(
-            url,
-            1
+        gifLayer =
+          createGIFLayer(
+            url
           );
-
-      }else{
-
-        /*
-           Второй overlay загружается
-           поверх старого.
-
-           Старый кадр остаётся видимым
-           до полной готовности нового.
-        */
-
-        gifBack =
-          createGIFOverlay(
-            url,
-            0
-          );
-
-
-        const image =
-          gifBack.getElement();
-
-
-        image.onload =
-          () => {
-
-            if(
-              !gifActive ||
-              requestId !==
-                gifFrameRequest
-            ){
-
-              return;
-
-            }
-
-
-            gifBack.setOpacity(
-              1
-            );
-
-
-            if(
-              gifFront
-            ){
-
-              window.map.removeLayer(
-                gifFront
-              );
-
-            }
-
-
-            gifFront =
-              gifBack;
-
-
-            gifBack =
-              null;
-
-          };
 
       }
+
+
+      /*
+         ГЛАВНОЕ ИЗМЕНЕНИЕ:
+
+         НЕ:
+
+         removeLayer()
+         createLayer()
+         addTo()
+
+         А:
+
+         setUrl()
+
+         DOM-элемент остаётся тем же.
+         Его Leaflet transform остаётся тем же.
+      */
+
+      else{
+
+        gifLayer.setUrl(
+          url
+        );
+
+      }
+
+
+      /*
+         На всякий случай
+         принудительно оставляем
+         слой поверх карты.
+      */
+
+      gifLayer.setOpacity(
+        1
+      );
+
+
+      gifLayer.bringToFront();
 
 
       updateGIFTimeline(
@@ -769,7 +788,7 @@
 
 
     /*
-       Полностью выключаем iDarkMeteo.
+       Останавливаем iDarkMeteo.
     */
 
     if(
@@ -791,9 +810,7 @@
     );
 
 
-    $("loadingFrames")
-      ?.classList
-      .add("show");
+    showLoading();
 
 
     $("framesInfo").textContent =
@@ -837,11 +854,6 @@
         gifFrames.length - 1;
 
 
-      updateGIFTimeline(
-        newestIndex
-      );
-
-
       await showGIFFrame(
         newestIndex
       );
@@ -857,6 +869,28 @@
 
       gifActive =
         false;
+
+
+      if(
+        gifLayer
+      ){
+
+        if(
+          window.map.hasLayer(
+            gifLayer
+          )
+        ){
+
+          window.map.removeLayer(
+            gifLayer
+          );
+
+        }
+
+        gifLayer =
+          null;
+
+      }
 
 
       $("timeLabel").textContent =
@@ -899,39 +933,27 @@
 
 
     if(
-      gifFront &&
+      gifLayer &&
       window.map &&
       window.map.hasLayer(
-        gifFront
+        gifLayer
       )
     ){
 
       window.map.removeLayer(
-        gifFront
+        gifLayer
       );
 
     }
 
 
-    if(
-      gifBack &&
-      window.map &&
-      window.map.hasLayer(
-        gifBack
-      )
-    ){
+    /*
+       Сам объект можно обнулить,
+       потому что при следующем включении
+       создастся один новый слой.
+    */
 
-      window.map.removeLayer(
-        gifBack
-      );
-
-    }
-
-
-    gifFront =
-      null;
-
-    gifBack =
+    gifLayer =
       null;
 
 
@@ -1069,7 +1091,8 @@
             gifFrames.length
           ){
 
-            index = 0;
+            index =
+              0;
 
           }
 
@@ -1193,7 +1216,9 @@
   ){
 
     document
-      .querySelectorAll(".n")
+      .querySelectorAll(
+        ".n"
+      )
       .forEach(
         item =>
           item.classList.remove(
@@ -1243,7 +1268,7 @@
 
 
   /* =======================================================
-     PLAY
+     PLAY BUTTON
   ======================================================= */
 
   $("play").addEventListener(
