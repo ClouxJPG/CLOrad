@@ -1,1075 +1,1781 @@
 /* =========================================================
-   CLOrad — Meteoinfo radar GIF
-   Server-side GIF -> PNG frames
-   No UI redesign
-   ========================================================= */
+   CLOrad — Meteoinfo GIF Radar
+   Сервер декодирует GIF → прозрачный PNG.
+   Leaflet получает уже подготовленный радарный растр.
+========================================================= */
 
 (() => {
+
   "use strict";
 
-  const API = "/api/radar-gif";
+
+  /* =======================================================
+     CONFIG
+  ======================================================= */
+
+  const API =
+    "/api/radar-gif";
+
 
   /*
-    Географическая привязка исходной карты Meteoinfo.
-    Это именно изображение готовой радарной карты,
-    поэтому координаты являются привязкой изображения,
-    а не настоящей проекцией радарных данных.
+     Географический охват исходной карты Meteoinfo.
+
+     ВАЖНО:
+     Мы больше НЕ вращаем изображение.
+
+     Leaflet сам масштабирует этот слой при zoom.
   */
+
   const GIF_BOUNDS = [
     [40, 20],
     [70, 70]
   ];
 
-  let gifActive = false;
-  let gifFrames = [];
-  let gifMeta = null;
-  let gifLayer = null;
 
-  let gifFrameIndex = -1;
-  let gifFrameRequest = 0;
-  let gifPlayTimer = null;
+  /* =======================================================
+     STATE
+  ======================================================= */
 
-  const imageCache = new Map();
+  let gifActive =
+    false;
 
-  /* =========================================================
-     Helpers
-     ========================================================= */
+  let gifLayer =
+    null;
 
-  function getMap() {
-    return window.map || window.CLOradMap || null;
+  let gifFrames =
+    [];
+
+  let gifFrameTimes =
+    [];
+
+  let gifFrameRequest =
+    0;
+
+  let gifMeta =
+    null;
+
+  let gifImageCache =
+    new Map();
+
+  let gifPlaying =
+    false;
+
+  let gifPlayTimer =
+    null;
+
+
+  /* =======================================================
+     HELPERS
+  ======================================================= */
+
+  const $ =
+    id =>
+      document.getElementById(id);
+
+
+  function showLoading(){
+
+    $("loadingFrames")
+      ?.classList
+      .add("show");
+
   }
 
-  function $(id) {
-    return document.getElementById(id);
+
+  function hideLoading(){
+
+    $("loadingFrames")
+      ?.classList
+      .remove("show");
+
   }
 
-  function setText(id, value) {
-    const el = $(id);
-    if (el) el.textContent = value;
-  }
 
-  function getFrameDelay(frame) {
-    if (!frame) return 500;
+  /* =======================================================
+     RASTER CSS
+  ======================================================= */
 
-    let delay =
-      Number(frame.delay) ||
-      Number(frame.duration) ||
-      Number(frame.delayMs) ||
-      500;
+  function installGIFStyle(){
 
-    /*
-      Некоторые GIF metadata отдают секунды.
-    */
-    if (delay > 0 && delay < 20) {
-      delay *= 1000;
-    }
+    if(
+      document.getElementById(
+        "clorad-gif-style"
+      )
+    ){
 
-    /*
-      Не позволяем таймеру стать слишком быстрым.
-    */
-    return Math.max(120, delay);
-  }
-
-  function formatTime(value) {
-    if (value == null) return "";
-
-    const date = new Date(value);
-
-    if (!Number.isNaN(date.getTime())) {
-      return date.toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
-    return String(value);
-  }
-
-  function updateFrameUI(frame, index) {
-    if (!frame) return;
-
-    /*
-      Используем существующие элементы интерфейса.
-      Новая разметка не создаётся.
-    */
-
-    if (frame.t != null) {
-      setText("timeLabel", formatTime(frame.t));
-    }
-
-    /*
-      Не меняем структуру UI.
-      Если в текущем интерфейсе есть поле продукта —
-      показываем название радара.
-    */
-
-    const possibleNames = [
-      "productName",
-      "radarName",
-      "layerName",
-      "dataName"
-    ];
-
-    for (const id of possibleNames) {
-      const el = $(id);
-      if (el) {
-        el.textContent = "Радар";
-        break;
-      }
-    }
-
-    const range = $("range");
-
-    if (range && gifFrames.length) {
-      range.min = "0";
-      range.max = String(gifFrames.length - 1);
-      range.step = "1";
-
-      /*
-        Не вызываем input/change повторно.
-      */
-      if (Number(range.value) !== index) {
-        range.value = String(index);
-      }
-    }
-  }
-
-  function stopPlayback() {
-    if (gifPlayTimer) {
-      clearTimeout(gifPlayTimer);
-      gifPlayTimer = null;
-    }
-  }
-
-  /* =========================================================
-     Image preload
-     ========================================================= */
-
-  function loadImage(url) {
-    if (!url) {
-      return Promise.reject(new Error("Пустой URL изображения"));
-    }
-
-    if (imageCache.has(url)) {
-      return imageCache.get(url);
-    }
-
-    const promise = new Promise((resolve, reject) => {
-      const img = new Image();
-
-      img.decoding = "async";
-      img.loading = "eager";
-
-      img.onload = () => {
-        resolve(img);
-      };
-
-      img.onerror = () => {
-        imageCache.delete(url);
-        reject(new Error("Не удалось загрузить radar frame"));
-      };
-
-      img.src = url;
-    });
-
-    imageCache.set(url, promise);
-
-    return promise;
-  }
-
-  /* =========================================================
-     Custom Leaflet image layer
-     ========================================================= */
-
-  const GIFImageLayer = L.Layer.extend({
-
-    initialize: function (url, bounds, options) {
-      L.setOptions(this, options);
-
-      this._url = url;
-      this._bounds = bounds;
-
-      this._front = null;
-      this._back = null;
-
-      /*
-        КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ.
-        Без этого ++undefined даёт NaN,
-        а NaN !== NaN всегда true.
-      */
-      this._generation = 0;
-
-      this._map = null;
-      this._container = null;
-    },
-
-    onAdd: function (map) {
-      this._map = map;
-
-      this._container = L.DomUtil.create(
-        "div",
-        "clorad-gif-radar-container"
-      );
-
-      this._container.style.position = "absolute";
-      this._container.style.left = "0";
-      this._container.style.top = "0";
-      this._container.style.width = "0";
-      this._container.style.height = "0";
-      this._container.style.pointerEvents = "none";
-      this._container.style.overflow = "visible";
-      this._container.style.zIndex = "5";
-
-      map.getPanes().overlayPane.appendChild(this._container);
-
-      this._createImages();
-
-      this._reset();
-
-      this._loadInto(
-        this._front,
-        this._url,
-        true
-      );
-
-      map.on("zoomend", this._reset, this);
-      map.on("viewreset", this._reset, this);
-      map.on("moveend", this._reset, this);
-    },
-
-    onRemove: function (map) {
-      map.off("zoomend", this._reset, this);
-      map.off("viewreset", this._reset, this);
-      map.off("moveend", this._reset, this);
-
-      if (this._front) {
-        this._front.onload = null;
-        this._front.onerror = null;
-      }
-
-      if (this._back) {
-        this._back.onload = null;
-        this._back.onerror = null;
-      }
-
-      if (this._container) {
-        this._container.remove();
-      }
-
-      this._front = null;
-      this._back = null;
-      this._container = null;
-      this._map = null;
-    },
-
-    _createImages: function () {
-      const create = () => {
-        const img = document.createElement("img");
-
-        img.className = "clorad-gif-radar-image";
-
-        img.alt = "";
-
-        img.draggable = false;
-
-        img.style.position = "absolute";
-        img.style.display = "block";
-        img.style.pointerEvents = "none";
-        img.style.userSelect = "none";
-        img.style.webkitUserDrag = "none";
-
-        /*
-          Максимально сохраняем исходные пиксели.
-        */
-        img.style.imageRendering = "pixelated";
-
-        img.style.transform = "none";
-        img.style.backfaceVisibility = "hidden";
-        img.style.webkitBackfaceVisibility = "hidden";
-
-        img.style.opacity = "0";
-
-        return img;
-      };
-
-      this._front = create();
-      this._back = create();
-
-      this._container.appendChild(this._front);
-      this._container.appendChild(this._back);
-    },
-
-    _loadInto: function (img, url, makeVisible) {
-      if (!img || !url) return;
-
-      const generation = ++this._generation;
-
-      img.onload = () => {
-        /*
-          Игнорируем старый запрос,
-          если за это время был выбран другой кадр.
-        */
-        if (generation !== this._generation) {
-          return;
-        }
-
-        if (!this._map) {
-          return;
-        }
-
-        if (makeVisible) {
-          img.style.opacity = "1";
-        }
-
-        this._reset();
-      };
-
-      img.onerror = () => {
-        if (generation !== this._generation) {
-          return;
-        }
-
-        img.style.opacity = "0";
-      };
-
-      img.style.opacity = "0";
-      img.src = url;
-    },
-
-    setUrl: function (url) {
-      if (!url || !this._map) return;
-
-      this._url = url;
-
-      const oldFront = this._front;
-      const oldBack = this._back;
-
-      /*
-        Используем скрытый буфер.
-        Старый кадр остаётся видимым до полной загрузки нового.
-      */
-      let target;
-      let oldVisible;
-
-      if (
-        oldFront &&
-        getComputedStyle(oldFront).opacity !== "0"
-      ) {
-        target = oldBack;
-        oldVisible = oldFront;
-      } else {
-        target = oldFront;
-        oldVisible = oldBack;
-      }
-
-      if (!target) return;
-
-      const generation = ++this._generation;
-
-      target.onload = () => {
-        if (generation !== this._generation) {
-          return;
-        }
-
-        if (!this._map) {
-          return;
-        }
-
-        target.style.opacity = "1";
-
-        if (oldVisible && oldVisible !== target) {
-          oldVisible.style.opacity = "0";
-        }
-
-        this._reset();
-      };
-
-      target.onerror = () => {
-        if (generation !== this._generation) {
-          return;
-        }
-
-        /*
-          При ошибке оставляем старый кадр.
-        */
-        target.style.opacity = "0";
-      };
-
-      target.style.opacity = "0";
-      target.src = url;
-    },
-
-    _reset: function () {
-      if (!this._map || !this._container) {
-        return;
-      }
-
-      const sw = this._map.latLngToLayerPoint(
-        this._bounds.getSouthWest()
-      );
-
-      const ne = this._map.latLngToLayerPoint(
-        this._bounds.getNorthEast()
-      );
-
-      const minX = Math.min(sw.x, ne.x);
-      const minY = Math.min(sw.y, ne.y);
-
-      const width = Math.abs(ne.x - sw.x);
-      const height = Math.abs(sw.y - ne.y);
-
-      const panePos = L.DomUtil.getPosition(
-        this._map.getPanes().overlayPane
-      );
-
-      const left = minX - panePos.x;
-      const top = minY - panePos.y;
-
-      this._container.style.left = `${left}px`;
-      this._container.style.top = `${top}px`;
-      this._container.style.width = `${width}px`;
-      this._container.style.height = `${height}px`;
-
-      const images = [
-        this._front,
-        this._back
-      ];
-
-      for (const img of images) {
-        if (!img) continue;
-
-        img.style.left = "0";
-        img.style.top = "0";
-        img.style.width = `${width}px`;
-        img.style.height = `${height}px`;
-      }
-    }
-  });
-
-  /* =========================================================
-     CSS
-     ========================================================= */
-
-  function installStyles() {
-    if (document.getElementById("clorad-gif-radar-style")) {
       return;
+
     }
 
-    const style = document.createElement("style");
 
-    style.id = "clorad-gif-radar-style";
+    const style =
+      document.createElement(
+        "style"
+      );
+
+
+    style.id =
+      "clorad-gif-style";
+
 
     style.textContent = `
-      .clorad-gif-radar-container {
-        pointer-events: none !important;
-        overflow: visible !important;
+
+      .clorad-gif-radar-image{
+        position:absolute !important;
+        display:block !important;
+
+        pointer-events:none !important;
+        user-select:none !important;
+        -webkit-user-drag:none !important;
+
+        image-rendering:pixelated !important;
+        image-rendering:crisp-edges !important;
+
+        transform:none !important;
+
+        backface-visibility:hidden !important;
+        -webkit-backface-visibility:hidden !important;
+
+        will-change:left,top,width,height;
       }
 
-      .clorad-gif-radar-image {
-        position: absolute !important;
-        display: block !important;
-        pointer-events: none !important;
-        user-select: none !important;
-        -webkit-user-drag: none !important;
-
-        image-rendering: pixelated !important;
-        image-rendering: crisp-edges !important;
-
-        transform: none !important;
-        backface-visibility: hidden !important;
-        -webkit-backface-visibility: hidden !important;
-
-        max-width: none !important;
-        max-height: none !important;
-
-        margin: 0 !important;
-        padding: 0 !important;
-        border: 0 !important;
-      }
     `;
 
-    document.head.appendChild(style);
-  }
 
-  /* =========================================================
-     API
-     ========================================================= */
-
-  async function getMetadata() {
-    const response = await fetch(
-      `${API}?meta=1`,
-      {
-        method: "GET",
-        cache: "no-store"
-      }
+    document.head.appendChild(
+      style
     );
 
-    if (!response.ok) {
-      throw new Error(
-        `Radar GIF metadata: HTTP ${response.status}`
-      );
-    }
-
-    const data = await response.json();
-
-    if (!data || !Array.isArray(data.frames)) {
-      throw new Error("Сервер не вернул frames");
-    }
-
-    return data;
   }
 
-  function getFrameUrl(frame) {
-    if (!frame) return null;
 
-    if (frame.url) {
-      return frame.url;
-    }
+  /* =======================================================
+     DOUBLE-BUFFER IMAGE LAYER
+  ======================================================= */
 
-    if (frame.path) {
-      return frame.path;
-    }
+  const GIFImageLayer =
+    L.Layer.extend({
 
-    if (frame.src) {
-      return frame.src;
-    }
+      initialize(
+        url,
+        bounds,
+        options = {}
+      ){
 
-    if (frame.index != null) {
-      return `${API}?frame=${encodeURIComponent(
-        frame.index
-      )}`;
-    }
+        this._url =
+          url;
 
-    return null;
-  }
+        this._bounds =
+          L.latLngBounds(
+            bounds
+          );
 
-  /* =========================================================
-     Show frame
-     ========================================================= */
+        this.options =
+          options;
 
-  async function showGIFFrame(index) {
-    if (!gifActive) return;
+        this._front =
+          null;
 
-    const map = getMap();
+        this._back =
+          null;
 
-    if (!map) {
-      console.error("CLOrad: Leaflet map не найден");
-      return;
-    }
+        /*
+           ВАЖНО:
+           Счётчик поколений должен начинаться
+           с нормального числа.
 
-    if (!gifFrames.length) {
-      return;
-    }
+           Без этого:
+             ++undefined = NaN
 
-    index = Math.max(
-      0,
-      Math.min(
-        gifFrames.length - 1,
-        Number(index) || 0
-      )
-    );
+           а:
+             NaN !== NaN
 
-    const frame = gifFrames[index];
+           поэтому onload старого варианта
+           никогда не проходил проверку.
+        */
 
-    const url = getFrameUrl(frame);
+        this._generation =
+          0;
 
-    if (!url) {
-      console.error(
-        "CLOrad: у GIF кадра отсутствует URL",
-        frame
-      );
-      return;
-    }
+      },
 
-    const request = ++gifFrameRequest;
 
-    try {
-      /*
-        Предзагрузка на телефоне только изображения,
-        само извлечение GIF выполняется сервером.
-      */
-      await loadImage(url);
+      onAdd(map){
 
-      if (!gifActive) return;
-      if (request !== gifFrameRequest) return;
+        this._map =
+          map;
 
-      if (!gifLayer) {
-        const bounds = L.latLngBounds(
-          GIF_BOUNDS
+
+        const pane =
+          map.getPanes()
+            .overlayPane;
+
+
+        this._front =
+          this._createImage(
+            pane
+          );
+
+
+        this._back =
+          this._createImage(
+            pane
+          );
+
+
+        /*
+           Сначала показываем front.
+        */
+
+        this._front.style.opacity =
+          "0";
+
+        this._back.style.opacity =
+          "0";
+
+
+        this._reset();
+
+
+        /*
+           Загружаем первый кадр.
+        */
+
+        this._loadInto(
+          this._front,
+          this._url,
+          true
         );
 
-        gifLayer = new GIFImageLayer(
-          url,
-          bounds,
-          {
-            interactive: false,
-            zIndex: 5
+      },
+
+
+      onRemove(){
+
+        if(
+          this._front
+        ){
+
+          this._front.remove();
+
+        }
+
+
+        if(
+          this._back
+        ){
+
+          this._back.remove();
+
+        }
+
+
+        this._front =
+          null;
+
+        this._back =
+          null;
+
+        this._map =
+          null;
+
+      },
+
+
+      getEvents(){
+
+        return {
+
+          /*
+             Только после окончания zoom.
+
+             НИКАКОГО zoomanim.
+
+             Поэтому слой не борется
+             с анимацией Leaflet.
+          */
+
+          zoomend:
+            this._reset,
+
+          viewreset:
+            this._reset,
+
+          moveend:
+            this._reset
+
+        };
+
+      },
+
+
+      _createImage(
+        pane
+      ){
+
+        const img =
+          L.DomUtil.create(
+            "img",
+            "clorad-gif-radar-image",
+            pane
+          );
+
+
+        img.alt =
+          "";
+
+        img.draggable =
+          false;
+
+        img.decoding =
+          "async";
+
+        img.style.position =
+          "absolute";
+
+        img.style.pointerEvents =
+          "none";
+
+        img.style.userSelect =
+          "none";
+
+        img.style.imageRendering =
+          "pixelated";
+
+        img.style.opacity =
+          "0";
+
+        img.style.zIndex =
+          String(
+            this.options.zIndex ?? 6
+          );
+
+
+        return img;
+
+      },
+
+
+      _loadInto(
+        img,
+        url,
+        first = false
+      ){
+
+        if(
+          !img
+        ){
+
+          return;
+
+        }
+
+
+        const generation =
+          ++this._generation;
+
+
+        img.onload =
+          () => {
+
+            /*
+               Старый запрос уже не актуален.
+            */
+
+            if(
+              generation !==
+              this._generation
+            ){
+
+              return;
+
+            }
+
+
+            /*
+               Сначала выставляем геометрию.
+            */
+
+            this._reset();
+
+
+            /*
+               Затем показываем готовый кадр.
+            */
+
+            img.style.opacity =
+              "1";
+
+
+            /*
+               Если это новый back/front,
+               второй кадр скрываем.
+            */
+
+            if(
+              this._front === img
+            ){
+
+              if(
+                this._back
+              ){
+
+                this._back.style.opacity =
+                  "0";
+
+              }
+
+            }else{
+
+              if(
+                this._front
+              ){
+
+                this._front.style.opacity =
+                  "0";
+
+              }
+
+            }
+
+          };
+
+
+        img.onerror =
+          () => {
+
+            console.error(
+              "CLOrad: ошибка GIF image"
+            );
+
+          };
+
+
+        img.src =
+          url;
+
+      },
+
+
+      setUrl(
+        url
+      ){
+
+        this._url =
+          url;
+
+
+        /*
+           Если front сейчас отображается,
+           новый кадр загружаем в back.
+
+           Если back отображается,
+           загружаем в front.
+
+           Старый кадр остаётся видимым
+           до полного onload нового.
+        */
+
+        const frontVisible =
+          this._front &&
+          this._front.style.opacity ===
+            "1";
+
+
+        const target =
+          frontVisible
+            ? this._back
+            : this._front;
+
+
+        if(
+          !target
+        ){
+
+          return this;
+
+        }
+
+
+        const oldFront =
+          this._front;
+
+
+        const oldBack =
+          this._back;
+
+
+        const generation =
+          ++this._generation;
+
+
+        target.onload =
+          () => {
+
+            if(
+              generation !==
+              this._generation
+            ){
+
+              return;
+
+            }
+
+
+            this._reset();
+
+
+            target.style.opacity =
+              "1";
+
+
+            if(
+              target === oldFront
+            ){
+
+              oldBack.style.opacity =
+                "0";
+
+            }else{
+
+              oldFront.style.opacity =
+                "0";
+
+            }
+
+          };
+
+
+        target.onerror =
+          () => {
+
+            console.error(
+              "CLOrad: ошибка загрузки GIF кадра"
+            );
+
+          };
+
+
+        target.src =
+          url;
+
+
+        return this;
+
+      },
+
+
+      _reset(){
+
+        if(
+          !this._map
+        ){
+
+          return;
+
+        }
+
+
+        const nw =
+          this._map.latLngToLayerPoint(
+            this._bounds.getNorthWest()
+          );
+
+
+        const se =
+          this._map.latLngToLayerPoint(
+            this._bounds.getSouthEast()
+          );
+
+
+        const width =
+          Math.max(
+            1,
+            se.x - nw.x
+          );
+
+
+        const height =
+          Math.max(
+            1,
+            se.y - nw.y
+          );
+
+
+        [
+          this._front,
+          this._back
+        ]
+        .forEach(
+          img => {
+
+            if(
+              !img
+            ){
+
+              return;
+
+            }
+
+
+            img.style.left =
+              `${nw.x}px`;
+
+
+            img.style.top =
+              `${nw.y}px`;
+
+
+            img.style.width =
+              `${width}px`;
+
+
+            img.style.height =
+              `${height}px`;
+
           }
         );
 
-        gifLayer.addTo(map);
-      } else {
-        gifLayer.setUrl(url);
       }
 
-      gifFrameIndex = index;
+    });
 
-      updateFrameUI(
-        frame,
+
+  /* =======================================================
+     LOAD IMAGE
+  ======================================================= */
+
+  function loadImage(
+    url
+  ){
+
+    if(
+      gifImageCache.has(
+        url
+      )
+    ){
+
+      return gifImageCache.get(
+        url
+      );
+
+    }
+
+
+    const promise =
+      new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+
+          const img =
+            new Image();
+
+
+          img.decoding =
+            "async";
+
+
+          img.onload =
+            () => {
+
+              resolve(
+                img
+              );
+
+            };
+
+
+          img.onerror =
+            () => {
+
+              reject(
+                new Error(
+                  "Не удалось загрузить GIF-кадр"
+                )
+              );
+
+            };
+
+
+          img.src =
+            url;
+
+        }
+      );
+
+
+    gifImageCache.set(
+      url,
+      promise
+    );
+
+
+    return promise;
+
+  }
+
+
+  /* =======================================================
+     META
+  ======================================================= */
+
+  async function loadGIFMeta(){
+
+    const response =
+      await fetch(
+        `${API}?mode=meta`,
+        {
+          method:"GET",
+          cache:"no-store"
+        }
+      );
+
+
+    if(
+      !response.ok
+    ){
+
+      throw new Error(
+        "GIF API: HTTP " +
+        response.status
+      );
+
+    }
+
+
+    const data =
+      await response.json();
+
+
+    if(
+      !data ||
+      !data.ok
+    ){
+
+      throw new Error(
+        data?.message ||
+        data?.error ||
+        "GIF API вернул ошибку"
+      );
+
+    }
+
+
+    if(
+      !Number.isInteger(
+        Number(
+          data.frames
+        )
+      ) ||
+      Number(
+        data.frames
+      ) < 1
+    ){
+
+      throw new Error(
+        "GIF не содержит кадров"
+      );
+
+    }
+
+
+    gifMeta =
+      data;
+
+
+    return data;
+
+  }
+
+
+  /* =======================================================
+     FRAME URLS
+  ======================================================= */
+
+  function buildFrameUrls(
+    count
+  ){
+
+    const result =
+      [];
+
+
+    for(
+      let i = 0;
+      i < count;
+      i++
+    ){
+
+      result.push(
+        `${API}?frame=${i}`
+      );
+
+    }
+
+
+    return result;
+
+  }
+
+
+  /* =======================================================
+     FRAME TIMES
+  ======================================================= */
+
+  function buildGIFTimes(
+    count
+  ){
+
+    const result =
+      [];
+
+
+    const newest =
+      new Date();
+
+
+    newest.setSeconds(
+      0,
+      0
+    );
+
+
+    newest.setMinutes(
+      Math.floor(
+        newest.getMinutes() / 10
+      ) * 10
+    );
+
+
+    const spanMinutes =
+      180;
+
+
+    const step =
+      count > 1
+        ? spanMinutes /
+          (count - 1)
+        : 0;
+
+
+    for(
+      let i = 0;
+      i < count;
+      i++
+    ){
+
+      const minutesAgo =
+        spanMinutes -
+        i * step;
+
+
+      const date =
+        new Date(
+          newest.getTime() -
+          minutesAgo *
+          60000
+        );
+
+
+      result.push(
+        date.toLocaleTimeString(
+          "ru-RU",
+          {
+            hour:"2-digit",
+            minute:"2-digit",
+            timeZone:
+              "Europe/Moscow"
+          }
+        )
+      );
+
+    }
+
+
+    return result;
+
+  }
+
+
+  /* =======================================================
+     TIMELINE
+  ======================================================= */
+
+  function updateGIFTimeline(
+    index
+  ){
+
+    if(
+      !$("range")
+    ){
+
+      return;
+
+    }
+
+
+    const count =
+      gifFrames.length;
+
+
+    $("range").min =
+      0;
+
+
+    $("range").max =
+      Math.max(
+        0,
+        count - 1
+      );
+
+
+    $("range").value =
+      index;
+
+
+    const time =
+      gifFrameTimes[index] ||
+      "—";
+
+
+    $("timeLabel").textContent =
+      "GIF радар · " +
+      time;
+
+
+    $("times").innerHTML =
+      "<span>" +
+      (
+        gifFrameTimes[0] ||
+        "—"
+      ) +
+      "</span>" +
+
+      "<span>" +
+      (
+        gifFrameTimes[
+          gifFrameTimes.length - 1
+        ] ||
+        "—"
+      ) +
+      "</span>";
+
+
+    $("framesInfo").textContent =
+      "GIF радар • кадров: " +
+      count;
+
+
+    $("intensityValue").textContent =
+      "радар";
+
+  }
+
+
+  /* =======================================================
+     PRELOAD
+  ======================================================= */
+
+  function preloadGIFNeighbors(
+    index
+  ){
+
+    const indexes =
+      [
+        index - 1,
+        index + 1,
+        index - 2,
+        index + 2
+      ];
+
+
+    indexes
+      .filter(
+        i =>
+          i >= 0 &&
+          i < gifFrames.length
+      )
+      .forEach(
+        i => {
+
+          loadImage(
+            gifFrames[i]
+          )
+          .catch(
+            () => {}
+          );
+
+        }
+      );
+
+  }
+
+
+  /* =======================================================
+     SHOW FRAME
+  ======================================================= */
+
+  async function showGIFFrame(
+    index
+  ){
+
+    if(
+      !gifActive ||
+      !gifFrames.length
+    ){
+
+      return;
+
+    }
+
+
+    index =
+      Math.max(
+        0,
+
+        Math.min(
+          Number(index),
+          gifFrames.length - 1
+        )
+      );
+
+
+    const requestId =
+      ++gifFrameRequest;
+
+
+    const url =
+      gifFrames[index];
+
+
+    showLoading();
+
+
+    try{
+
+      /*
+         Сначала полностью загружаем
+         PNG в память браузера.
+
+         Поэтому новый кадр не может
+         появиться наполовину.
+      */
+
+      await loadImage(
+        url
+      );
+
+
+      if(
+        !gifActive ||
+        requestId !==
+          gifFrameRequest
+      ){
+
+        return;
+
+      }
+
+
+      /*
+         Первый слой.
+      */
+
+      if(
+        !gifLayer
+      ){
+
+        gifLayer =
+          new GIFImageLayer(
+            url,
+            GIF_BOUNDS,
+            {
+              zIndex:6
+            }
+          );
+
+
+        gifLayer.addTo(
+          window.map
+        );
+
+      }else{
+
+        /*
+           Старый кадр остаётся видимым,
+           пока новый не загрузится.
+        */
+
+        gifLayer.setUrl(
+          url
+        );
+
+      }
+
+
+      updateGIFTimeline(
         index
       );
 
-    } catch (error) {
-      if (request !== gifFrameRequest) {
-        return;
-      }
+
+      preloadGIFNeighbors(
+        index
+      );
+
+    }catch(error){
 
       console.error(
-        "CLOrad GIF frame error:",
+        "CLOrad GIF frame:",
         error
       );
+
+
+      if(
+        requestId ===
+        gifFrameRequest
+      ){
+
+        msg(
+          error?.message ||
+          "Ошибка GIF-кадра"
+        );
+
+      }
+
+    }finally{
+
+      if(
+        requestId ===
+        gifFrameRequest
+      ){
+
+        hideLoading();
+
+      }
+
     }
+
   }
 
-  /* =========================================================
-     Play
-     ========================================================= */
 
-  function playGIF() {
-    if (!gifActive) return;
-    if (!gifFrames.length) return;
+  /* =======================================================
+     ACTIVATE
+  ======================================================= */
 
-    stopPlayback();
+  async function activateGIF(){
 
-    const next = () => {
-      if (!gifActive) {
-        stopPlayback();
-        return;
-      }
+    if(
+      gifActive
+    ){
 
-      let nextIndex = gifFrameIndex + 1;
-
-      if (
-        nextIndex >= gifFrames.length
-      ) {
-        nextIndex = 0;
-      }
-
-      const frame = gifFrames[nextIndex];
-
-      showGIFFrame(nextIndex);
-
-      gifPlayTimer = setTimeout(
-        next,
-        getFrameDelay(frame)
-      );
-    };
-
-    next();
-  }
-
-  /* =========================================================
-     Activate
-     ========================================================= */
-
-  async function activateGIF() {
-    const map = getMap();
-
-    if (!map) {
-      console.error("CLOrad: map не найден");
       return;
+
     }
+
 
     /*
-      Останавливаем обычный iDarkMeteo radar.
-      Это предотвращает наложение слоёв.
+       Самое важное:
+
+       сначала полностью выключаем
+       iDarkMeteo.
     */
-    if (typeof window.CLOradStopRadar === "function") {
+
+    if(
+      typeof window.CLOradStopRadar ===
+      "function"
+    ){
+
       window.CLOradStopRadar();
+
     }
 
-    gifActive = true;
 
-    stopPlayback();
+    /*
+       Теперь активируем GIF.
+    */
 
-    gifFrameRequest++;
+    gifActive =
+      true;
 
-    try {
-      gifMeta = await getMetadata();
 
-      if (!gifActive) return;
+    setActiveNav(
+      gifButton
+    );
 
-      gifFrames = gifMeta.frames || [];
 
-      if (!gifFrames.length) {
-        throw new Error(
-          "Meteoinfo GIF не содержит кадров"
-        );
+    $("loadingFrames")
+      ?.classList
+      .add("show");
+
+
+    $("framesInfo").textContent =
+      "Загрузка GIF-радара…";
+
+
+    $("timeLabel").textContent =
+      "Загрузка GIF-радара…";
+
+
+    try{
+
+      const meta =
+        await loadGIFMeta();
+
+
+      if(
+        !gifActive
+      ){
+
+        return;
+
       }
 
-      /*
-        Обычно последний кадр — самый свежий.
-      */
-      const newest =
+
+      gifFrames =
+        buildFrameUrls(
+          Number(
+            meta.frames
+          )
+        );
+
+
+      gifFrameTimes =
+        buildGIFTimes(
+          gifFrames.length
+        );
+
+
+      const newestIndex =
         gifFrames.length - 1;
 
-      await showGIFFrame(newest);
 
-    } catch (error) {
+      $("range").min =
+        0;
+
+
+      $("range").max =
+        newestIndex;
+
+
+      $("range").value =
+        newestIndex;
+
+
+      updateGIFTimeline(
+        newestIndex
+      );
+
+
+      await showGIFFrame(
+        newestIndex
+      );
+
+
+    }catch(error){
+
       console.error(
-        "CLOrad: не удалось загрузить Meteoinfo radar GIF:",
+        "CLOrad GIF:",
         error
       );
 
-      gifActive = false;
-      gifFrames = [];
-      gifMeta = null;
+
+      gifActive =
+        false;
+
+
+      $("timeLabel").textContent =
+        "Ошибка GIF-радара";
+
+
+      $("framesInfo").textContent =
+        error?.message ||
+        "Не удалось загрузить GIF";
+
+
+      msg(
+        error?.message ||
+        "Ошибка GIF-радара"
+      );
+
+    }finally{
+
+      hideLoading();
+
     }
+
   }
 
-  /* =========================================================
-     Deactivate
-     ========================================================= */
 
-  function deactivateGIF() {
-    gifActive = false;
+  /* =======================================================
+     DEACTIVATE
+  ======================================================= */
+
+  function deactivateGIF(){
+
+    /*
+       Отменяем ВСЕ старые async frame requests.
+    */
 
     gifFrameRequest++;
 
-    stopPlayback();
 
-    gifFrameIndex = -1;
+    gifActive =
+      false;
 
-    if (gifLayer) {
-      const map = getMap();
 
-      if (
-        map &&
-        map.hasLayer(gifLayer)
-      ) {
-        map.removeLayer(gifLayer);
-      }
+    stopGIFPlayback();
 
-      gifLayer = null;
+
+    if(
+      gifLayer &&
+      window.map &&
+      window.map.hasLayer(
+        gifLayer
+      )
+    ){
+
+      window.map.removeLayer(
+        gifLayer
+      );
+
     }
 
-    /*
-      Не держим старые Image объекты бесконечно.
-    */
-    imageCache.clear();
 
-    gifFrames = [];
-    gifMeta = null;
+    gifLayer =
+      null;
+
+
+    gifFrames =
+      [];
+
+
+    gifFrameTimes =
+      [];
+
+
+    gifMeta =
+      null;
+
+
+    gifImageCache.clear();
+
+
+    if(
+      $("range")
+    ){
+
+      $("range").max =
+        0;
+
+      $("range").value =
+        0;
+
+    }
+
+
+    if(
+      $("times")
+    ){
+
+      $("times").textContent =
+        "";
+
+    }
+
+
+    if(
+      $("timeLabel")
+    ){
+
+      $("timeLabel").textContent =
+        "Радар не подключён";
+
+    }
+
+
+    if(
+      $("framesInfo")
+    ){
+
+      $("framesInfo").textContent =
+        "Радар пока не подключён";
+
+    }
+
+
+    if(
+      $("intensityValue")
+    ){
+
+      $("intensityValue").textContent =
+        "Нет данных";
+
+    }
+
   }
 
-  /* =========================================================
-     Dynamic radar button
-     ========================================================= */
 
-  function createRadarButton() {
-    /*
-      Если кнопка уже есть — ничего не создаём.
-    */
-    if ($("meteoinfoRadar")) {
+  /* =======================================================
+     PLAY
+  ======================================================= */
+
+  function playGIF(){
+
+    if(
+      !gifActive ||
+      !gifFrames.length
+    ){
+
       return;
+
     }
 
-    const rainButton = $("rainProduct");
 
-    if (!rainButton) {
+    gifPlaying =
+      !gifPlaying;
+
+
+    if(
+      !gifPlaying
+    ){
+
+      stopGIFPlayback();
+
       return;
+
     }
 
-    const button =
-      rainButton.cloneNode(true);
 
-    button.id = "meteoinfoRadar";
+    $("play").innerHTML =
+      '<svg viewBox="0 0 24 24">' +
+      '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' +
+      '</svg>';
 
-    /*
-      Меняем только текст существующей
-      кнопки-клона. Стили остаются теми же.
-    */
-    button.textContent =
-      "Радар";
 
-    rainButton.parentNode.insertBefore(
-      button,
-      rainButton.nextSibling
-    );
+    gifPlayTimer =
+      setInterval(
+        () => {
 
-    button.addEventListener(
-      "click",
-      event => {
-        event.stopPropagation();
+          if(
+            !gifActive ||
+            !gifFrames.length
+          ){
 
-        /*
-          Обычный iDarkMeteo слой выключается
-          перед включением GIF.
-        */
-        if (
-          typeof window.CLOradStopRadar ===
-          "function"
-        ) {
-          window.CLOradStopRadar();
-        }
+            stopGIFPlayback();
 
-        /*
-          Снимаем active с существующих кнопок,
-          если функция есть.
-        */
-        if (
-          typeof window.setActiveNav ===
-          "function"
-        ) {
-          window.setActiveNav(button);
-        } else {
-          document
-            .querySelectorAll(".n")
-            .forEach(el =>
-              el.classList.remove("active")
+            return;
+
+          }
+
+
+          let index =
+            Number(
+              $("range").value
             );
 
-          button.classList.add("active");
-        }
 
-        activateGIF();
-      }
-    );
+          index++;
+
+
+          if(
+            index >=
+            gifFrames.length
+          ){
+
+            index = 0;
+
+          }
+
+
+          $("range").value =
+            index;
+
+
+          showGIFFrame(
+            index
+          );
+
+        },
+        700
+      );
+
   }
 
-  /* =========================================================
-     Timeline interception
-     ========================================================= */
 
-  function installTimelineHandler() {
-    const range = $("range");
+  function stopGIFPlayback(){
 
-    if (!range) {
-      return;
+    gifPlaying =
+      false;
+
+
+    if(
+      gifPlayTimer
+    ){
+
+      clearInterval(
+        gifPlayTimer
+      );
+
     }
 
-    /*
-      Capture phase нужен, чтобы существующий
-      обработчик CLOrad не попытался загрузить
-      iDarkMeteo кадр поверх GIF.
-    */
-    range.addEventListener(
-      "input",
-      event => {
-        if (!gifActive) {
-          return;
-        }
 
-        event.stopImmediatePropagation();
+    gifPlayTimer =
+      null;
 
-        const index =
-          Number(range.value) || 0;
 
-        showGIFFrame(index);
-      },
-      true
-    );
+    if(
+      $("play")
+    ){
 
-    range.addEventListener(
-      "change",
-      event => {
-        if (!gifActive) {
-          return;
-        }
+      $("play").innerHTML =
+        '<svg viewBox="0 0 24 24">' +
+        '<path d="M7 4l13 8-13 8z"/>' +
+        '</svg>';
 
-        event.stopImmediatePropagation();
-
-        const index =
-          Number(range.value) || 0;
-
-        showGIFFrame(index);
-      },
-      true
-    );
-  }
-
-  /* =========================================================
-     Play button interception
-     ========================================================= */
-
-  function installPlayHandler() {
-    /*
-      Ищем существующую кнопку play,
-      не создаём новую.
-    */
-
-    const candidates = [
-      "play",
-      "playBtn",
-      "playButton",
-      "radarPlay"
-    ];
-
-    let button = null;
-
-    for (const id of candidates) {
-      const el = $(id);
-
-      if (el) {
-        button = el;
-        break;
-      }
     }
 
-    if (!button) {
-      return;
-    }
-
-    button.addEventListener(
-      "click",
-      event => {
-        if (!gifActive) {
-          return;
-        }
-
-        event.stopImmediatePropagation();
-
-        if (gifPlayTimer) {
-          stopPlayback();
-        } else {
-          playGIF();
-        }
-      },
-      true
-    );
   }
 
-  /* =========================================================
-     Navigation protection
-     ========================================================= */
 
-  function installNavigationProtection() {
-    document.addEventListener(
-      "click",
-      event => {
-        if (!gifActive) {
-          return;
-        }
+  /* =======================================================
+     GIF BUTTON
+  ======================================================= */
 
-        const button =
-          event.target.closest(".n");
-
-        if (!button) {
-          return;
-        }
-
-        /*
-          Радар-кнопка сама обрабатывает активацию.
-        */
-        if (
-          button.id === "meteoinfoRadar"
-        ) {
-          return;
-        }
-
-        /*
-          Слои не должны выключать GIF,
-          если это только открытие панели.
-        */
-        if (
-          button.id === "layersNav"
-        ) {
-          return;
-        }
-
-        /*
-          Любой другой раздел выключает GIF.
-        */
-        deactivateGIF();
-
-      },
-      true
+  let gifButton =
+    document.getElementById(
+      "gifRadarNav"
     );
-  }
 
-  /* =========================================================
-     Rain button protection
-     ========================================================= */
 
-  function installRainProtection() {
-    const rain =
+  if(
+    !gifButton
+  ){
+
+    gifButton =
+      document.createElement(
+        "button"
+      );
+
+
+    gifButton.className =
+      "n";
+
+
+    gifButton.id =
+      "gifRadarNav";
+
+
+    gifButton.innerHTML = `
+      <svg viewBox="0 0 24 24">
+        <rect
+          x="4"
+          y="4"
+          width="16"
+          height="16"
+          rx="2"
+        />
+        <path d="M9 8v8l6-4z"/>
+      </svg>
+      GIF радар
+    `;
+
+
+    const rainButton =
       $("rainProduct");
 
-    if (!rain) {
-      return;
+
+    if(
+      rainButton
+    ){
+
+      rainButton.after(
+        gifButton
+      );
+
     }
 
-    rain.addEventListener(
-      "click",
-      () => {
-        if (!gifActive) {
-          return;
-        }
-
-        deactivateGIF();
-
-      },
-      true
-    );
   }
 
-  /* =========================================================
-     Public API
-     ========================================================= */
+
+  /* =======================================================
+     ACTIVE NAV
+  ======================================================= */
+
+  function setActiveNav(
+    button
+  ){
+
+    document
+      .querySelectorAll(".n")
+      .forEach(
+        item =>
+          item.classList.remove(
+            "active"
+          )
+      );
+
+
+    if(
+      button
+    ){
+
+      button.classList.add(
+        "active"
+      );
+
+    }
+
+  }
+
+
+  /* =======================================================
+     RANGE
+  ======================================================= */
+
+  $("range").addEventListener(
+    "input",
+    () => {
+
+      if(
+        !gifActive
+      ){
+
+        return;
+
+      }
+
+
+      showGIFFrame(
+        Number(
+          $("range").value
+        )
+      );
+
+    }
+  );
+
+
+  /* =======================================================
+     PLAY
+  ======================================================= */
+
+  $("play").addEventListener(
+    "click",
+    event => {
+
+      if(
+        !gifActive
+      ){
+
+        return;
+
+      }
+
+
+      event.stopImmediatePropagation();
+
+
+      playGIF();
+
+    },
+    true
+  );
+
+
+  /* =======================================================
+     GIF BUTTON
+  ======================================================= */
+
+  gifButton.addEventListener(
+    "click",
+    event => {
+
+      event.stopPropagation();
+
+
+      activateGIF();
+
+    }
+  );
+
+
+  /* =======================================================
+     NAV SWITCHING
+  ======================================================= */
+
+  nav.addEventListener(
+    "click",
+    event => {
+
+      const button =
+        event.target.closest(
+          ".n"
+        );
+
+
+      if(
+        !button
+      ){
+
+        return;
+
+      }
+
+
+      if(
+        button.id ===
+        "layersNav"
+      ){
+
+        return;
+
+      }
+
+
+      if(
+        button ===
+        gifButton
+      ){
+
+        return;
+
+      }
+
+
+      deactivateGIF();
+
+    },
+    true
+  );
+
+
+  /* =======================================================
+     PUBLIC API
+  ======================================================= */
 
   window.CLOradDeactivateGIF =
     deactivateGIF;
 
-  window.CLOradActivateGIF =
-    activateGIF;
+
+  window.CLOradGIFActive =
+    () =>
+      gifActive;
+
 
   window.CLOradShowGIFFrame =
     showGIFFrame;
 
+
   window.CLOradPlayGIF =
     playGIF;
 
-  window.CLOradGIFActive =
-    () => gifActive;
 
-  window.CLOradGIFFrames =
-    () => gifFrames;
+  /* =======================================================
+     INIT
+  ======================================================= */
 
-  /* =========================================================
-     Init
-     ========================================================= */
-
-  function init() {
-    installStyles();
-
-    createRadarButton();
-
-    installTimelineHandler();
-
-    installPlayHandler();
-
-    installNavigationProtection();
-
-    installRainProtection();
-
-    console.log(
-      "CLOrad: Meteoinfo radar GIF module loaded"
-    );
-  }
-
-  if (
-    document.readyState ===
-    "loading"
-  ) {
-    document.addEventListener(
-      "DOMContentLoaded",
-      init,
-      { once: true }
-    );
-  } else {
-    init();
-  }
+  installGIFStyle();
 
 })();
