@@ -47,6 +47,9 @@
   let gifFrameTimes =
     [];
 
+  let gifFrameDelays =
+    [];
+
   let gifFrameRequest =
     0;
 
@@ -63,13 +66,8 @@
     null;
 
   /*
-     ВАЖНО:
-
-     Теперь существует только ОДИН
-     ImageOverlay на всё время работы GIF.
-
-     Мы больше НЕ создаём новый overlay
-     на каждый кадр.
+     Один постоянный ImageOverlay
+     на всё время работы GIF.
   */
 
   let gifLayer =
@@ -283,35 +281,33 @@
       await response.json();
 
 
+    /*
+       ВАЖНО:
+
+       API возвращает:
+
+       {
+         frames: 19,
+         width: 1200,
+         height: 1200,
+         delays: [...]
+       }
+
+       Поэтому наличие data.ok НЕ требуется.
+    */
+
     if(
       !data ||
-      !data.ok
+      !Number.isInteger(
+        Number(data.frames)
+      ) ||
+      Number(data.frames) < 1
     ){
 
       throw new Error(
         data?.message ||
         data?.error ||
-        "GIF API вернул ошибку"
-      );
-
-    }
-
-
-    const count =
-      Number(
-        data.frames
-      );
-
-
-    if(
-      !Number.isInteger(
-        count
-      ) ||
-      count < 1
-    ){
-
-      throw new Error(
-        "GIF не содержит кадров"
+        "GIF API вернул некорректные данные"
       );
 
     }
@@ -347,6 +343,64 @@
       result.push(
         `${API}?frame=${i}`
       );
+
+    }
+
+
+    return result;
+
+  }
+
+
+  /* =======================================================
+     FRAME DELAYS
+  ======================================================= */
+
+  function buildGIFDelays(
+    count,
+    delays
+  ){
+
+    const result =
+      [];
+
+
+    for(
+      let i = 0;
+      i < count;
+      i++
+    ){
+
+      const value =
+        Number(
+          delays?.[i]
+        );
+
+
+      /*
+         Если API дал настоящий delay —
+         используем его.
+
+         Если нет —
+         стандартно 700 мс.
+      */
+
+      if(
+        Number.isFinite(value) &&
+        value > 0
+      ){
+
+        result.push(
+          value
+        );
+
+      }else{
+
+        result.push(
+          700
+        );
+
+      }
 
     }
 
@@ -562,20 +616,6 @@
     url
   ){
 
-    /*
-       Этот объект создаётся ОДИН РАЗ.
-
-       Leaflet дальше сам управляет:
-
-       zoom
-       zoom animation
-       drag
-       pinch
-       view reset
-
-       При смене кадра объект НЕ удаляется.
-    */
-
     const layer =
       L.imageOverlay(
         url,
@@ -647,11 +687,9 @@
     try{
 
       /*
-         Сначала полностью загружаем
-         PNG в память.
-
-         Поэтому текущий кадр
-         остаётся на экране.
+         Сначала загружаем PNG.
+         Старый кадр остаётся на месте,
+         пока новый полностью не готов.
       */
 
       await loadImage(
@@ -671,7 +709,7 @@
 
 
       /*
-         ПЕРВЫЙ КАДР
+         Первый кадр.
       */
 
       if(
@@ -683,27 +721,12 @@
             url
           );
 
-      }
+      }else{
 
-
-      /*
-         ГЛАВНОЕ ИЗМЕНЕНИЕ:
-
-         НЕ:
-
-         removeLayer()
-         createLayer()
-         addTo()
-
-         А:
-
-         setUrl()
-
-         DOM-элемент остаётся тем же.
-         Его Leaflet transform остаётся тем же.
-      */
-
-      else{
+        /*
+           Меняем только источник
+           существующего ImageOverlay.
+        */
 
         gifLayer.setUrl(
           url
@@ -711,12 +734,6 @@
 
       }
 
-
-      /*
-         На всякий случай
-         принудительно оставляем
-         слой поверх карты.
-      */
 
       gifLayer.setOpacity(
         1
@@ -836,17 +853,28 @@
       }
 
 
+      const count =
+        Number(
+          meta.frames
+        );
+
+
       gifFrames =
         buildFrameUrls(
-          Number(
-            meta.frames
-          )
+          count
         );
 
 
       gifFrameTimes =
         buildGIFTimes(
-          gifFrames.length
+          count
+        );
+
+
+      gifFrameDelays =
+        buildGIFDelays(
+          count,
+          meta.delays
         );
 
 
@@ -947,12 +975,6 @@
     }
 
 
-    /*
-       Сам объект можно обнулить,
-       потому что при следующем включении
-       создастся один новый слой.
-    */
-
     gifLayer =
       null;
 
@@ -961,6 +983,9 @@
       [];
 
     gifFrameTimes =
+      [];
+
+    gifFrameDelays =
       [];
 
     gifMeta =
@@ -1041,12 +1066,8 @@
     }
 
 
-    gifPlaying =
-      !gifPlaying;
-
-
     if(
-      !gifPlaying
+      gifPlaying
     ){
 
       stopGIFPlayback();
@@ -1056,57 +1077,105 @@
     }
 
 
+    gifPlaying =
+      true;
+
+
     $("play").innerHTML =
       '<svg viewBox="0 0 24 24">' +
       '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' +
       '</svg>';
 
 
-    gifPlayTimer =
-      setInterval(
-        () => {
+    /*
+       Вместо setInterval(700):
 
-          if(
-            !gifActive
-          ){
+       каждый следующий кадр запускается
+       через delay именно этого кадра.
 
-            stopGIFPlayback();
+       Поэтому GIF воспроизводится с
+       оригинальной скоростью Meteoinfo.
+    */
 
-            return;
+    const playNext =
+      () => {
 
-          }
+        if(
+          !gifActive ||
+          !gifPlaying
+        ){
 
+          stopGIFPlayback();
 
-          let index =
-            Number(
-              $("range").value
-            );
+          return;
 
-
-          index++;
-
-
-          if(
-            index >=
-            gifFrames.length
-          ){
-
-            index =
-              0;
-
-          }
+        }
 
 
-          $("range").value =
-            index;
-
-
-          showGIFFrame(
-            index
+        let index =
+          Number(
+            $("range").value
           );
 
-        },
-        700
+
+        index++;
+
+
+        if(
+          index >=
+          gifFrames.length
+        ){
+
+          index =
+            0;
+
+        }
+
+
+        $("range").value =
+          index;
+
+
+        const delay =
+          Number(
+            gifFrameDelays[index]
+          ) || 700;
+
+
+        /*
+           Сразу начинаем подготовку кадра.
+        */
+
+        showGIFFrame(
+          index
+        );
+
+
+        gifPlayTimer =
+          setTimeout(
+            playNext,
+            delay
+          );
+
+      };
+
+
+    const currentIndex =
+      Number(
+        $("range").value
+      );
+
+
+    const firstDelay =
+      Number(
+        gifFrameDelays[currentIndex]
+      ) || 700;
+
+
+    gifPlayTimer =
+      setTimeout(
+        playNext,
+        firstDelay
       );
 
   }
@@ -1122,7 +1191,7 @@
       gifPlayTimer
     ){
 
-      clearInterval(
+      clearTimeout(
         gifPlayTimer
       );
 
