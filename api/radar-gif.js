@@ -18,37 +18,33 @@ const MAX_PROCESSED_FRAMES = 12;
 
 /* =========================================================
    CLOrad PALETTE
-   19 цветов из index.html
 ========================================================= */
 
 const CLORAD_PALETTE = [
-  [185, 193, 199], // 1
-  [169, 199, 244], // 2
-  [99, 237, 165],  // 3
-  [67, 207, 137],  // 4
-  [77, 184, 78],   // 5
-  [255, 248, 156], // 6
-  [117, 166, 239], // 7
-  [82, 121, 237],  // 8
-  [80, 74, 155],   // 9
-  [255, 192, 168], // 10
-  [250, 130, 160], // 11
-  [255, 77, 77],   // 12
-  [219, 146, 72],  // 13
-  [173, 117, 68],  // 14
-  [146, 75, 72],   // 15
-  [242, 170, 240], // 16
-  [232, 90, 231],  // 17
-  [202, 60, 199],  // 18
-  [119, 124, 145]  // 19
+  [185, 193, 199], // l1
+  [169, 199, 244], // l2
+  [99, 237, 165],  // l3
+  [67, 207, 137],  // l4
+  [77, 184, 78],   // l5
+  [255, 248, 156], // l6
+  [117, 166, 239], // l7
+  [82, 121, 237],  // l8
+  [80, 74, 155],   // l9
+  [255, 192, 168], // l10
+  [250, 130, 160], // l11
+  [255, 77, 77],   // l12
+  [219, 146, 72],  // l13
+  [173, 117, 68],  // l14
+  [146, 75, 72],   // l15
+  [242, 170, 240], // l16
+  [232, 90, 231],  // l17
+  [202, 60, 199],  // l18
+  [119, 124, 145]  // l19
 ];
 
 
 /* =========================================================
-   SOURCE → CLOrad COLOR MAPPING
-   НЕ HSV.
-   Используем ближайший цвет только среди реально
-   насыщенных радарных цветов.
+   COLOR MAPPING
 ========================================================= */
 
 function colorDistance(r, g, b, c) {
@@ -63,64 +59,36 @@ function colorDistance(r, g, b, c) {
   );
 }
 
-
-/*
- * Нормализуем RGB перед сравнением.
- *
- * Meteoinfo GIF может иметь немного отличающиеся оттенки
- * из-за GIF palette/антиалиасинга.
- *
- * Сначала убираем почти серые пиксели.
- */
 function sourceColorToLevel(r, g, b) {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
-
   const chroma = max - min;
 
-  if (max < 70) {
+  if (max < 70) return -1;
+  if (chroma < 28) return -1;
+
+  if (
+    max > 235 &&
+    chroma < 45
+  ) {
     return -1;
   }
 
-  /*
-   * Почти серые:
-   * море / фон / служебные области.
-   */
-  if (chroma < 28) {
-    return -1;
-  }
-
-  /*
-   * Очень слабая насыщенность обычно тоже
-   * не является цветом радарного поля.
-   */
-  if (max > 235 && chroma < 45) {
-    return -1;
-  }
-
-  /*
-   * Небольшое подавление почти белых служебных элементов.
-   */
-  if (r > 235 && g > 235 && b > 235) {
-    return -1;
-  }
-
-  /*
-   * ВАЖНО:
-   *
-   * Не пытаемся интерпретировать RGB через HSV.
-   * Сначала определяем ближайший CLOrad-цвет.
-   */
-  let best = 0;
+  let best = -1;
   let bestDist = Infinity;
 
-  for (let i = 0; i < CLORAD_PALETTE.length; i++) {
-    const d = colorDistance(
-      r,
-      g,
-      b,
-      CLORAD_PALETTE[i]
-    );
+  for (
+    let i = 0;
+    i < CLORAD_PALETTE.length;
+    i++
+  ) {
+    const d =
+      colorDistance(
+        r,
+        g,
+        b,
+        CLORAD_PALETTE[i]
+      );
 
     if (d < bestDist) {
       bestDist = d;
@@ -128,13 +96,10 @@ function sourceColorToLevel(r, g, b) {
     }
   }
 
-  /*
-   * Если исходный цвет слишком далеко от нашей палитры,
-   * считаем его фоном.
-   *
-   * Это особенно важно для серого/чёрного мусора.
-   */
-  if (bestDist > 15000) {
+  if (
+    best < 0 ||
+    bestDist > 15000
+  ) {
     return -1;
   }
 
@@ -143,7 +108,8 @@ function sourceColorToLevel(r, g, b) {
 
 
 /* =========================================================
-   GEO CALIBRATION
+   СТАРАЯ ГЕОПРИВЯЗКА
+   НЕ МЕНЯТЬ
 ========================================================= */
 
 const UC = 42.7295125;
@@ -172,37 +138,34 @@ const PY = [
 
 
 /* =========================================================
-   GIF BOUNDS
-========================================================= */
-
-const GIF_BOUNDS = {
-  south: 38.2155955810,
-  north: 69.6543707199,
-  west: 14.9892981264,
-  east: 72.9237642948
-};
-
-
-/* =========================================================
-   MERCATOR
+   СТАРЫЙ MERCATOR
 ========================================================= */
 
 function mercatorY(lat) {
-  const rad = lat * Math.PI / 180;
+  const rad =
+    lat * Math.PI / 180;
 
   return Math.log(
-    Math.tan(Math.PI / 4 + rad / 2)
+    Math.tan(
+      Math.PI / 4 +
+      rad / 2
+    )
   );
 }
 
 
 /* =========================================================
-   GEO → SOURCE PIXEL
+   СТАРОЕ GEO → SOURCE
 ========================================================= */
 
 function geoToSource(lat, lon) {
-  const u = lon - UC;
-  const v = mercatorY(lat) - UC_MERC;
+
+  const u =
+    lon - UC;
+
+  const v =
+    mercatorY(lat) -
+    UC_MERC;
 
   const x =
     PX[0] +
@@ -229,10 +192,15 @@ function geoToSource(lat, lon) {
 ========================================================= */
 
 function isRadarPixel(r, g, b) {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
 
-  const chroma = max - min;
+  const max =
+    Math.max(r, g, b);
+
+  const min =
+    Math.min(r, g, b);
+
+  const chroma =
+    max - min;
 
   if (max < 70) {
     return false;
@@ -242,15 +210,13 @@ function isRadarPixel(r, g, b) {
     return false;
   }
 
-  const saturation = chroma / Math.max(max, 1);
+  const saturation =
+    chroma / Math.max(max, 1);
 
   if (saturation < 0.15) {
     return false;
   }
 
-  /*
-   * Белый/светлый служебный текст.
-   */
   if (
     max > 238 &&
     saturation < 0.20
@@ -268,9 +234,7 @@ function isRadarPixel(r, g, b) {
 
 function isServiceArea(sx, sy) {
 
-  /*
-   * Левая легенда
-   */
+  // Левая легенда
   if (
     sx <= 145 &&
     sy <= 365
@@ -278,16 +242,12 @@ function isServiceArea(sx, sy) {
     return true;
   }
 
-  /*
-   * Верхняя служебная строка
-   */
+  // Верхняя служебная область
   if (sy <= 58) {
     return true;
   }
 
-  /*
-   * Нижний логотип
-   */
+  // Нижний логотип
   if (
     sx <= 160 &&
     sy >= 965
@@ -295,16 +255,12 @@ function isServiceArea(sx, sy) {
     return true;
   }
 
-  /*
-   * Нижняя строка
-   */
+  // Нижняя строка
   if (sy >= 1105) {
     return true;
   }
 
-  /*
-   * Нижний правый timestamp
-   */
+  // Нижний правый timestamp
   if (
     sx >= 760 &&
     sy >= 1060
@@ -312,9 +268,7 @@ function isServiceArea(sx, sy) {
     return true;
   }
 
-  /*
-   * Верхний правый timestamp
-   */
+  // Верхний правый timestamp
   if (
     sx >= 735 &&
     sy <= 65
@@ -327,33 +281,36 @@ function isServiceArea(sx, sy) {
 
 
 /* =========================================================
-   DOWNLOAD GIF
+   DOWNLOAD SOURCE GIF
 ========================================================= */
 
 async function getGIF() {
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
   if (
     gifCache &&
-    now - gifCacheTime < GIF_CACHE_MS
+    now - gifCacheTime <
+      GIF_CACHE_MS
   ) {
     return gifCache;
   }
 
-  const response = await fetch(
-    SOURCE_GIF,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; CLOrad/1.0)",
-        "Accept":
-          "image/gif,image/*,*/*",
-        "Referer":
-          "https://meteoinfo.ru/radanim"
+  const response =
+    await fetch(
+      SOURCE_GIF,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; CLOrad/1.0)",
+          "Accept":
+            "image/gif,image/*,*/*",
+          "Referer":
+            "https://meteoinfo.ru/radanim"
+        }
       }
-    }
-  );
+    );
 
   if (!response.ok) {
     throw new Error(
@@ -369,50 +326,57 @@ async function getGIF() {
 
   /*
    * Новый GIF:
-   * очищаем старые обработанные кадры.
+   * старые PNG-кадры больше не нужны.
    */
   if (
     !gifCache ||
-    !Buffer.from(gifCache).equals(buffer)
+    !gifCache.equals(buffer)
   ) {
     processedFrames.clear();
   }
 
-  gifCache = buffer;
-  gifCacheTime = now;
+  gifCache =
+    buffer;
 
-  return buffer;
+  gifCacheTime =
+    now;
+
+  return gifCache;
 }
 
 
 /* =========================================================
-   GIF METADATA
+   METADATA
 ========================================================= */
 
 async function getMetadata(gif) {
 
   const metadata =
-    await sharp(gif, {
-      animated: true
-    }).metadata();
-
-  const frames =
-    metadata.pages || 1;
-
-  const delays =
-    metadata.delay || [];
+    await sharp(
+      gif,
+      {
+        animated: true
+      }
+    ).metadata();
 
   return {
-    frames,
-    width: metadata.width || 1200,
-    height: metadata.height || 1200,
-    delays
+    frames:
+      metadata.pages || 1,
+
+    width:
+      metadata.width || 1200,
+
+    height:
+      metadata.height || 1200,
+
+    delays:
+      metadata.delay || []
   };
 }
 
 
 /* =========================================================
-   SMALL HOLE FILL
+   HOLE FILL
 ========================================================= */
 
 function fillSmallRadarHoles(
@@ -421,32 +385,35 @@ function fillSmallRadarHoles(
   height
 ) {
 
-  /*
-   * Только маленькие дырки.
-   *
-   * Никаких больших заливок:
-   * море/фон не должен превращаться
-   * в радар.
-   */
-
   const mask =
     new Uint8Array(
       width * height
     );
 
-  for (let i = 0; i < width * height; i++) {
+  for (
+    let i = 0;
+    i < width * height;
+    i++
+  ) {
 
-    const p = i * 4;
+    const p =
+      i * 4;
 
-    if (pixels[p + 3] > 0) {
+    if (
+      pixels[p + 3] > 0
+    ) {
       mask[i] = 1;
     }
   }
 
-  const copy =
+  const result =
     Buffer.from(pixels);
 
-  for (let pass = 0; pass < 2; pass++) {
+  for (
+    let pass = 0;
+    pass < 2;
+    pass++
+  ) {
 
     for (
       let y = 1;
@@ -480,36 +447,36 @@ function fillSmallRadarHoles(
           idx + width + 1
         ];
 
-        for (const n of positions) {
+        for (
+          const n of positions
+        ) {
 
           if (!mask[n]) {
             continue;
           }
 
-          const p = n * 4;
+          const p =
+            n * 4;
 
           neighbors.push([
-            copy[p],
-            copy[p + 1],
-            copy[p + 2]
+            result[p],
+            result[p + 1],
+            result[p + 2]
           ]);
         }
 
-        /*
-         * Нужно минимум 6 из 8 соседей.
-         */
-        if (neighbors.length < 6) {
+        if (
+          neighbors.length < 6
+        ) {
           continue;
         }
 
-        /*
-         * Берём самый часто встречающийся
-         * уже существующий цвет.
-         */
         const counts =
           new Map();
 
-        for (const c of neighbors) {
+        for (
+          const c of neighbors
+        ) {
 
           const key =
             `${c[0]},${c[1]},${c[2]}`;
@@ -523,14 +490,21 @@ function fillSmallRadarHoles(
         let bestKey = null;
         let bestCount = 0;
 
-        for (const [
-          key,
-          count
-        ] of counts) {
+        for (
+          const [
+            key,
+            count
+          ] of counts
+        ) {
 
-          if (count > bestCount) {
-            bestCount = count;
-            bestKey = key;
+          if (
+            count > bestCount
+          ) {
+            bestCount =
+              count;
+
+            bestKey =
+              key;
           }
         }
 
@@ -546,24 +520,34 @@ function fillSmallRadarHoles(
             .split(",")
             .map(Number);
 
-        const p = idx * 4;
+        const p =
+          idx * 4;
 
-        copy[p] = rgb[0];
-        copy[p + 1] = rgb[1];
-        copy[p + 2] = rgb[2];
-        copy[p + 3] = 255;
+        result[p] =
+          rgb[0];
+
+        result[p + 1] =
+          rgb[1];
+
+        result[p + 2] =
+          rgb[2];
+
+        result[p + 3] =
+          255;
 
         mask[idx] = 1;
       }
     }
   }
 
-  return copy;
+  return result;
 }
 
 
 /* =========================================================
    RENDER FRAME
+   ГЕОМЕТРИЯ ВОССТАНОВЛЕНА:
+   НЕ ИСПОЛЬЗУЕМ GIF_BOUNDS ДЛЯ ПЕРЕСКАЛИРОВАНИЯ.
 ========================================================= */
 
 async function renderFrame(
@@ -575,20 +559,28 @@ async function renderFrame(
     String(frame);
 
   if (
-    processedFrames.has(cacheKey)
+    processedFrames.has(
+      cacheKey
+    )
   ) {
-    return processedFrames.get(cacheKey);
+    return processedFrames.get(
+      cacheKey
+    );
   }
 
   /*
-   * Берём только один GIF frame.
+   * Получаем реальный размер
+   * исходного GIF.
    */
   const source =
-    await sharp(gif, {
-      animated: true,
-      page: frame,
-      pages: 1
-    })
+    await sharp(
+      gif,
+      {
+        animated: true,
+        page: frame,
+        pages: 1
+      }
+    )
       .ensureAlpha()
       .raw()
       .toBuffer({
@@ -605,7 +597,12 @@ async function renderFrame(
     source.data;
 
   /*
-   * Выходной слой.
+   * ВАЖНО:
+   * выход остаётся точно такого же
+   * размера, как исходный GIF.
+   *
+   * Никакого дополнительного
+   * географического растягивания.
    */
   const output =
     Buffer.alloc(
@@ -615,27 +612,49 @@ async function renderFrame(
     );
 
   /*
-   * Перебираем пиксели.
+   * Старый алгоритм:
    *
-   * Выходная сетка остаётся 1200×1200.
+   * каждый выходной пиксель
+   * переводим через старую
+   * geoToSource().
+   *
+   * Для этого сначала получаем
+   * географическую координату
+   * этого пикселя из старой
+   * калибровки.
+   *
+   * Важно: географическая сетка
+   * строится в тех же пределах,
+   * под которые была рассчитана
+   * PX/PY.
    */
+
+  const south =
+    38.2155955810;
+
+  const north =
+    69.6543707199;
+
+  const west =
+    14.9892981264;
+
+  const east =
+    72.9237642948;
+
   for (
     let y = 0;
     y < height;
     y++
   ) {
 
-    /*
-     * Быстро вычисляем lat.
-     */
     const lat =
-      GIF_BOUNDS.south +
+      south +
       (
-        y / (height - 1)
+        y /
+        (height - 1)
       ) *
       (
-        GIF_BOUNDS.north -
-        GIF_BOUNDS.south
+        north - south
       );
 
     for (
@@ -644,17 +663,14 @@ async function renderFrame(
       x++
     ) {
 
-      /*
-       * lon.
-       */
       const lon =
-        GIF_BOUNDS.west +
+        west +
         (
-          x / (width - 1)
+          x /
+          (width - 1)
         ) *
         (
-          GIF_BOUNDS.east -
-          GIF_BOUNDS.west
+          east - west
         );
 
       const [
@@ -667,10 +683,14 @@ async function renderFrame(
         );
 
       const sx =
-        Math.round(sxRaw);
+        Math.round(
+          sxRaw
+        );
 
       const sy =
-        Math.round(syRaw);
+        Math.round(
+          syRaw
+        );
 
       if (
         sx < 0 ||
@@ -732,13 +752,16 @@ async function renderFrame(
 
       if (
         level < 0 ||
-        level >= CLORAD_PALETTE.length
+        level >=
+          CLORAD_PALETTE.length
       ) {
         continue;
       }
 
       const color =
-        CLORAD_PALETTE[level];
+        CLORAD_PALETTE[
+          level
+        ];
 
       const dp =
         (
@@ -761,10 +784,6 @@ async function renderFrame(
     }
   }
 
-  /*
-   * Маленькие отверстия внутри
-   * непрерывного радарного поля.
-   */
   const filled =
     fillSmallRadarHoles(
       output,
@@ -772,9 +791,6 @@ async function renderFrame(
       height
     );
 
-  /*
-   * PNG.
-   */
   const png =
     await sharp(
       filled,
@@ -792,9 +808,6 @@ async function renderFrame(
       })
       .toBuffer();
 
-  /*
-   * Ограничиваем память.
-   */
   processedFrames.set(
     cacheKey,
     png
@@ -834,9 +847,10 @@ export default async function handler(
     const gif =
       await getGIF();
 
-    /*
-     * META
-     */
+    /* -----------------------------------------
+       META
+    ----------------------------------------- */
+
     if (
       req.query.mode === "meta"
     ) {
@@ -851,14 +865,15 @@ export default async function handler(
         "no-store"
       );
 
-      return res.status(200).json(
-        metadata
-      );
+      return res
+        .status(200)
+        .json(metadata);
     }
 
-    /*
-     * FRAME
-     */
+    /* -----------------------------------------
+       FRAME
+    ----------------------------------------- */
+
     let frame =
       Number(
         req.query.frame
@@ -905,9 +920,9 @@ export default async function handler(
       String(png.length)
     );
 
-    return res.status(200).send(
-      png
-    );
+    return res
+      .status(200)
+      .send(png);
 
   } catch (error) {
 
@@ -916,11 +931,15 @@ export default async function handler(
       error
     );
 
-    return res.status(500).json({
-      error: "Radar frame loading failed",
-      message:
-        error?.message ||
-        String(error)
-    });
+    return res
+      .status(500)
+      .json({
+        error:
+          "Radar frame loading failed",
+
+        message:
+          error?.message ||
+          String(error)
+      });
   }
 }
