@@ -1,1342 +1,612 @@
-// ============================================================
-// CLOrad — Meteoinfo GIF Radar API
-// GIF → очистка → геопривязка → Web Mercator →
-// определение интенсивности → строгая палитра CLOrad → PNG
-// ============================================================
-
 import sharp from "sharp";
-
-
-// ============================================================
-// SOURCE
-// ============================================================
 
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
+/* =========================================================
+   CACHE
+========================================================= */
 
-// ============================================================
-// CACHE
-// ============================================================
+let gifCache = null;
+let gifCacheTime = 0;
 
-const GIF_CACHE_MS =
-  30000;
+const GIF_CACHE_MS = 30 * 1000;
 
-let cachedGIF =
-  null;
-
-let cachedAt =
-  0;
-
-let loadingGIF =
-  null;
-
-let cachedMetadata =
-  null;
+const processedFrames = new Map();
+const MAX_PROCESSED_FRAMES = 12;
 
 
-const processedFrameCache =
-  new Map();
-
-
-// ============================================================
-// CLOrad PALETTE
-// ============================================================
+/* =========================================================
+   CLOrad PALETTE
+   19 цветов из index.html
+========================================================= */
 
 const CLORAD_PALETTE = [
-
-  [185, 193, 199], // l1
-  [169, 199, 244], // l2
-  [99,  237, 165], // l3
-  [67,  207, 137], // l4
-  [77,  184, 78 ], // l5
-  [255, 248, 156], // l6
-  [117, 166, 239], // l7
-  [82,  121, 237], // l8
-  [80,  74,  155], // l9
-  [255, 192, 168], // l10
-  [250, 130, 160], // l11
-  [255, 77,  77 ], // l12
-  [219, 146, 72 ], // l13
-  [173, 117, 68 ], // l14
-  [146, 75,  72 ], // l15
-  [242, 170, 240], // l16
-  [232, 90, 231], // l17
-  [202, 60, 199], // l18
-  [119, 124, 145]  // l19
-
+  [185, 193, 199], // 1
+  [169, 199, 244], // 2
+  [99, 237, 165],  // 3
+  [67, 207, 137],  // 4
+  [77, 184, 78],   // 5
+  [255, 248, 156], // 6
+  [117, 166, 239], // 7
+  [82, 121, 237],  // 8
+  [80, 74, 155],   // 9
+  [255, 192, 168], // 10
+  [250, 130, 160], // 11
+  [255, 77, 77],   // 12
+  [219, 146, 72],  // 13
+  [173, 117, 68],  // 14
+  [146, 75, 72],   // 15
+  [242, 170, 240], // 16
+  [232, 90, 231],  // 17
+  [202, 60, 199],  // 18
+  [119, 124, 145]  // 19
 ];
 
 
-// ============================================================
-// COLOR / INTENSITY HELPERS
-// ============================================================
-//
-// ВАЖНО:
-//
-// Мы больше НЕ используем обычное RGB-distance
-// до палитры CLOrad.
-//
-// Иначе слабый цвет Meteoinfo может оказаться
-// ближе к одному из крайних цветов CLOrad.
-//
-// Вместо этого сначала оценивается "сила" исходного
-// радарного цвета, а затем эта сила переводится
-// непосредственно в индекс 0..18.
-// ============================================================
+/* =========================================================
+   SOURCE → CLOrad COLOR MAPPING
+   НЕ HSV.
+   Используем ближайший цвет только среди реально
+   насыщенных радарных цветов.
+========================================================= */
 
+function colorDistance(r, g, b, c) {
+  const dr = r - c[0];
+  const dg = g - c[1];
+  const db = b - c[2];
 
-function clamp(
-  value,
-  min,
-  max
-){
-
-  return Math.max(
-    min,
-    Math.min(
-      max,
-      value
-    )
+  return (
+    dr * dr +
+    dg * dg +
+    db * db
   );
-
 }
 
 
-// ============================================================
-// HSV
-// ============================================================
+/*
+ * Нормализуем RGB перед сравнением.
+ *
+ * Meteoinfo GIF может иметь немного отличающиеся оттенки
+ * из-за GIF palette/антиалиасинга.
+ *
+ * Сначала убираем почти серые пиксели.
+ */
+function sourceColorToLevel(r, g, b) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
 
-function rgbToHSV(
-  r,
-  g,
-  b
-){
+  const chroma = max - min;
 
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-
-  const max =
-    Math.max(
-      r,
-      g,
-      b
-    );
-
-
-  const min =
-    Math.min(
-      r,
-      g,
-      b
-    );
-
-
-  const d =
-    max -
-    min;
-
-
-  let h =
-    0;
-
-
-  if(
-    d !== 0
-  ){
-
-    if(
-      max === r
-    ){
-
-      h =
-        (
-          (g - b) /
-          d
-        ) %
-        6;
-
-    }else if(
-      max === g
-    ){
-
-      h =
-        (
-          (b - r) /
-          d
-        ) +
-        2;
-
-    }else{
-
-      h =
-        (
-          (r - g) /
-          d
-        ) +
-        4;
-
-    }
-
-
-    h *= 60;
-
-
-    if(
-      h < 0
-    ){
-
-      h += 360;
-
-    }
-
+  if (max < 70) {
+    return -1;
   }
 
+  /*
+   * Почти серые:
+   * море / фон / служебные области.
+   */
+  if (chroma < 28) {
+    return -1;
+  }
 
-  const s =
-    max === 0
-      ? 0
-      : d / max;
+  /*
+   * Очень слабая насыщенность обычно тоже
+   * не является цветом радарного поля.
+   */
+  if (max > 235 && chroma < 45) {
+    return -1;
+  }
 
+  /*
+   * Небольшое подавление почти белых служебных элементов.
+   */
+  if (r > 235 && g > 235 && b > 235) {
+    return -1;
+  }
 
-  const v =
-    max;
+  /*
+   * ВАЖНО:
+   *
+   * Не пытаемся интерпретировать RGB через HSV.
+   * Сначала определяем ближайший CLOrad-цвет.
+   */
+  let best = 0;
+  let bestDist = Infinity;
 
+  for (let i = 0; i < CLORAD_PALETTE.length; i++) {
+    const d = colorDistance(
+      r,
+      g,
+      b,
+      CLORAD_PALETTE[i]
+    );
 
-  return {
-    h,
-    s,
-    v
-  };
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
 
+  /*
+   * Если исходный цвет слишком далеко от нашей палитры,
+   * считаем его фоном.
+   *
+   * Это особенно важно для серого/чёрного мусора.
+   */
+  if (bestDist > 15000) {
+    return -1;
+  }
+
+  return best;
 }
 
 
-// ============================================================
-// RADAR COLOR FILTER
-// ============================================================
+/* =========================================================
+   GEO CALIBRATION
+========================================================= */
 
-function isRadarPixel(
-  r,
-  g,
-  b
-){
+const UC = 42.7295125;
+const US = 11.984477282034;
 
-  const max =
-    Math.max(
-      r,
-      g,
-      b
-    );
+const UC_MERC = 1.159140403966;
+const US_MERC = 0.080017466461;
 
+const PX = [
+  614.702787260693,
+  213.524267491052,
+  86.865800553715,
+  17.052995641967,
+  -18.941081998370,
+  -3.466637383242
+];
 
-  const min =
-    Math.min(
-      r,
-      g,
-      b
-    );
-
-
-  const chroma =
-    max -
-    min;
+const PY = [
+  548.709828924571,
+  231.245550214358,
+  -80.613999910294,
+  -23.817051905972,
+  -12.895624928117,
+  3.365220370149
+];
 
 
-  /*
-     Полностью тёмные пиксели
-     не являются радаром.
-  */
+/* =========================================================
+   GIF BOUNDS
+========================================================= */
 
-  if(
-    max < 70
-  ){
+const GIF_BOUNDS = {
+  south: 38.2155955810,
+  north: 69.6543707199,
+  west: 14.9892981264,
+  east: 72.9237642948
+};
 
+
+/* =========================================================
+   MERCATOR
+========================================================= */
+
+function mercatorY(lat) {
+  const rad = lat * Math.PI / 180;
+
+  return Math.log(
+    Math.tan(Math.PI / 4 + rad / 2)
+  );
+}
+
+
+/* =========================================================
+   GEO → SOURCE PIXEL
+========================================================= */
+
+function geoToSource(lat, lon) {
+  const u = lon - UC;
+  const v = mercatorY(lat) - UC_MERC;
+
+  const x =
+    PX[0] +
+    PX[1] * u +
+    PX[2] * v +
+    PX[3] * u * u +
+    PX[4] * u * v +
+    PX[5] * v * v;
+
+  const y =
+    PY[0] +
+    PY[1] * u +
+    PY[2] * v +
+    PY[3] * u * u +
+    PY[4] * u * v +
+    PY[5] * v * v;
+
+  return [x, y];
+}
+
+
+/* =========================================================
+   RADAR PIXEL FILTER
+========================================================= */
+
+function isRadarPixel(r, g, b) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+
+  const chroma = max - min;
+
+  if (max < 70) {
     return false;
-
   }
 
-
-  /*
-     Серый фон / море / служебные
-     области.
-  */
-
-  if(
-    chroma < 30
-  ){
-
+  if (chroma < 30) {
     return false;
-
   }
 
+  const saturation = chroma / Math.max(max, 1);
 
-  const saturation =
-    chroma /
-    max;
-
-
-  if(
-    saturation < 0.15
-  ){
-
+  if (saturation < 0.15) {
     return false;
-
   }
 
-
   /*
-     Почти белые служебные элементы.
-  */
-
-  if(
+   * Белый/светлый служебный текст.
+   */
+  if (
     max > 238 &&
     saturation < 0.20
-  ){
-
+  ) {
     return false;
-
   }
-
 
   return true;
-
 }
 
 
-// ============================================================
-// RADAR INTENSITY
-// ============================================================
-//
-// Возвращает число 0..18.
-//
-// Это НЕ nearest-color.
-//
-// Здесь используются характеристики самого исходного
-// цвета Meteoinfo.
-//
-// Основная идея:
-//
-// - голубые/синие слабые оттенки → низкие уровни
-// - зелёные → средние
-// - жёлтые → повышенные
-// - оранжевые/красные → высокие
-// - пурпурные → самые высокие
-//
-// Внутри каждого цветового семейства используется
-// яркость/насыщенность, чтобы не превращать всё семейство
-// сразу в максимальный уровень.
-// ============================================================
+/* =========================================================
+   SERVICE AREAS
+========================================================= */
 
-function getRadarIntensity(
-  r,
-  g,
-  b
-){
-
-  const {
-    h,
-    s,
-    v
-  } =
-    rgbToHSV(
-      r,
-      g,
-      b
-    );
-
+function isServiceArea(sx, sy) {
 
   /*
-     HSV brightness.
-
-     Нормируем небольшую часть диапазона,
-     чтобы очень яркие служебные цвета не улетали
-     автоматически в максимум.
-  */
-
-  let strength =
-    0;
-
-
-  // ----------------------------------------------------------
-  // BLUE / CYAN
-  // ----------------------------------------------------------
-
-  if(
-    h >= 170 &&
-    h < 260
-  ){
-
-    const huePart =
-      (
-        h -
-        170
-      ) /
-      90;
-
-
-    strength =
-      0.08 +
-      huePart *
-      0.18 +
-      s *
-      0.12 +
-      v *
-      0.18;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // BLUE → GREEN
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 110 &&
-    h < 170
-  ){
-
-    const huePart =
-      (
-        170 -
-        h
-      ) /
-      60;
-
-
-    strength =
-      0.20 +
-      huePart *
-      0.20 +
-      s *
-      0.15 +
-      v *
-      0.18;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // GREEN
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 70 &&
-    h < 110
-  ){
-
-    const huePart =
-      (
-        110 -
-        h
-      ) /
-      40;
-
-
-    strength =
-      0.34 +
-      huePart *
-      0.18 +
-      s *
-      0.18 +
-      v *
-      0.16;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // YELLOW
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 40 &&
-    h < 70
-  ){
-
-    const huePart =
-      (
-        70 -
-        h
-      ) /
-      30;
-
-
-    strength =
-      0.52 +
-      huePart *
-      0.12 +
-      s *
-      0.18 +
-      v *
-      0.12;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // ORANGE
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 15 &&
-    h < 40
-  ){
-
-    const huePart =
-      (
-        40 -
-        h
-      ) /
-      25;
-
-
-    strength =
-      0.64 +
-      huePart *
-      0.14 +
-      s *
-      0.16 +
-      v *
-      0.10;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // RED
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 0 &&
-    h < 15
-  ){
-
-    strength =
-      0.78 +
-      s *
-      0.12 +
-      v *
-      0.10;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // MAGENTA / PURPLE
-  // ----------------------------------------------------------
-
-  else if(
-    h >= 260 &&
-    h < 345
-  ){
-
-    const huePart =
-      (
-        h -
-        260
-      ) /
-      85;
-
-
-    strength =
-      0.78 +
-      huePart *
-      0.12 +
-      s *
-      0.08 +
-      v *
-      0.10;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // RED → MAGENTA
-  // ----------------------------------------------------------
-
-  else{
-
-    strength =
-      0.86 +
-      s *
-      0.08 +
-      v *
-      0.06;
-
-  }
-
-
-  strength =
-    clamp(
-      strength,
-      0,
-      1
-    );
-
-
-  /*
-     Квантизация в 19 уровней.
-
-     Никакого случайного выбора крайнего цвета.
-  */
-
-  let level =
-    Math.floor(
-      strength *
-      CLORAD_PALETTE.length
-    );
-
-
-  level =
-    clamp(
-      level,
-      0,
-      CLORAD_PALETTE.length - 1
-    );
-
-
-  return level;
-
-}
-
-
-// ============================================================
-// SERVICE AREAS
-// ============================================================
-
-function isServiceArea(
-  x,
-  y,
-  width,
-  height
-){
-
-  const sx =
-    x *
-    1122 /
-    width;
-
-
-  const sy =
-    y *
-    1136 /
-    height;
-
-
-  // Левая легенда
-  if(
+   * Левая легенда
+   */
+  if (
     sx <= 145 &&
     sy <= 365
-  ){
-
+  ) {
     return true;
-
   }
 
-
-  // Верхняя служебная область
-  if(
-    sy <= 58
-  ){
-
+  /*
+   * Верхняя служебная строка
+   */
+  if (sy <= 58) {
     return true;
-
   }
 
-
-  // Нижний логотип
-  if(
+  /*
+   * Нижний логотип
+   */
+  if (
     sx <= 160 &&
     sy >= 965
-  ){
-
+  ) {
     return true;
-
   }
 
-
-  // Нижняя строка
-  if(
-    sy >= 1105
-  ){
-
+  /*
+   * Нижняя строка
+   */
+  if (sy >= 1105) {
     return true;
-
   }
 
-
-  // Нижний правый timestamp
-  if(
+  /*
+   * Нижний правый timestamp
+   */
+  if (
     sx >= 760 &&
     sy >= 1060
-  ){
-
+  ) {
     return true;
-
   }
 
-
-  // Верхний правый timestamp
-  if(
+  /*
+   * Верхний правый timestamp
+   */
+  if (
     sx >= 735 &&
     sy <= 65
-  ){
-
+  ) {
     return true;
-
   }
-
 
   return false;
-
 }
 
 
-// ============================================================
-// DOWNLOAD SOURCE GIF
-// ============================================================
+/* =========================================================
+   DOWNLOAD GIF
+========================================================= */
 
-async function getGIF(){
+async function getGIF() {
 
-  const now =
-    Date.now();
+  const now = Date.now();
 
-
-  if(
-    cachedGIF &&
-    now -
-      cachedAt <
-      GIF_CACHE_MS
-  ){
-
-    return cachedGIF;
-
+  if (
+    gifCache &&
+    now - gifCacheTime < GIF_CACHE_MS
+  ) {
+    return gifCache;
   }
 
-
-  if(
-    loadingGIF
-  ){
-
-    return loadingGIF;
-
-  }
-
-
-  loadingGIF =
-    (async () => {
-
-      const response =
-        await fetch(
-          SOURCE_GIF,
-          {
-
-            method:
-              "GET",
-
-            headers:{
-
-              "User-Agent":
-                "Mozilla/5.0",
-
-              "Accept":
-                "image/gif,*/*",
-
-              "Referer":
-                "https://meteoinfo.ru/radanim"
-
-            },
-
-            cache:
-              "no-store"
-
-          }
-        );
-
-
-      if(
-        !response.ok
-      ){
-
-        throw new Error(
-          "Meteoinfo HTTP " +
-          response.status
-        );
-
+  const response = await fetch(
+    SOURCE_GIF,
+    {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; CLOrad/1.0)",
+        "Accept":
+          "image/gif,image/*,*/*",
+        "Referer":
+          "https://meteoinfo.ru/radanim"
       }
-
-
-      const arrayBuffer =
-        await response.arrayBuffer();
-
-
-      const buffer =
-        Buffer.from(
-          arrayBuffer
-        );
-
-
-      if(
-        !buffer.length
-      ){
-
-        throw new Error(
-          "Meteoinfo вернул пустой GIF"
-        );
-
-      }
-
-
-      processedFrameCache.clear();
-
-      cachedMetadata =
-        null;
-
-
-      cachedGIF =
-        buffer;
-
-
-      cachedAt =
-        Date.now();
-
-
-      return buffer;
-
-    })();
-
-
-  try{
-
-    return await loadingGIF;
-
-  }finally{
-
-    loadingGIF =
-      null;
-
-  }
-
-}
-
-
-// ============================================================
-// METADATA
-// ============================================================
-
-async function getMetadata(
-  gif
-){
-
-  if(
-    cachedMetadata
-  ){
-
-    return cachedMetadata;
-
-  }
-
-
-  cachedMetadata =
-    await sharp(
-      gif,
-      {
-        animated:
-          true
-      }
-    )
-    .metadata();
-
-
-  return cachedMetadata;
-
-}
-
-
-// ============================================================
-// HEADERS
-// ============================================================
-
-function setCORS(
-  res
-){
-
-  res.setHeader(
-    "Access-Control-Allow-Origin",
-    "*"
+    }
   );
 
+  if (!response.ok) {
+    throw new Error(
+      `Meteoinfo GIF HTTP ${response.status}`
+    );
+  }
+
+  const arrayBuffer =
+    await response.arrayBuffer();
+
+  const buffer =
+    Buffer.from(arrayBuffer);
+
+  /*
+   * Новый GIF:
+   * очищаем старые обработанные кадры.
+   */
+  if (
+    !gifCache ||
+    !Buffer.from(gifCache).equals(buffer)
+  ) {
+    processedFrames.clear();
+  }
+
+  gifCache = buffer;
+  gifCacheTime = now;
+
+  return buffer;
 }
 
 
-function setCache(
-  res
-){
+/* =========================================================
+   GIF METADATA
+========================================================= */
 
-  res.setHeader(
-    "Cache-Control",
-    "public, max-age=5, s-maxage=30, stale-while-revalidate=60"
-  );
+async function getMetadata(gif) {
 
+  const metadata =
+    await sharp(gif, {
+      animated: true
+    }).metadata();
+
+  const frames =
+    metadata.pages || 1;
+
+  const delays =
+    metadata.delay || [];
+
+  return {
+    frames,
+    width: metadata.width || 1200,
+    height: metadata.height || 1200,
+    delays
+  };
 }
 
 
-// ============================================================
-// SMALL RADAR HOLE FILLER
-// ============================================================
-//
-// ВАЖНО:
-//
-// Дырка получает не RGB соседа,
-// а именно его LEVEL.
-//
-// Это предотвращает случайное повышение
-// интенсивности из-за различий RGB.
-// ============================================================
+/* =========================================================
+   SMALL HOLE FILL
+========================================================= */
 
 function fillSmallRadarHoles(
-  buffer,
+  pixels,
   width,
   height
-){
+) {
 
-  if(
-    width < 3 ||
-    height < 3
-  ){
-
-    return;
-
-  }
-
-
-  const pixelCount =
-    width *
-    height;
-
+  /*
+   * Только маленькие дырки.
+   *
+   * Никаких больших заливок:
+   * море/фон не должен превращаться
+   * в радар.
+   */
 
   const mask =
     new Uint8Array(
-      pixelCount
+      width * height
     );
 
+  for (let i = 0; i < width * height; i++) {
 
-  const levels =
-    new Uint8Array(
-      pixelCount
-    );
+    const p = i * 4;
 
-
-  // ----------------------------------------------------------
-  // BUILD MASK + LEVELS
-  // ----------------------------------------------------------
-
-  for(
-    let i = 0;
-    i < pixelCount;
-    i++
-  ){
-
-    const p =
-      i *
-      4;
-
-
-    if(
-      buffer[p + 3] > 0
-    ){
-
-      mask[i] =
-        1;
-
-
-      /*
-         Для уже существующего цвета ищем
-         точный индекс CLOrad palette.
-
-         Поскольку цвета были записаны сервером,
-         совпадение будет точным.
-      */
-
-      let level =
-        0;
-
-
-      for(
-        let k = 0;
-        k < CLORAD_PALETTE.length;
-        k++
-      ){
-
-        const color =
-          CLORAD_PALETTE[k];
-
-
-        if(
-          buffer[p] === color[0] &&
-          buffer[p + 1] === color[1] &&
-          buffer[p + 2] === color[2]
-        ){
-
-          level =
-            k;
-
-          break;
-
-        }
-
-      }
-
-
-      levels[i] =
-        level;
-
+    if (pixels[p + 3] > 0) {
+      mask[i] = 1;
     }
-
   }
 
+  const copy =
+    Buffer.from(pixels);
 
-  // ----------------------------------------------------------
-  // TWO PASSES
-  // ----------------------------------------------------------
+  for (let pass = 0; pass < 2; pass++) {
 
-  for(
-    let pass = 0;
-    pass < 2;
-    pass++
-  ){
-
-    const additions = [];
-
-
-    for(
+    for (
       let y = 1;
       y < height - 1;
       y++
-    ){
+    ) {
 
-      const row =
-        y *
-        width;
-
-
-      for(
+      for (
         let x = 1;
         x < width - 1;
         x++
-      ){
+      ) {
 
-        const index =
-          row +
-          x;
+        const idx =
+          y * width + x;
 
-
-        if(
-          mask[index]
-        ){
-
+        if (mask[idx]) {
           continue;
-
         }
 
+        const neighbors = [];
 
-        let count =
-          0;
-
-
-        const neighbourLevels =
-          new Uint8Array(
-            8
-          );
-
-
-        let n =
-          0;
-
-
-        for(
-          let dy = -1;
-          dy <= 1;
-          dy++
-        ){
-
-          const neighbourRow =
-            (
-              y +
-              dy
-            ) *
-            width;
-
-
-          for(
-            let dx = -1;
-            dx <= 1;
-            dx++
-          ){
-
-            if(
-              dx === 0 &&
-              dy === 0
-            ){
-
-              continue;
-
-            }
-
-
-            const ni =
-              neighbourRow +
-              x +
-              dx;
-
-
-            if(
-              mask[ni]
-            ){
-
-              neighbourLevels[n++] =
-                levels[ni];
-
-              count++;
-
-            }
-
-          }
-
-        }
-
-
-        /*
-           Не заполняем границы.
-        */
-
-        if(
-          count < 6
-        ){
-
-          continue;
-
-        }
-
-
-        /*
-           Находим медианный уровень.
-
-           Это значительно безопаснее,
-           чем копировать случайного соседа.
-        */
-
-        const sorted =
-          Array.from(
-            neighbourLevels
-              .subarray(
-                0,
-                n
-              )
-          )
-          .sort(
-            (a,b) =>
-              a - b
-          );
-
-
-        const median =
-          sorted[
-            Math.floor(
-              sorted.length / 2
-            )
-          ];
-
-
-        /*
-           Проверяем, что большинство соседей
-           находится недалеко от медианы.
-
-           Это запрещает растягивать резкий
-           красный/пурпурный пиксель далеко
-           в слабую область.
-        */
-
-        let closeCount =
-          0;
-
-
-        for(
-          let i = 0;
-          i < sorted.length;
-          i++
-        ){
-
-          if(
-            Math.abs(
-              sorted[i] -
-              median
-            ) <= 1
-          ){
-
-            closeCount++;
-
-          }
-
-        }
-
-
-        if(
-          closeCount < 4
-        ){
-
-          continue;
-
-        }
-
-
-        additions.push(
-          index,
-          median
-        );
-
-      }
-
-    }
-
-
-    // --------------------------------------------------------
-    // APPLY
-    // --------------------------------------------------------
-
-    for(
-      let i = 0;
-      i < additions.length;
-      i += 2
-    ){
-
-      const target =
-        additions[i];
-
-      const level =
-        additions[i + 1];
-
-
-      const color =
-        CLORAD_PALETTE[
-          level
+        const positions = [
+          idx - width,
+          idx + width,
+          idx - 1,
+          idx + 1,
+          idx - width - 1,
+          idx - width + 1,
+          idx + width - 1,
+          idx + width + 1
         ];
 
+        for (const n of positions) {
 
-      const p =
-        target *
-        4;
+          if (!mask[n]) {
+            continue;
+          }
 
+          const p = n * 4;
 
-      buffer[p] =
-        color[0];
+          neighbors.push([
+            copy[p],
+            copy[p + 1],
+            copy[p + 2]
+          ]);
+        }
 
-      buffer[p + 1] =
-        color[1];
+        /*
+         * Нужно минимум 6 из 8 соседей.
+         */
+        if (neighbors.length < 6) {
+          continue;
+        }
 
-      buffer[p + 2] =
-        color[2];
+        /*
+         * Берём самый часто встречающийся
+         * уже существующий цвет.
+         */
+        const counts =
+          new Map();
 
-      buffer[p + 3] =
-        255;
+        for (const c of neighbors) {
 
+          const key =
+            `${c[0]},${c[1]},${c[2]}`;
 
-      mask[target] =
-        1;
+          counts.set(
+            key,
+            (counts.get(key) || 0) + 1
+          );
+        }
 
+        let bestKey = null;
+        let bestCount = 0;
 
-      levels[target] =
-        level;
+        for (const [
+          key,
+          count
+        ] of counts) {
 
+          if (count > bestCount) {
+            bestCount = count;
+            bestKey = key;
+          }
+        }
+
+        if (
+          !bestKey ||
+          bestCount < 4
+        ) {
+          continue;
+        }
+
+        const rgb =
+          bestKey
+            .split(",")
+            .map(Number);
+
+        const p = idx * 4;
+
+        copy[p] = rgb[0];
+        copy[p + 1] = rgb[1];
+        copy[p + 2] = rgb[2];
+        copy[p + 3] = 255;
+
+        mask[idx] = 1;
+      }
     }
-
-
-    if(
-      additions.length === 0
-    ){
-
-      break;
-
-    }
-
   }
 
+  return copy;
 }
 
 
-// ============================================================
-// FRAME
-// ============================================================
+/* =========================================================
+   RENDER FRAME
+========================================================= */
 
 async function renderFrame(
   gif,
   frame
-){
+) {
 
   const cacheKey =
     String(frame);
 
-
-  if(
-    processedFrameCache.has(
-      cacheKey
-    )
-  ){
-
-    return processedFrameCache.get(
-      cacheKey
-    );
-
+  if (
+    processedFrames.has(cacheKey)
+  ) {
+    return processedFrames.get(cacheKey);
   }
 
-
-  // ----------------------------------------------------------
-  // DECODE
-  // ----------------------------------------------------------
-
-  const decoded =
-    await sharp(
-      gif,
-      {
-
-        animated:
-          true,
-
-        page:
-          frame,
-
-        pages:
-          1
-
-      }
-    )
-    .ensureAlpha()
-    .raw()
-    .toBuffer({
-      resolveWithObject:
-        true
-    });
-
+  /*
+   * Берём только один GIF frame.
+   */
+  const source =
+    await sharp(gif, {
+      animated: true,
+      page: frame,
+      pages: 1
+    })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({
+        resolveWithObject: true
+      });
 
   const width =
-    decoded.info.width;
-
+    source.info.width;
 
   const height =
-    decoded.info.height;
+    source.info.height;
 
+  const src =
+    source.data;
 
-  const source =
-    decoded.data;
-
-
-  // ----------------------------------------------------------
-  // OUTPUT
-  // ----------------------------------------------------------
-
+  /*
+   * Выходной слой.
+   */
   const output =
     Buffer.alloc(
       width *
@@ -1344,468 +614,275 @@ async function renderFrame(
       4
     );
 
-
-  // ----------------------------------------------------------
-  // MERCATOR
-  // ----------------------------------------------------------
-
-  const west =
-    GIF_BOUNDS.west;
-
-
-  const east =
-    GIF_BOUNDS.east;
-
-
-  const southMerc =
-    mercatorY(
-      GIF_BOUNDS.south
-    );
-
-
-  const northMerc =
-    mercatorY(
-      GIF_BOUNDS.north
-    );
-
-
-  const lonStep =
-    (
-      east -
-      west
-    ) /
-    Math.max(
-      1,
-      width - 1
-    );
-
-
-  const mercStep =
-    (
-      northMerc -
-      southMerc
-    ) /
-    Math.max(
-      1,
-      height - 1
-    );
-
-
-  // ----------------------------------------------------------
-  // REPROJECTION
-  // ----------------------------------------------------------
-
-  for(
+  /*
+   * Перебираем пиксели.
+   *
+   * Выходная сетка остаётся 1200×1200.
+   */
+  for (
     let y = 0;
     y < height;
     y++
-  ){
+  ) {
 
-    const mercY =
-      northMerc -
-      y *
-      mercStep;
+    /*
+     * Быстро вычисляем lat.
+     */
+    const lat =
+      GIF_BOUNDS.south +
+      (
+        y / (height - 1)
+      ) *
+      (
+        GIF_BOUNDS.north -
+        GIF_BOUNDS.south
+      );
 
-
-    for(
+    for (
       let x = 0;
       x < width;
       x++
-    ){
+    ) {
 
+      /*
+       * lon.
+       */
       const lon =
-        west +
-        x *
-        lonStep;
-
-
-      const sourcePoint =
-        geoToSource(
-          lon,
-          mercY
-        );
-
-
-      const sourceX =
-        Math.round(
-          sourcePoint[0] *
-          width /
-          1122
-        );
-
-
-      const sourceY =
-        Math.round(
-          sourcePoint[1] *
-          height /
-          1136
-        );
-
-
-      if(
-        sourceX < 0 ||
-        sourceX >= width ||
-        sourceY < 0 ||
-        sourceY >= height
-      ){
-
-        continue;
-
-      }
-
-
-      if(
-        isServiceArea(
-          sourceX,
-          sourceY,
-          width,
-          height
-        )
-      ){
-
-        continue;
-
-      }
-
-
-      const sourceIndex =
+        GIF_BOUNDS.west +
         (
-          sourceY *
-          width +
-          sourceX
+          x / (width - 1)
         ) *
-        4;
+        (
+          GIF_BOUNDS.east -
+          GIF_BOUNDS.west
+        );
 
+      const [
+        sxRaw,
+        syRaw
+      ] =
+        geoToSource(
+          lat,
+          lon
+        );
+
+      const sx =
+        Math.round(sxRaw);
+
+      const sy =
+        Math.round(syRaw);
+
+      if (
+        sx < 0 ||
+        sy < 0 ||
+        sx >= width ||
+        sy >= height
+      ) {
+        continue;
+      }
+
+      if (
+        isServiceArea(
+          sx,
+          sy
+        )
+      ) {
+        continue;
+      }
+
+      const sp =
+        (
+          sy *
+          width +
+          sx
+        ) * 4;
 
       const r =
-        source[sourceIndex];
-
+        src[sp];
 
       const g =
-        source[sourceIndex + 1];
-
+        src[sp + 1];
 
       const b =
-        source[sourceIndex + 2];
-
+        src[sp + 2];
 
       const a =
-        source[sourceIndex + 3];
+        src[sp + 3];
 
-
-      if(
-        !a
-      ){
-
+      if (a < 30) {
         continue;
-
       }
 
-
-      // ------------------------------------------------------
-      // FILTER FIRST
-      // ------------------------------------------------------
-
-      if(
+      if (
         !isRadarPixel(
           r,
           g,
           b
         )
-      ){
-
+      ) {
         continue;
-
       }
 
-
-      // ------------------------------------------------------
-      // DETERMINE ORIGINAL RADAR INTENSITY
-      // ------------------------------------------------------
-
       const level =
-        getRadarIntensity(
+        sourceColorToLevel(
           r,
           g,
           b
         );
 
+      if (
+        level < 0 ||
+        level >= CLORAD_PALETTE.length
+      ) {
+        continue;
+      }
 
       const color =
-        CLORAD_PALETTE[
-          level
-        ];
+        CLORAD_PALETTE[level];
 
-
-      const outputIndex =
+      const dp =
         (
           y *
           width +
           x
-        ) *
-        4;
+        ) * 4;
 
-
-      // ------------------------------------------------------
-      // STRICT CLOrad COLOR
-      // ------------------------------------------------------
-
-      output[outputIndex] =
+      output[dp] =
         color[0];
 
-      output[outputIndex + 1] =
+      output[dp + 1] =
         color[1];
 
-      output[outputIndex + 2] =
+      output[dp + 2] =
         color[2];
 
-      output[outputIndex + 3] =
+      output[dp + 3] =
         255;
-
     }
-
   }
 
+  /*
+   * Маленькие отверстия внутри
+   * непрерывного радарного поля.
+   */
+  const filled =
+    fillSmallRadarHoles(
+      output,
+      width,
+      height
+    );
 
-  // ==========================================================
-  // HOLES
-  // ==========================================================
-
-  fillSmallRadarHoles(
-    output,
-    width,
-    height
-  );
-
-
-  // ==========================================================
-  // PNG
-  // ==========================================================
-
+  /*
+   * PNG.
+   */
   const png =
     await sharp(
-      output,
+      filled,
       {
-
-        raw:{
+        raw: {
           width,
           height,
-          channels:4
+          channels: 4
         }
-
       }
     )
-    .png({
-      compressionLevel:
-        3,
+      .png({
+        compressionLevel: 6,
+        adaptiveFiltering: false
+      })
+      .toBuffer();
 
-      adaptiveFiltering:
-        false,
-
-      palette:
-        false
-    })
-    .toBuffer();
-
-
-  // ==========================================================
-  // CACHE
-  // ==========================================================
-
-  processedFrameCache.set(
+  /*
+   * Ограничиваем память.
+   */
+  processedFrames.set(
     cacheKey,
     png
   );
 
+  while (
+    processedFrames.size >
+    MAX_PROCESSED_FRAMES
+  ) {
 
-  if(
-    processedFrameCache.size >
-    12
-  ){
-
-    const firstKey =
-      processedFrameCache
+    const first =
+      processedFrames
         .keys()
         .next()
         .value;
 
-
-    if(
-      firstKey !==
-      undefined
-    ){
-
-      processedFrameCache.delete(
-        firstKey
-      );
-
-    }
-
+    processedFrames.delete(
+      first
+    );
   }
 
-
   return png;
-
 }
 
 
-// ============================================================
-// HANDLER
-// ============================================================
+/* =========================================================
+   VERCEL HANDLER
+========================================================= */
 
 export default async function handler(
   req,
   res
-){
+) {
 
-  try{
-
-    const mode =
-      String(
-        req.query?.mode ||
-        ""
-      );
-
-
-    const requestedFrame =
-      Number(
-        req.query?.frame
-      );
-
-
-    // --------------------------------------------------------
-    // SOURCE
-    // --------------------------------------------------------
+  try {
 
     const gif =
       await getGIF();
 
+    /*
+     * META
+     */
+    if (
+      req.query.mode === "meta"
+    ) {
 
-    // --------------------------------------------------------
-    // METADATA
-    // --------------------------------------------------------
+      const metadata =
+        await getMetadata(
+          gif
+        );
+
+      res.setHeader(
+        "Cache-Control",
+        "no-store"
+      );
+
+      return res.status(200).json(
+        metadata
+      );
+    }
+
+    /*
+     * FRAME
+     */
+    let frame =
+      Number(
+        req.query.frame
+      );
+
+    if (
+      !Number.isFinite(frame)
+    ) {
+      frame = 0;
+    }
 
     const metadata =
       await getMetadata(
         gif
       );
 
-
-    // ========================================================
-    // META
-    // ========================================================
-
-    if(
-      mode ===
-      "meta"
-    ){
-
-      const frames =
-        Number(
-          metadata.pages ||
-          1
-        );
-
-
-      const width =
-        Number(
-          metadata.width ||
-          0
-        );
-
-
-      const height =
-        Number(
-          metadata.pageHeight ||
-          metadata.height ||
-          0
-        );
-
-
-      const delays =
-        Array.isArray(
-          metadata.delay
+    frame =
+      Math.max(
+        0,
+        Math.min(
+          metadata.frames - 1,
+          Math.floor(frame)
         )
-          ? metadata.delay
-          : [];
-
-
-      setCORS(
-        res
       );
-
-
-      setCache(
-        res
-      );
-
-
-      res.setHeader(
-        "Content-Type",
-        "application/json; charset=utf-8"
-      );
-
-
-      res.status(
-        200
-      ).json({
-
-        frames,
-
-        width,
-
-        height,
-
-        delays
-
-      });
-
-
-      return;
-
-    }
-
-
-    // ========================================================
-    // FRAME
-    // ========================================================
-
-    const totalFrames =
-      Number(
-        metadata.pages ||
-        1
-      );
-
-
-    let frame =
-      Number.isFinite(
-        requestedFrame
-      )
-        ? Math.floor(
-            requestedFrame
-          )
-        : totalFrames - 1;
-
-
-    if(
-      frame < 0
-    ){
-
-      frame =
-        0;
-
-    }
-
-
-    if(
-      frame >= totalFrames
-    ){
-
-      frame =
-        totalFrames - 1;
-
-    }
-
 
     const png =
       await renderFrame(
@@ -1813,76 +890,37 @@ export default async function handler(
         frame
       );
 
-
-    // ========================================================
-    // RESPONSE
-    // ========================================================
-
-    setCORS(
-      res
-    );
-
-
-    setCache(
-      res
-    );
-
-
     res.setHeader(
       "Content-Type",
       "image/png"
     );
 
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=30, stale-while-revalidate=60"
+    );
 
     res.setHeader(
       "Content-Length",
-      String(
-        png.length
-      )
+      String(png.length)
     );
 
-
-    res.status(
-      200
-    );
-
-
-    res.end(
+    return res.status(200).send(
       png
     );
 
-  }catch(error){
+  } catch (error) {
 
     console.error(
-      "CLOrad radar-gif:",
+      "radar-gif error:",
       error
     );
 
-
-    setCORS(
-      res
-    );
-
-
-    res.setHeader(
-      "Cache-Control",
-      "no-store"
-    );
-
-
-    res.status(
-      500
-    ).json({
-
-      error:
-        "Radar GIF processing failed",
-
+    return res.status(500).json({
+      error: "Radar frame loading failed",
       message:
         error?.message ||
         String(error)
-
     });
-
   }
-
 }
