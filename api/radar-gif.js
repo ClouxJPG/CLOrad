@@ -1,985 +1,1558 @@
 // ============================================================
-// CLOrad — Meteoinfo GIF radar API
-// Server-side:
-// GIF -> frame -> Web Mercator -> radar mask -> hole filling
-// -> transparent PNG
+// CLOrad — Meteoinfo GIF Radar API
+// GIF → очистка → геопривязка → Web Mercator →
+// заполнение мелких дыр → PNG
 // ============================================================
 
-const sharp = require("sharp");
+import sharp from "sharp";
+
+
+// ============================================================
+// SOURCE
+// ============================================================
 
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
-const CACHE_TTL = 30 * 1000;
 
-// ------------------------------------------------------------
-// RAM CACHE
-// ------------------------------------------------------------
+// ============================================================
+// CACHE
+// ============================================================
 
-let gifBuffer = null;
-let gifLoadedAt = 0;
+const GIF_CACHE_MS =
+  30000;
 
-const frameCache = new Map();
-const FRAME_CACHE_MAX = 12;
+let cachedGIF =
+  null;
 
-// ------------------------------------------------------------
-// SOURCE IMAGE
-// ------------------------------------------------------------
+let cachedAt =
+  0;
 
-async function getGif() {
-  const now = Date.now();
+let loadingGIF =
+  null;
 
-  if (gifBuffer && now - gifLoadedAt < CACHE_TTL) {
-    return gifBuffer;
-  }
+let cachedMetadata =
+  null;
 
-  const response = await fetch(SOURCE_GIF, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; CLOrad radar renderer)",
-      "Accept": "image/gif,image/*,*/*;q=0.8"
-    }
-  });
 
-  if (!response.ok) {
-    throw new Error(
-      `Meteoinfo GIF HTTP ${response.status}`
-    );
-  }
+const processedFrameCache =
+  new Map();
 
-  const arrayBuffer = await response.arrayBuffer();
 
-  gifBuffer = Buffer.from(arrayBuffer);
-  gifLoadedAt = now;
+// ============================================================
+// CALIBRATION
+// ============================================================
 
-  // Старые обработанные кадры больше не нужны:
-  frameCache.clear();
+const UC_LON =
+  42.7295125;
 
-  return gifBuffer;
-}
+const UC_MERC =
+  1.159140403966;
 
-// ------------------------------------------------------------
-// SOURCE -> WEB MERCATOR CALIBRATION
-// ------------------------------------------------------------
-//
-// Polynomial calibration obtained from control points:
-// Moscow / Ufa / SPb / Minsk / Kyiv / Yekaterinburg /
-// Kazan / Samara.
-//
-// basis:
-// [1, x, y, x², x*y, y²]
-//
-// x = source pixel X
-// y = source pixel Y
-// ------------------------------------------------------------
+const US_LON =
+  11.984477282034;
 
-const UC = [
-  42.7295125,
-  1.159140403966
+const US_MERC =
+  0.080017466461;
+
+
+// source X
+const PX = [
+   614.702787260693,
+   213.524267491052,
+    86.865800553715,
+    17.052995641967,
+   -18.941081998370,
+    -3.466637383242
 ];
 
-const US = [
-  11.984477282034,
-  0.080017466461
+
+// source Y
+const PY = [
+   548.709828924571,
+   231.245550214358,
+   -80.613999910294,
+   -23.817051905972,
+   -12.895624928117,
+     3.365220370149
 ];
 
-const XCOEF = [
-  614.702787260693,
-  213.524267491052,
-  86.865800553715,
-  17.052995641967,
-  -18.94108199837,
-  -3.466637383242
-];
 
-const YCOEF = [
-  548.709828924571,
-  231.245550214358,
-  -80.613999910294,
-  -23.817051905972,
-  -12.895624928117,
-  3.365220370149
-];
+// ============================================================
+// WEB MERCATOR BOUNDS
+// ============================================================
 
-// ------------------------------------------------------------
-// GEOGRAPHIC EXTENT
-// ------------------------------------------------------------
+const GIF_BOUNDS = {
 
-const WEST = 14.9892981264;
-const EAST = 72.9237642948;
+  south:
+    38.2155955810,
 
-const SOUTH = 38.2155955810;
-const NORTH = 69.6543707199;
+  north:
+    69.6543707199,
 
-// ------------------------------------------------------------
-// SERVICE AREAS ON THE ORIGINAL METEOINFO IMAGE
-// ------------------------------------------------------------
-//
-// These areas contain title, legend, logo, timestamps,
-// copyright etc. They must never become radar data.
-// ------------------------------------------------------------
+  west:
+    14.9892981264,
 
-function isServiceArea(x, y, width, height) {
-  const sx = x / width;
-  const sy = y / height;
+  east:
+    72.9237642948
 
-  // Left legend
-  if (sx < 0.135 && sy < 0.34) {
-    return true;
-  }
+};
 
-  // Top title
-  if (
-    sx > 0.145 &&
-    sx < 0.48 &&
-    sy < 0.075
-  ) {
-    return true;
-  }
 
-  // Top-right timestamp
-  if (
-    sx > 0.67 &&
-    sy < 0.075
-  ) {
-    return true;
-  }
+// ============================================================
+// ORIGINAL IMAGE SIZE
+// ============================================================
 
-  // Bottom-left logo / Roshydromet / CAO
-  if (
-    sx < 0.17 &&
-    sy > 0.86
-  ) {
-    return true;
-  }
+const CALIBRATION_WIDTH =
+  1122;
 
-  // Bottom copyright
-  if (
-    sy > 0.975
-  ) {
-    return true;
-  }
+const CALIBRATION_HEIGHT =
+  1136;
 
-  // Bottom-right timestamp
-  if (
-    sx > 0.70 &&
-    sy > 0.94
-  ) {
-    return true;
-  }
 
-  return false;
-}
+// ============================================================
+// MERCATOR
+// ============================================================
 
-// ------------------------------------------------------------
-// RADAR PIXEL CLASSIFICATION
-// ------------------------------------------------------------
-//
-// The background/seas on Meteoinfo are mostly low-chroma gray.
-// Real radar echoes have substantially higher chroma/saturation.
-//
-// We deliberately keep this conservative so that weak radar
-// echoes aren't destroyed.
-// ------------------------------------------------------------
+function mercatorY(
+  lat
+){
 
-function radarPixel(r, g, b, a) {
-  if (a < 80) return false;
+  const rad =
+    lat *
+    Math.PI /
+    180;
 
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-
-  const chroma = max - min;
-
-  if (max < 70) return false;
-  if (chroma < 30) return false;
-
-  const saturation =
-    max === 0 ? 0 : chroma / max;
-
-  if (saturation < 0.15) {
-    return false;
-  }
-
-  return true;
-}
-
-// ------------------------------------------------------------
-// SOURCE -> GEO
-// ------------------------------------------------------------
-
-function lonToMercatorX(lon) {
-  return lon;
-}
-
-function latToMercatorY(lat) {
-  const rad = lat * Math.PI / 180;
-
-  return (
-    Math.log(
-      Math.tan(Math.PI / 4 + rad / 2)
+  return Math.log(
+    Math.tan(
+      Math.PI / 4 +
+      rad / 2
     )
   );
+
 }
 
-// ------------------------------------------------------------
-// SOURCE COORDINATE
-// ------------------------------------------------------------
+
+// ============================================================
+// GEO → SOURCE PIXEL
+// ============================================================
 
 function geoToSource(
   lon,
-  lat,
-  sourceWidth,
-  sourceHeight
-) {
-  const x0 =
-    (lonToMercatorX(lon) - UC[0]) /
-    US[0];
+  mercY
+){
 
-  const y0 =
-    (latToMercatorY(lat) - UC[1]) /
-    US[1];
+  const x =
+    (lon - UC_LON) /
+    US_LON;
+
+  const y =
+    (mercY - UC_MERC) /
+    US_MERC;
+
 
   const basis = [
+
     1,
-    x0,
-    y0,
-    x0 * x0,
-    x0 * y0,
-    y0 * y0
+
+    x,
+
+    y,
+
+    x * x,
+
+    x * y,
+
+    y * y
+
   ];
 
-  let sx = 0;
-  let sy = 0;
 
-  for (let i = 0; i < 6; i++) {
-    sx += XCOEF[i] * basis[i];
-    sy += YCOEF[i] * basis[i];
+  let sx =
+    0;
+
+  let sy =
+    0;
+
+
+  for(
+    let i = 0;
+    i < 6;
+    i++
+  ){
+
+    sx +=
+      PX[i] *
+      basis[i];
+
+    sy +=
+      PY[i] *
+      basis[i];
+
   }
+
 
   return [
     sx,
     sy
   ];
+
 }
 
-// ------------------------------------------------------------
-// HOLE FILLING
-// ------------------------------------------------------------
-//
-// IMPORTANT:
-//
-// We don't interpolate arbitrary RGB values.
-//
-// Only transparent pixels that are surrounded by real radar
-// pixels are filled.
-//
-// The replacement color is ALWAYS taken from an existing
-// radar pixel.
-//
-// This prevents artificial colors from appearing.
-// ------------------------------------------------------------
 
-function fillSmallRadarHoles(
-  rgba,
-  width,
-  height
-) {
-  const size = width * height;
+// ============================================================
+// RADAR COLOR FILTER
+// ============================================================
+//
+// Убираем:
+//
+// - моря
+// - океаны
+// - серую подложку
+// - серые зоны покрытия
+// - чёрные подписи
+// - чёрные линии
+// - серые границы
+// - служебную графику
+//
+// Оставляем цветные радарные поля.
+// ============================================================
 
-  // 1 = real radar pixel
-  // 0 = transparent/background
-  const mask = new Uint8Array(size);
+function isRadarPixel(
+  r,
+  g,
+  b
+){
 
-  for (let i = 0; i < size; i++) {
-    const p = i * 4;
+  const max =
+    Math.max(
+      r,
+      g,
+      b
+    );
 
-    if (
-      rgba[p + 3] >= 80 &&
-      radarPixel(
-        rgba[p],
-        rgba[p + 1],
-        rgba[p + 2],
-        rgba[p + 3]
-      )
-    ) {
-      mask[i] = 1;
-    }
+  const min =
+    Math.min(
+      r,
+      g,
+      b
+    );
+
+  const chroma =
+    max - min;
+
+
+  if(
+    max < 70
+  ){
+
+    return false;
+
   }
 
+
+  if(
+    chroma < 30
+  ){
+
+    return false;
+
+  }
+
+
+  const saturation =
+    chroma /
+    max;
+
+
+  if(
+    saturation < 0.15
+  ){
+
+    return false;
+
+  }
+
+
+  if(
+    max > 238 &&
+    saturation < 0.20
+  ){
+
+    return false;
+
+  }
+
+
+  return true;
+
+}
+
+
+// ============================================================
+// SERVICE AREAS
+// ============================================================
+
+function isServiceArea(
+  x,
+  y,
+  width,
+  height
+){
+
+  const sx =
+    x *
+    CALIBRATION_WIDTH /
+    width;
+
+  const sy =
+    y *
+    CALIBRATION_HEIGHT /
+    height;
+
+
+  // ------------------------------------------
+  // ЛЕГЕНДА
+  // ------------------------------------------
+
+  if(
+    sx <= 145 &&
+    sy <= 365
+  ){
+
+    return true;
+
+  }
+
+
+  // ------------------------------------------
+  // ВЕРХНИЙ ЗАГОЛОВОК
+  // ------------------------------------------
+
+  if(
+    sy <= 58
+  ){
+
+    return true;
+
+  }
+
+
+  // ------------------------------------------
+  // РОСГИДРОМЕТ / ЦАО
+  // ------------------------------------------
+
+  if(
+    sx <= 160 &&
+    sy >= 965
+  ){
+
+    return true;
+
+  }
+
+
+  // ------------------------------------------
+  // НИЖНИЙ COPYRIGHT
+  // ------------------------------------------
+
+  if(
+    sy >= 1105
+  ){
+
+    return true;
+
+  }
+
+
+  // ------------------------------------------
+  // НИЖНИЕ ЧАСЫ
+  // ------------------------------------------
+
+  if(
+    sx >= 760 &&
+    sy >= 1060
+  ){
+
+    return true;
+
+  }
+
+
+  // ------------------------------------------
+  // ВЕРХНИЕ ЧАСЫ
+  // ------------------------------------------
+
+  if(
+    sx >= 735 &&
+    sy <= 65
+  ){
+
+    return true;
+
+  }
+
+
+  return false;
+
+}
+
+
+// ============================================================
+// DOWNLOAD SOURCE GIF
+// ============================================================
+
+async function getGIF(){
+
+  const now =
+    Date.now();
+
+
+  if(
+    cachedGIF &&
+    now - cachedAt <
+      GIF_CACHE_MS
+  ){
+
+    return cachedGIF;
+
+  }
+
+
+  if(
+    loadingGIF
+  ){
+
+    return loadingGIF;
+
+  }
+
+
+  loadingGIF =
+    (async () => {
+
+      const response =
+        await fetch(
+          SOURCE_GIF,
+          {
+
+            method:
+              "GET",
+
+            headers:{
+              "User-Agent":
+                "Mozilla/5.0",
+
+              "Accept":
+                "image/gif,*/*",
+
+              "Referer":
+                "https://meteoinfo.ru/radanim"
+
+            },
+
+            cache:
+              "no-store"
+
+          }
+        );
+
+
+      if(
+        !response.ok
+      ){
+
+        throw new Error(
+          "Meteoinfo HTTP " +
+          response.status
+        );
+
+      }
+
+
+      const arrayBuffer =
+        await response.arrayBuffer();
+
+
+      const buffer =
+        Buffer.from(
+          arrayBuffer
+        );
+
+
+      if(
+        !buffer.length
+      ){
+
+        throw new Error(
+          "Meteoinfo вернул пустой GIF"
+        );
+
+      }
+
+
+      // Новый GIF:
+      // старые обработанные кадры удаляем.
+      processedFrameCache.clear();
+
+      cachedMetadata =
+        null;
+
+
+      cachedGIF =
+        buffer;
+
+      cachedAt =
+        Date.now();
+
+
+      return buffer;
+
+    })();
+
+
+  try{
+
+    return await loadingGIF;
+
+  }finally{
+
+    loadingGIF =
+      null;
+
+  }
+
+}
+
+
+// ============================================================
+// METADATA
+// ============================================================
+
+async function getMetadata(
+  gif
+){
+
+  if(
+    cachedMetadata
+  ){
+
+    return cachedMetadata;
+
+  }
+
+
+  cachedMetadata =
+    await sharp(
+      gif,
+      {
+        animated:
+          true
+      }
+    )
+    .metadata();
+
+
+  return cachedMetadata;
+
+}
+
+
+// ============================================================
+// HEADERS
+// ============================================================
+
+function setCORS(
+  res
+){
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+}
+
+
+function setCache(
+  res
+){
+
+  res.setHeader(
+    "Cache-Control",
+    "public, max-age=5, s-maxage=30, stale-while-revalidate=60"
+  );
+
+}
+
+
+// ============================================================
+// SMALL RADAR HOLE FILLER
+// ============================================================
+//
+// Заполняет ТОЛЬКО маленькие дырки внутри существующего
+// радарного поля.
+//
+// Никакой интерполяции новых цветов нет.
+// Цвет берётся из уже существующего соседнего пикселя.
+//
+// Большие прозрачные области не затрагиваются.
+//
+// 2 прохода:
+//   проход 1 → совсем маленькие дырки
+//   проход 2 → оставшиеся дырки, непосредственно окружённые
+//                уже восстановленными пикселями
+//
+// ============================================================
+
+function fillSmallRadarHoles(
+  buffer,
+  width,
+  height
+){
+
+  if(
+    width < 3 ||
+    height < 3
+  ){
+
+    return;
+
+  }
+
+
+  const pixelCount =
+    width *
+    height;
+
+
   // ----------------------------------------------------------
-  // Only small enclosed holes are candidates.
+  // MASK
   //
-  // We perform at most 3 passes.
-  // This allows:
-  //
-  //   1px hole
-  //   2px hole
-  //   3px small broken region
-  //
-  // to close, but prevents large background regions from
-  // gradually turning into radar.
+  // 1 = существующий радар
+  // 0 = прозрачный пиксель
   // ----------------------------------------------------------
 
-  const MAX_PASSES = 3;
+  let mask =
+    new Uint8Array(
+      pixelCount
+    );
 
-  for (
+
+  for(
+    let i = 0;
+    i < pixelCount;
+    i++
+  ){
+
+    const p =
+      i * 4;
+
+
+    if(
+      buffer[p + 3] > 0 &&
+      isRadarPixel(
+        buffer[p],
+        buffer[p + 1],
+        buffer[p + 2]
+      )
+    ){
+
+      mask[i] =
+        1;
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // ДВА ОЧЕНЬ КОНСЕРВАТИВНЫХ ПРОХОДА
+  // ----------------------------------------------------------
+
+  const passes =
+    2;
+
+
+  for(
     let pass = 0;
-    pass < MAX_PASSES;
+    pass < passes;
     pass++
-  ) {
+  ){
+
     const additions = [];
 
-    for (
+
+    // --------------------------------------------------------
+    // НЕ ОБРАБАТЫВАЕМ ВНЕШНИЙ КРАЙ
+    // --------------------------------------------------------
+
+    for(
       let y = 1;
       y < height - 1;
       y++
-    ) {
-      for (
+    ){
+
+      for(
         let x = 1;
         x < width - 1;
         x++
-      ) {
-        const index =
-          y * width + x;
+      ){
 
-        if (mask[index]) {
+        const index =
+          y *
+          width +
+          x;
+
+
+        // Уже существует радар.
+        if(
+          mask[index]
+        ){
+
           continue;
+
         }
 
+
         // ----------------------------------------------------
-        // Gather the 8 neighbours.
+        // 8 СОСЕДЕЙ
         // ----------------------------------------------------
 
         const neighbours = [];
 
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (
+
+        for(
+          let dy = -1;
+          dy <= 1;
+          dy++
+        ){
+
+          for(
+            let dx = -1;
+            dx <= 1;
+            dx++
+          ){
+
+            if(
               dx === 0 &&
               dy === 0
-            ) {
+            ){
+
               continue;
+
             }
 
-            const nx = x + dx;
-            const ny = y + dy;
+
+            const nx =
+              x + dx;
+
+            const ny =
+              y + dy;
+
 
             const ni =
-              ny * width + nx;
+              ny *
+              width +
+              nx;
 
-            if (mask[ni]) {
-              neighbours.push(ni);
+
+            if(
+              mask[ni]
+            ){
+
+              neighbours.push(
+                ni
+              );
+
             }
+
           }
+
         }
 
-        // Need a strong local enclosure.
-        if (neighbours.length < 5) {
-          continue;
-        }
 
         // ----------------------------------------------------
-        // Count existing colors.
+        // ДЫРКА ДОЛЖНА БЫТЬ ПЛОТНО ОКРУЖЕНА.
         //
-        // Quantization groups practically identical palette
-        // colors together without creating new colors.
+        // Из 8 соседей минимум 6 должны быть радаром.
         // ----------------------------------------------------
 
-        const colors = new Map();
+        if(
+          neighbours.length < 6
+        ){
 
-        for (const ni of neighbours) {
-          const p = ni * 4;
-
-          const r = rgba[p];
-          const g = rgba[p + 1];
-          const b = rgba[p + 2];
-
-          const qr =
-            Math.round(r / 8) * 8;
-          const qg =
-            Math.round(g / 8) * 8;
-          const qb =
-            Math.round(b / 8) * 8;
-
-          const key =
-            `${qr},${qg},${qb}`;
-
-          const old =
-            colors.get(key);
-
-          if (old) {
-            old.count++;
-            old.indices.push(ni);
-          } else {
-            colors.set(key, {
-              count: 1,
-              indices: [ni]
-            });
-          }
-        }
-
-        let dominant = null;
-
-        for (const value of colors.values()) {
-          if (
-            !dominant ||
-            value.count > dominant.count
-          ) {
-            dominant = value;
-          }
-        }
-
-        // At least 3 neighbouring pixels must agree
-        // on approximately the same existing radar color.
-        if (
-          !dominant ||
-          dominant.count < 3
-        ) {
           continue;
+
         }
 
+
         // ----------------------------------------------------
-        // Choose the actual pixel closest to the center of
-        // the hole from the dominant color group.
+        // ИЩЕМ ДОМИНИРУЮЩИЙ ЦВЕТ.
+        //
+        // Цвет группируется с небольшим допуском.
+        // НО в результат всё равно копируется настоящий
+        // цвет существующего пикселя.
         // ----------------------------------------------------
 
-        let bestIndex =
-          dominant.indices[0];
+        let bestSource =
+          -1;
 
-        let bestDistance =
-          Infinity;
+        let bestCount =
+          0;
 
-        for (
-          const ni of dominant.indices
-        ) {
-          const ny =
-            Math.floor(ni / width);
 
-          const nx =
-            ni - ny * width;
+        for(
+          const candidate
+          of neighbours
+        ){
 
-          const dx =
-            nx - x;
+          const cp =
+            candidate * 4;
 
-          const dy =
-            ny - y;
 
-          const distance =
-            dx * dx + dy * dy;
+          const cr =
+            buffer[cp];
 
-          if (
-            distance <
-            bestDistance
-          ) {
-            bestDistance =
-              distance;
+          const cg =
+            buffer[cp + 1];
 
-            bestIndex = ni;
+          const cb =
+            buffer[cp + 2];
+
+
+          let count =
+            0;
+
+
+          for(
+            const other
+            of neighbours
+          ){
+
+            const op =
+              other * 4;
+
+
+            const dr =
+              Math.abs(
+                buffer[op] -
+                cr
+              );
+
+            const dg =
+              Math.abs(
+                buffer[op + 1] -
+                cg
+              );
+
+            const db =
+              Math.abs(
+                buffer[op + 2] -
+                cb
+              );
+
+
+            // ------------------------------------------------
+            // Пиксели считаются одной цветовой группой,
+            // если они достаточно близки.
+            // ------------------------------------------------
+
+            if(
+              dr <= 18 &&
+              dg <= 18 &&
+              db <= 18
+            ){
+
+              count++;
+
+            }
+
           }
+
+
+          if(
+            count > bestCount
+          ){
+
+            bestCount =
+              count;
+
+            bestSource =
+              candidate;
+
+          }
+
         }
 
-        additions.push({
+
+        // ----------------------------------------------------
+        // Не менее 4 из соседей должны соответствовать
+        // одному цвету.
+        //
+        // Это важнейшая защита от заполнения границ.
+        // ----------------------------------------------------
+
+        if(
+          bestSource < 0 ||
+          bestCount < 4
+        ){
+
+          continue;
+
+        }
+
+
+        additions.push([
           index,
-          source: bestIndex
-        });
+          bestSource
+        ]);
+
       }
+
     }
 
-    if (!additions.length) {
+
+    // --------------------------------------------------------
+    // ПРИМЕНЯЕМ ВСЕ ИЗМЕНЕНИЯ ПОСЛЕ ПОЛНОГО ПРОХОДА.
+    //
+    // Поэтому дырка не может мгновенно распространиться
+    // на большую область.
+    // --------------------------------------------------------
+
+    for(
+      const addition
+      of additions
+    ){
+
+      const target =
+        addition[0];
+
+      const source =
+        addition[1];
+
+
+      const tp =
+        target * 4;
+
+      const sp =
+        source * 4;
+
+
+      buffer[tp] =
+        buffer[sp];
+
+      buffer[tp + 1] =
+        buffer[sp + 1];
+
+      buffer[tp + 2] =
+        buffer[sp + 2];
+
+      buffer[tp + 3] =
+        buffer[sp + 3];
+
+
+      mask[target] =
+        1;
+
+    }
+
+
+    // --------------------------------------------------------
+    // Если больше нечего закрывать — заканчиваем.
+    // --------------------------------------------------------
+
+    if(
+      additions.length === 0
+    ){
+
       break;
+
     }
 
-    // --------------------------------------------------------
-    // Apply additions only after scanning the whole pass.
-    // This prevents one newly filled pixel from immediately
-    // propagating through a large background region.
-    // --------------------------------------------------------
-
-    for (const item of additions) {
-      const dst =
-        item.index * 4;
-
-      const src =
-        item.source * 4;
-
-      rgba[dst] =
-        rgba[src];
-
-      rgba[dst + 1] =
-        rgba[src + 1];
-
-      rgba[dst + 2] =
-        rgba[src + 2];
-
-      rgba[dst + 3] =
-        rgba[src + 3];
-
-      mask[item.index] = 1;
-    }
   }
 
-  return rgba;
 }
 
-// ------------------------------------------------------------
-// REPROJECT FRAME
-// ------------------------------------------------------------
 
-async function processFrame(
+// ============================================================
+// FRAME
+// ============================================================
+
+async function renderFrame(
   gif,
   frame
-) {
-  const metadata =
-    await sharp(gif, {
-      animated: true,
-      page: frame,
-      pages: 1
-    }).metadata();
+){
 
-  const sourceWidth =
-    metadata.width;
+  const cacheKey =
+    String(frame);
 
-  const sourceHeight =
-    metadata.pageHeight ||
-    metadata.height;
 
-  if (
-    !sourceWidth ||
-    !sourceHeight
-  ) {
-    throw new Error(
-      "Cannot determine GIF frame dimensions"
+  if(
+    processedFrameCache.has(
+      cacheKey
+    )
+  ){
+
+    return processedFrameCache.get(
+      cacheKey
     );
+
   }
 
-  // ----------------------------------------------------------
-  // Read source frame as raw RGBA.
-  // ----------------------------------------------------------
-
-  const sourceRaw =
-    await sharp(gif, {
-      animated: true,
-      page: frame,
-      pages: 1
-    })
-      .ensureAlpha()
-      .raw()
-      .toBuffer();
 
   // ----------------------------------------------------------
-  // Output resolution.
-  //
-  // Same aspect ratio as the geographic rectangle.
-  // High enough for sharp radar without enormous Vercel
-  // memory consumption.
+  // DECODE
   // ----------------------------------------------------------
 
-  const outWidth = 1024;
+  const decoded =
+    await sharp(
+      gif,
+      {
 
-  const lonSpan =
-    EAST - WEST;
+        animated:
+          true,
 
-  const latSpan =
-    NORTH - SOUTH;
+        page:
+          frame,
 
-  const outHeight =
-    Math.round(
-      outWidth *
-      latSpan /
-      lonSpan
-    );
+        pages:
+          1
+
+      }
+    )
+    .ensureAlpha()
+    .raw()
+    .toBuffer({
+      resolveWithObject:
+        true
+    });
+
+
+  const width =
+    decoded.info.width;
+
+  const height =
+    decoded.info.height;
+
+  const source =
+    decoded.data;
+
+
+  // ----------------------------------------------------------
+  // OUTPUT
+  // ----------------------------------------------------------
 
   const output =
     Buffer.alloc(
-      outWidth *
-      outHeight *
-      4,
-      0
+      width *
+      height *
+      4
     );
 
+
   // ----------------------------------------------------------
-  // Reprojection.
+  // MERCATOR EXTENT
   // ----------------------------------------------------------
 
-  for (
+  const west =
+    GIF_BOUNDS.west;
+
+  const east =
+    GIF_BOUNDS.east;
+
+  const southMerc =
+    mercatorY(
+      GIF_BOUNDS.south
+    );
+
+  const northMerc =
+    mercatorY(
+      GIF_BOUNDS.north
+    );
+
+
+  const lonStep =
+    (
+      east -
+      west
+    ) /
+    Math.max(
+      1,
+      width - 1
+    );
+
+
+  const mercStep =
+    (
+      northMerc -
+      southMerc
+    ) /
+    Math.max(
+      1,
+      height - 1
+    );
+
+
+  // ----------------------------------------------------------
+  // REPROJECTION
+  // ----------------------------------------------------------
+
+  for(
     let y = 0;
-    y < outHeight;
+    y < height;
     y++
-  ) {
-    const t =
-      y /
-      (outHeight - 1);
+  ){
 
-    const lat =
-      NORTH -
-      t * (
-        NORTH - SOUTH
-      );
+    const mercY =
+      northMerc -
+      y * mercStep;
 
-    for (
+
+    for(
       let x = 0;
-      x < outWidth;
+      x < width;
       x++
-    ) {
-      const u =
-        x /
-        (outWidth - 1);
+    ){
 
       const lon =
-        WEST +
-        u * (
-          EAST - WEST
+        west +
+        x * lonStep;
+
+
+      const sourcePoint =
+        geoToSource(
+          lon,
+          mercY
         );
 
-      const [
-        sxFloat,
-        syFloat
-      ] = geoToSource(
-        lon,
-        lat,
-        sourceWidth,
-        sourceHeight
-      );
 
-      const sx =
-        Math.round(sxFloat);
+      const sourceX =
+        Math.round(
+          sourcePoint[0] *
+          width /
+          CALIBRATION_WIDTH
+        );
 
-      const sy =
-        Math.round(syFloat);
 
-      if (
-        sx < 0 ||
-        sy < 0 ||
-        sx >= sourceWidth ||
-        sy >= sourceHeight
-      ) {
+      const sourceY =
+        Math.round(
+          sourcePoint[1] *
+          height /
+          CALIBRATION_HEIGHT
+        );
+
+
+      if(
+        sourceX < 0 ||
+        sourceX >= width ||
+        sourceY < 0 ||
+        sourceY >= height
+      ){
+
         continue;
+
       }
 
-      // ------------------------------------------------------
-      // Never allow Meteoinfo UI/service pixels into radar.
-      // ------------------------------------------------------
 
-      if (
+      if(
         isServiceArea(
-          sx,
-          sy,
-          sourceWidth,
-          sourceHeight
+          sourceX,
+          sourceY,
+          width,
+          height
         )
-      ) {
+      ){
+
         continue;
+
       }
+
 
       const sourceIndex =
         (
-          sy *
-          sourceWidth +
-          sx
+          sourceY *
+          width +
+          sourceX
         ) * 4;
 
+
       const r =
-        sourceRaw[sourceIndex];
+        source[sourceIndex];
 
       const g =
-        sourceRaw[
-          sourceIndex + 1
-        ];
+        source[sourceIndex + 1];
 
       const b =
-        sourceRaw[
-          sourceIndex + 2
-        ];
+        source[sourceIndex + 2];
 
       const a =
-        sourceRaw[
-          sourceIndex + 3
-        ];
+        source[sourceIndex + 3];
 
-      if (
-        !radarPixel(
+
+      if(
+        !a
+      ){
+
+        continue;
+
+      }
+
+
+      if(
+        !isRadarPixel(
           r,
           g,
-          b,
-          a
+          b
         )
-      ) {
+      ){
+
         continue;
+
       }
+
 
       const outputIndex =
         (
           y *
-          outWidth +
+          width +
           x
         ) * 4;
 
-      output[
-        outputIndex
-      ] = r;
 
-      output[
-        outputIndex + 1
-      ] = g;
+      output[outputIndex] =
+        r;
 
-      output[
-        outputIndex + 2
-      ] = b;
+      output[outputIndex + 1] =
+        g;
 
-      output[
-        outputIndex + 3
-      ] = 255;
+      output[outputIndex + 2] =
+        b;
+
+      output[outputIndex + 3] =
+        255;
+
     }
+
   }
 
-  // ----------------------------------------------------------
-  // CLOSE SMALL HOLES.
-  // ----------------------------------------------------------
+
+  // ==========================================================
+  // ЗАПОЛНЕНИЕ МЕЛКИХ ДЫР
+  // ==========================================================
+  //
+  // ВАЖНО:
+  // этот этап происходит ПОСЛЕ геопривязки.
+  //
+  // Поэтому дырки заполняются уже в той же сетке,
+  // в которой PNG будет показан Leaflet.
+  //
+  // ==========================================================
 
   fillSmallRadarHoles(
     output,
-    outWidth,
-    outHeight
+    width,
+    height
   );
+
 
   // ----------------------------------------------------------
   // PNG
   // ----------------------------------------------------------
 
-  return sharp(output, {
-    raw: {
-      width: outWidth,
-      height: outHeight,
-      channels: 4
-    }
-  })
+  const png =
+    await sharp(
+      output,
+      {
+        raw:{
+          width,
+          height,
+          channels:4
+        }
+      }
+    )
     .png({
-      compressionLevel: 6,
-      adaptiveFiltering: false,
-      palette: false
+      compressionLevel:
+        3,
+
+      adaptiveFiltering:
+        false,
+
+      palette:
+        false
     })
     .toBuffer();
-}
 
-// ------------------------------------------------------------
-// FRAME CACHE
-// ------------------------------------------------------------
 
-function getCachedFrame(
-  frame
-) {
-  const item =
-    frameCache.get(frame);
+  // ----------------------------------------------------------
+  // RAM CACHE
+  // ----------------------------------------------------------
 
-  if (!item) {
-    return null;
-  }
-
-  // Refresh LRU position.
-  frameCache.delete(frame);
-  frameCache.set(frame, item);
-
-  return item;
-}
-
-function setCachedFrame(
-  frame,
-  buffer
-) {
-  if (
-    frameCache.has(frame)
-  ) {
-    frameCache.delete(frame);
-  }
-
-  frameCache.set(
-    frame,
-    buffer
+  processedFrameCache.set(
+    cacheKey,
+    png
   );
 
-  while (
-    frameCache.size >
-    FRAME_CACHE_MAX
-  ) {
-    const first =
-      frameCache.keys()
+
+  /*
+     Максимум 12 кадров
+     одновременно в RAM.
+  */
+
+  if(
+    processedFrameCache.size >
+    12
+  ){
+
+    const firstKey =
+      processedFrameCache
+        .keys()
         .next()
         .value;
 
-    frameCache.delete(first);
-  }
-}
 
-// ------------------------------------------------------------
-// HANDLER
-// ------------------------------------------------------------
+    if(
+      firstKey !==
+      undefined
+    ){
 
-module.exports = async function handler(
-  req,
-  res
-) {
-  try {
-    const mode =
-      req.query?.mode;
-
-    // --------------------------------------------------------
-    // META
-    // --------------------------------------------------------
-
-    if (mode === "meta") {
-      const gif =
-        await getGif();
-
-      const metadata =
-        await sharp(gif, {
-          animated: true
-        }).metadata();
-
-      const pages =
-        metadata.pages || 1;
-
-      const delays =
-        metadata.delay || [];
-
-      res.setHeader(
-        "Cache-Control",
-        "public, max-age=10, s-maxage=30"
+      processedFrameCache.delete(
+        firstKey
       );
 
-      return res.status(200).json({
-        ok: true,
-        frames: pages,
-        width: metadata.width,
-        height:
-          metadata.pageHeight ||
-          metadata.height,
-        delays,
-        bounds: [
-          [
-            SOUTH,
-            WEST
-          ],
-          [
-            NORTH,
-            EAST
-          ]
-        ]
-      });
     }
 
-    // --------------------------------------------------------
-    // FRAME
-    // --------------------------------------------------------
+  }
 
-    let frame =
+
+  return png;
+
+}
+
+
+// ============================================================
+// HANDLER
+// ============================================================
+
+export default async function handler(
+  req,
+  res
+){
+
+  try{
+
+    const mode =
+      String(
+        req.query?.mode ||
+        ""
+      );
+
+
+    const requestedFrame =
       Number(
         req.query?.frame
       );
 
-    if (
-      !Number.isFinite(frame) ||
-      frame < 0
-    ) {
-      frame = 0;
-    }
-
-    frame =
-      Math.floor(frame);
 
     const gif =
-      await getGif();
+      await getGIF();
+
 
     const metadata =
-      await sharp(gif, {
-        animated: true
-      }).metadata();
+      await getMetadata(
+        gif
+      );
 
-    const pages =
-      metadata.pages || 1;
 
-    if (frame >= pages) {
-      frame =
-        pages - 1;
-    }
+    // ========================================================
+    // META
+    // ========================================================
 
-    // --------------------------------------------------------
-    // CACHE HIT
-    // --------------------------------------------------------
+    if(
+      mode ===
+      "meta"
+    ){
 
-    const cached =
-      getCachedFrame(frame);
+      const frames =
+        Number(
+          metadata.pages ||
+          1
+        );
 
-    if (cached) {
+
+      const width =
+        Number(
+          metadata.width ||
+          0
+        );
+
+
+      const height =
+        Number(
+          metadata.pageHeight ||
+          metadata.height ||
+          0
+        );
+
+
+      const delays =
+        Array.isArray(
+          metadata.delay
+        )
+          ? metadata.delay
+          : [];
+
+
+      setCORS(
+        res
+      );
+
+      setCache(
+        res
+      );
+
+
       res.setHeader(
         "Content-Type",
-        "image/png"
+        "application/json; charset=utf-8"
       );
 
-      res.setHeader(
-        "Cache-Control",
-        "public, max-age=30, s-maxage=60"
-      );
 
-      res.setHeader(
-        "X-CLOrad-Cache",
-        "HIT"
-      );
+      return res
+        .status(200)
+        .json({
 
-      return res.status(200).send(
-        cached
-      );
+          ok:
+            true,
+
+          frames,
+
+          width,
+
+          height,
+
+          delays
+
+        });
+
     }
 
-    // --------------------------------------------------------
-    // PROCESS
-    // --------------------------------------------------------
+
+    // ========================================================
+    // FRAME CHECK
+    // ========================================================
+
+    if(
+      !Number.isInteger(
+        requestedFrame
+      )
+    ){
+
+      setCORS(
+        res
+      );
+
+
+      return res
+        .status(400)
+        .json({
+
+          error:
+            "Укажи номер кадра: ?frame=0"
+
+        });
+
+    }
+
+
+    const pages =
+      Number(
+        metadata.pages ||
+        1
+      );
+
+
+    const frame =
+      Math.max(
+        0,
+        Math.min(
+          requestedFrame,
+          pages - 1
+        )
+      );
+
+
+    // ========================================================
+    // RENDER
+    // ========================================================
 
     const png =
-      await processFrame(
+      await renderFrame(
         gif,
         frame
       );
 
-    setCachedFrame(
-      frame,
-      png
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
+    setCORS(
+      res
     );
+
+    setCache(
+      res
+    );
+
 
     res.setHeader(
       "Content-Type",
       "image/png"
     );
 
-    res.setHeader(
-      "Cache-Control",
-      "public, max-age=30, s-maxage=60"
-    );
 
     res.setHeader(
-      "X-CLOrad-Cache",
-      "MISS"
+      "Content-Length",
+      String(
+        png.length
+      )
     );
 
-    return res.status(200).send(
-      png
-    );
 
-  } catch (error) {
+    return res
+      .status(200)
+      .send(
+        png
+      );
+
+
+  }catch(error){
+
     console.error(
       "CLOrad radar-gif error:",
       error
     );
 
-    res.setHeader(
-      "Cache-Control",
-      "no-store"
+
+    setCORS(
+      res
     );
 
-    return res.status(500).json({
-      ok: false,
-      error:
-        error?.message ||
-        "Radar GIF processing failed"
-    });
+
+    return res
+      .status(500)
+      .json({
+
+        error:
+          "GIF API error",
+
+        message:
+          error?.message ||
+          String(error)
+
+      });
+
   }
-};
+
+}
