@@ -1,7 +1,7 @@
 // ============================================================
 // CLOrad — Meteoinfo GIF Radar API
 // GIF → очистка → геопривязка → Web Mercator →
-// заполнение мелких дыр → строгая палитра CLOrad → PNG
+// определение интенсивности → строгая палитра CLOrad → PNG
 // ============================================================
 
 import sharp from "sharp";
@@ -69,253 +69,34 @@ const CLORAD_PALETTE = [
 
 
 // ============================================================
-// LIGHTWEIGHT PALETTE LOOKUP
+// COLOR / INTENSITY HELPERS
 // ============================================================
 //
-// 32 × 32 × 32 = 32768 ячеек.
+// ВАЖНО:
 //
-// Цвет исходного радара сначала проходит фильтр,
-// а затем мгновенно переводится в один из 19 цветов.
+// Мы больше НЕ используем обычное RGB-distance
+// до палитры CLOrad.
+//
+// Иначе слабый цвет Meteoinfo может оказаться
+// ближе к одному из крайних цветов CLOrad.
+//
+// Вместо этого сначала оценивается "сила" исходного
+// радарного цвета, а затем эта сила переводится
+// непосредственно в индекс 0..18.
 // ============================================================
 
-const PALETTE_SIZE =
-  32;
 
-const PALETTE_LOOKUP =
-  new Uint8Array(
-    PALETTE_SIZE *
-    PALETTE_SIZE *
-    PALETTE_SIZE
-  );
-
-
-function buildPaletteLookup(){
-
-  for(
-    let r6 = 0;
-    r6 < PALETTE_SIZE;
-    r6++
-  ){
-
-    const r =
-      r6 * 8 + 4;
-
-
-    for(
-      let g6 = 0;
-      g6 < PALETTE_SIZE;
-      g6++
-    ){
-
-      const g =
-        g6 * 8 + 4;
-
-
-      for(
-        let b6 = 0;
-        b6 < PALETTE_SIZE;
-        b6++
-      ){
-
-        const b =
-          b6 * 8 + 4;
-
-
-        let best =
-          0;
-
-        let bestDistance =
-          Infinity;
-
-
-        for(
-          let i = 0;
-          i < CLORAD_PALETTE.length;
-          i++
-        ){
-
-          const color =
-            CLORAD_PALETTE[i];
-
-
-          const dr =
-            r -
-            color[0];
-
-          const dg =
-            g -
-            color[1];
-
-          const db =
-            b -
-            color[2];
-
-
-          const distance =
-            dr * dr +
-            dg * dg +
-            db * db;
-
-
-          if(
-            distance <
-            bestDistance
-          ){
-
-            bestDistance =
-              distance;
-
-            best =
-              i;
-
-          }
-
-        }
-
-
-        const index =
-          (
-            r6 *
-            PALETTE_SIZE *
-            PALETTE_SIZE
-          ) +
-          (
-            g6 *
-            PALETTE_SIZE
-          ) +
-          b6;
-
-
-        PALETTE_LOOKUP[index] =
-          best;
-
-      }
-
-    }
-
-  }
-
-}
-
-
-buildPaletteLookup();
-
-
-function getPaletteIndex(
-  r,
-  g,
-  b
+function clamp(
+  value,
+  min,
+  max
 ){
 
-  const index =
-    (
-      (r >> 3) *
-      PALETTE_SIZE *
-      PALETTE_SIZE
-    ) +
-    (
-      (g >> 3) *
-      PALETTE_SIZE
-    ) +
-    (
-      b >> 3
-    );
-
-
-  return PALETTE_LOOKUP[index];
-
-}
-
-
-// ============================================================
-// CALIBRATION
-// ============================================================
-
-const UC_LON =
-  42.7295125;
-
-const UC_MERC =
-  1.159140403966;
-
-const US_LON =
-  11.984477282034;
-
-const US_MERC =
-  0.080017466461;
-
-
-// source X
-const PX = [
-   614.702787260693,
-   213.524267491052,
-    86.865800553715,
-    17.052995641967,
-   -18.941081998370,
-    -3.466637383242
-];
-
-
-// source Y
-const PY = [
-   548.709828924571,
-   231.245550214358,
-   -80.613999910294,
-   -23.817051905972,
-   -12.895624928117,
-     3.365220370149
-];
-
-
-// ============================================================
-// WEB MERCATOR BOUNDS
-// ============================================================
-
-const GIF_BOUNDS = {
-
-  south:
-    38.2155955810,
-
-  north:
-    69.6543707199,
-
-  west:
-    14.9892981264,
-
-  east:
-    72.9237642948
-
-};
-
-
-// ============================================================
-// ORIGINAL IMAGE SIZE
-// ============================================================
-
-const CALIBRATION_WIDTH =
-  1122;
-
-const CALIBRATION_HEIGHT =
-  1136;
-
-
-// ============================================================
-// MERCATOR
-// ============================================================
-
-function mercatorY(
-  lat
-){
-
-  const rad =
-    lat *
-    Math.PI /
-    180;
-
-
-  return Math.log(
-    Math.tan(
-      Math.PI / 4 +
-      rad / 2
+  return Math.max(
+    min,
+    Math.min(
+      max,
+      value
     )
   );
 
@@ -323,56 +104,112 @@ function mercatorY(
 
 
 // ============================================================
-// GEO → SOURCE PIXEL
+// HSV
 // ============================================================
 
-function geoToSource(
-  lon,
-  mercY
+function rgbToHSV(
+  r,
+  g,
+  b
 ){
 
-  const x =
-    (lon - UC_LON) /
-    US_LON;
+  r /= 255;
+  g /= 255;
+  b /= 255;
 
 
-  const y =
-    (mercY - UC_MERC) /
-    US_MERC;
+  const max =
+    Math.max(
+      r,
+      g,
+      b
+    );
 
 
-  const xx =
-    x * x;
-
-  const xy =
-    x * y;
-
-  const yy =
-    y * y;
+  const min =
+    Math.min(
+      r,
+      g,
+      b
+    );
 
 
-  const sx =
-    PX[0] +
-    PX[1] * x +
-    PX[2] * y +
-    PX[3] * xx +
-    PX[4] * xy +
-    PX[5] * yy;
+  const d =
+    max -
+    min;
 
 
-  const sy =
-    PY[0] +
-    PY[1] * x +
-    PY[2] * y +
-    PY[3] * xx +
-    PY[4] * xy +
-    PY[5] * yy;
+  let h =
+    0;
 
 
-  return [
-    sx,
-    sy
-  ];
+  if(
+    d !== 0
+  ){
+
+    if(
+      max === r
+    ){
+
+      h =
+        (
+          (g - b) /
+          d
+        ) %
+        6;
+
+    }else if(
+      max === g
+    ){
+
+      h =
+        (
+          (b - r) /
+          d
+        ) +
+        2;
+
+    }else{
+
+      h =
+        (
+          (r - g) /
+          d
+        ) +
+        4;
+
+    }
+
+
+    h *= 60;
+
+
+    if(
+      h < 0
+    ){
+
+      h += 360;
+
+    }
+
+  }
+
+
+  const s =
+    max === 0
+      ? 0
+      : d / max;
+
+
+  const v =
+    max;
+
+
+  return {
+    h,
+    s,
+    v
+  };
 
 }
 
@@ -408,6 +245,11 @@ function isRadarPixel(
     min;
 
 
+  /*
+     Полностью тёмные пиксели
+     не являются радаром.
+  */
+
   if(
     max < 70
   ){
@@ -416,6 +258,11 @@ function isRadarPixel(
 
   }
 
+
+  /*
+     Серый фон / море / служебные
+     области.
+  */
 
   if(
     chroma < 30
@@ -440,6 +287,10 @@ function isRadarPixel(
   }
 
 
+  /*
+     Почти белые служебные элементы.
+  */
+
   if(
     max > 238 &&
     saturation < 0.20
@@ -451,6 +302,303 @@ function isRadarPixel(
 
 
   return true;
+
+}
+
+
+// ============================================================
+// RADAR INTENSITY
+// ============================================================
+//
+// Возвращает число 0..18.
+//
+// Это НЕ nearest-color.
+//
+// Здесь используются характеристики самого исходного
+// цвета Meteoinfo.
+//
+// Основная идея:
+//
+// - голубые/синие слабые оттенки → низкие уровни
+// - зелёные → средние
+// - жёлтые → повышенные
+// - оранжевые/красные → высокие
+// - пурпурные → самые высокие
+//
+// Внутри каждого цветового семейства используется
+// яркость/насыщенность, чтобы не превращать всё семейство
+// сразу в максимальный уровень.
+// ============================================================
+
+function getRadarIntensity(
+  r,
+  g,
+  b
+){
+
+  const {
+    h,
+    s,
+    v
+  } =
+    rgbToHSV(
+      r,
+      g,
+      b
+    );
+
+
+  /*
+     HSV brightness.
+
+     Нормируем небольшую часть диапазона,
+     чтобы очень яркие служебные цвета не улетали
+     автоматически в максимум.
+  */
+
+  let strength =
+    0;
+
+
+  // ----------------------------------------------------------
+  // BLUE / CYAN
+  // ----------------------------------------------------------
+
+  if(
+    h >= 170 &&
+    h < 260
+  ){
+
+    const huePart =
+      (
+        h -
+        170
+      ) /
+      90;
+
+
+    strength =
+      0.08 +
+      huePart *
+      0.18 +
+      s *
+      0.12 +
+      v *
+      0.18;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // BLUE → GREEN
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 110 &&
+    h < 170
+  ){
+
+    const huePart =
+      (
+        170 -
+        h
+      ) /
+      60;
+
+
+    strength =
+      0.20 +
+      huePart *
+      0.20 +
+      s *
+      0.15 +
+      v *
+      0.18;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // GREEN
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 70 &&
+    h < 110
+  ){
+
+    const huePart =
+      (
+        110 -
+        h
+      ) /
+      40;
+
+
+    strength =
+      0.34 +
+      huePart *
+      0.18 +
+      s *
+      0.18 +
+      v *
+      0.16;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // YELLOW
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 40 &&
+    h < 70
+  ){
+
+    const huePart =
+      (
+        70 -
+        h
+      ) /
+      30;
+
+
+    strength =
+      0.52 +
+      huePart *
+      0.12 +
+      s *
+      0.18 +
+      v *
+      0.12;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // ORANGE
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 15 &&
+    h < 40
+  ){
+
+    const huePart =
+      (
+        40 -
+        h
+      ) /
+      25;
+
+
+    strength =
+      0.64 +
+      huePart *
+      0.14 +
+      s *
+      0.16 +
+      v *
+      0.10;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // RED
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 0 &&
+    h < 15
+  ){
+
+    strength =
+      0.78 +
+      s *
+      0.12 +
+      v *
+      0.10;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // MAGENTA / PURPLE
+  // ----------------------------------------------------------
+
+  else if(
+    h >= 260 &&
+    h < 345
+  ){
+
+    const huePart =
+      (
+        h -
+        260
+      ) /
+      85;
+
+
+    strength =
+      0.78 +
+      huePart *
+      0.12 +
+      s *
+      0.08 +
+      v *
+      0.10;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // RED → MAGENTA
+  // ----------------------------------------------------------
+
+  else{
+
+    strength =
+      0.86 +
+      s *
+      0.08 +
+      v *
+      0.06;
+
+  }
+
+
+  strength =
+    clamp(
+      strength,
+      0,
+      1
+    );
+
+
+  /*
+     Квантизация в 19 уровней.
+
+     Никакого случайного выбора крайнего цвета.
+  */
+
+  let level =
+    Math.floor(
+      strength *
+      CLORAD_PALETTE.length
+    );
+
+
+  level =
+    clamp(
+      level,
+      0,
+      CLORAD_PALETTE.length - 1
+    );
+
+
+  return level;
 
 }
 
@@ -468,13 +616,13 @@ function isServiceArea(
 
   const sx =
     x *
-    CALIBRATION_WIDTH /
+    1122 /
     width;
 
 
   const sy =
     y *
-    CALIBRATION_HEIGHT /
+    1136 /
     height;
 
 
@@ -559,7 +707,8 @@ async function getGIF(){
 
   if(
     cachedGIF &&
-    now - cachedAt <
+    now -
+      cachedAt <
       GIF_CACHE_MS
   ){
 
@@ -641,8 +790,6 @@ async function getGIF(){
       }
 
 
-      // Новый GIF → старые обработанные кадры больше
-      // не нужны.
       processedFrameCache.clear();
 
       cachedMetadata =
@@ -741,15 +888,13 @@ function setCache(
 // SMALL RADAR HOLE FILLER
 // ============================================================
 //
-// Здесь специально НЕ используется isRadarPixel().
+// ВАЖНО:
 //
-// После геопривязки output содержит только настоящий радар
-// и прозрачный фон.
+// Дырка получает не RGB соседа,
+// а именно его LEVEL.
 //
-// Поэтому alpha > 0 = существующий радарный пиксель.
-//
-// Это позволяет корректно работать даже с l1, который сам
-// по себе имеет низкую насыщенность.
+// Это предотвращает случайное повышение
+// интенсивности из-за различий RGB.
 // ============================================================
 
 function fillSmallRadarHoles(
@@ -779,8 +924,14 @@ function fillSmallRadarHoles(
     );
 
 
+  const levels =
+    new Uint8Array(
+      pixelCount
+    );
+
+
   // ----------------------------------------------------------
-  // MASK
+  // BUILD MASK + LEVELS
   // ----------------------------------------------------------
 
   for(
@@ -790,7 +941,8 @@ function fillSmallRadarHoles(
   ){
 
     const p =
-      i * 4;
+      i *
+      4;
 
 
     if(
@@ -800,13 +952,55 @@ function fillSmallRadarHoles(
       mask[i] =
         1;
 
+
+      /*
+         Для уже существующего цвета ищем
+         точный индекс CLOrad palette.
+
+         Поскольку цвета были записаны сервером,
+         совпадение будет точным.
+      */
+
+      let level =
+        0;
+
+
+      for(
+        let k = 0;
+        k < CLORAD_PALETTE.length;
+        k++
+      ){
+
+        const color =
+          CLORAD_PALETTE[k];
+
+
+        if(
+          buffer[p] === color[0] &&
+          buffer[p + 1] === color[1] &&
+          buffer[p + 2] === color[2]
+        ){
+
+          level =
+            k;
+
+          break;
+
+        }
+
+      }
+
+
+      levels[i] =
+        level;
+
     }
 
   }
 
 
   // ----------------------------------------------------------
-  // TWO SMALL PASSES
+  // TWO PASSES
   // ----------------------------------------------------------
 
   for(
@@ -849,11 +1043,18 @@ function fillSmallRadarHoles(
         }
 
 
-        // ----------------------------------------------------
-        // NEIGHBOURS
-        // ----------------------------------------------------
+        let count =
+          0;
 
-        const neighbours = [];
+
+        const neighbourLevels =
+          new Uint8Array(
+            8
+          );
+
+
+        let n =
+          0;
 
 
         for(
@@ -864,7 +1065,8 @@ function fillSmallRadarHoles(
 
           const neighbourRow =
             (
-              y + dy
+              y +
+              dy
             ) *
             width;
 
@@ -895,91 +1097,8 @@ function fillSmallRadarHoles(
               mask[ni]
             ){
 
-              neighbours.push(
-                ni
-              );
-
-            }
-
-          }
-
-        }
-
-
-        // Нужно минимум 6 из 8.
-        if(
-          neighbours.length < 6
-        ){
-
-          continue;
-
-        }
-
-
-        // ----------------------------------------------------
-        // FIND DOMINANT EXACT COLOR
-        // ----------------------------------------------------
-        //
-        // Все существующие output-пиксели уже принадлежат
-        // CLOrad palette, поэтому сравниваем цвета точно.
-        // ----------------------------------------------------
-
-        let bestSource =
-          -1;
-
-        let bestCount =
-          0;
-
-
-        for(
-          let i = 0;
-          i < neighbours.length;
-          i++
-        ){
-
-          const candidate =
-            neighbours[i];
-
-
-          const cp =
-            candidate *
-            4;
-
-
-          const cr =
-            buffer[cp];
-
-          const cg =
-            buffer[cp + 1];
-
-          const cb =
-            buffer[cp + 2];
-
-
-          let count =
-            0;
-
-
-          for(
-            let j = 0;
-            j < neighbours.length;
-            j++
-          ){
-
-            const other =
-              neighbours[j];
-
-
-            const op =
-              other *
-              4;
-
-
-            if(
-              buffer[op] === cr &&
-              buffer[op + 1] === cg &&
-              buffer[op + 2] === cb
-            ){
+              neighbourLevels[n++] =
+                levels[ni];
 
               count++;
 
@@ -987,16 +1106,78 @@ function fillSmallRadarHoles(
 
           }
 
+        }
+
+
+        /*
+           Не заполняем границы.
+        */
+
+        if(
+          count < 6
+        ){
+
+          continue;
+
+        }
+
+
+        /*
+           Находим медианный уровень.
+
+           Это значительно безопаснее,
+           чем копировать случайного соседа.
+        */
+
+        const sorted =
+          Array.from(
+            neighbourLevels
+              .subarray(
+                0,
+                n
+              )
+          )
+          .sort(
+            (a,b) =>
+              a - b
+          );
+
+
+        const median =
+          sorted[
+            Math.floor(
+              sorted.length / 2
+            )
+          ];
+
+
+        /*
+           Проверяем, что большинство соседей
+           находится недалеко от медианы.
+
+           Это запрещает растягивать резкий
+           красный/пурпурный пиксель далеко
+           в слабую область.
+        */
+
+        let closeCount =
+          0;
+
+
+        for(
+          let i = 0;
+          i < sorted.length;
+          i++
+        ){
 
           if(
-            count > bestCount
+            Math.abs(
+              sorted[i] -
+              median
+            ) <= 1
           ){
 
-            bestCount =
-              count;
-
-            bestSource =
-              candidate;
+            closeCount++;
 
           }
 
@@ -1004,8 +1185,7 @@ function fillSmallRadarHoles(
 
 
         if(
-          bestSource < 0 ||
-          bestCount < 4
+          closeCount < 4
         ){
 
           continue;
@@ -1015,7 +1195,7 @@ function fillSmallRadarHoles(
 
         additions.push(
           index,
-          bestSource
+          median
         );
 
       }
@@ -1036,34 +1216,40 @@ function fillSmallRadarHoles(
       const target =
         additions[i];
 
-      const source =
+      const level =
         additions[i + 1];
 
 
-      const tp =
+      const color =
+        CLORAD_PALETTE[
+          level
+        ];
+
+
+      const p =
         target *
         4;
 
-      const sp =
-        source *
-        4;
 
+      buffer[p] =
+        color[0];
 
-      buffer[tp] =
-        buffer[sp];
+      buffer[p + 1] =
+        color[1];
 
-      buffer[tp + 1] =
-        buffer[sp + 1];
+      buffer[p + 2] =
+        color[2];
 
-      buffer[tp + 2] =
-        buffer[sp + 2];
-
-      buffer[tp + 3] =
+      buffer[p + 3] =
         255;
 
 
       mask[target] =
         1;
+
+
+      levels[target] =
+        level;
 
     }
 
@@ -1108,7 +1294,7 @@ async function renderFrame(
 
 
   // ----------------------------------------------------------
-  // DECODE GIF FRAME
+  // DECODE
   // ----------------------------------------------------------
 
   const decoded =
@@ -1160,11 +1346,12 @@ async function renderFrame(
 
 
   // ----------------------------------------------------------
-  // MERCATOR EXTENT
+  // MERCATOR
   // ----------------------------------------------------------
 
   const west =
     GIF_BOUNDS.west;
+
 
   const east =
     GIF_BOUNDS.east;
@@ -1243,7 +1430,7 @@ async function renderFrame(
         Math.round(
           sourcePoint[0] *
           width /
-          CALIBRATION_WIDTH
+          1122
         );
 
 
@@ -1251,7 +1438,7 @@ async function renderFrame(
         Math.round(
           sourcePoint[1] *
           height /
-          CALIBRATION_HEIGHT
+          1136
         );
 
 
@@ -1293,11 +1480,14 @@ async function renderFrame(
       const r =
         source[sourceIndex];
 
+
       const g =
         source[sourceIndex + 1];
 
+
       const b =
         source[sourceIndex + 2];
+
 
       const a =
         source[sourceIndex + 3];
@@ -1313,13 +1503,7 @@ async function renderFrame(
 
 
       // ------------------------------------------------------
-      // IMPORTANT
-      // ------------------------------------------------------
-      //
-      // Сначала фильтруем исходный пиксель.
-      //
-      // Поэтому море/серый фон никогда не превращается
-      // в один из цветов CLOrad.
+      // FILTER FIRST
       // ------------------------------------------------------
 
       if(
@@ -1335,17 +1519,21 @@ async function renderFrame(
       }
 
 
-      const paletteIndex =
-        getPaletteIndex(
+      // ------------------------------------------------------
+      // DETERMINE ORIGINAL RADAR INTENSITY
+      // ------------------------------------------------------
+
+      const level =
+        getRadarIntensity(
           r,
           g,
           b
         );
 
 
-      const paletteColor =
+      const color =
         CLORAD_PALETTE[
-          paletteIndex
+          level
         ];
 
 
@@ -1359,17 +1547,17 @@ async function renderFrame(
 
 
       // ------------------------------------------------------
-      // СРАЗУ ЗАПИСЫВАЕМ СТРОГИЙ ЦВЕТ ЛЕГЕНДЫ
+      // STRICT CLOrad COLOR
       // ------------------------------------------------------
 
       output[outputIndex] =
-        paletteColor[0];
+        color[0];
 
       output[outputIndex + 1] =
-        paletteColor[1];
+        color[1];
 
       output[outputIndex + 2] =
-        paletteColor[2];
+        color[2];
 
       output[outputIndex + 3] =
         255;
@@ -1380,7 +1568,7 @@ async function renderFrame(
 
 
   // ==========================================================
-  // HOLE FILL
+  // HOLES
   // ==========================================================
 
   fillSmallRadarHoles(
@@ -1398,11 +1586,13 @@ async function renderFrame(
     await sharp(
       output,
       {
+
         raw:{
           width,
           height,
           channels:4
         }
+
       }
     )
     .png({
@@ -1484,7 +1674,7 @@ export default async function handler(
 
 
     // --------------------------------------------------------
-    // GIF
+    // SOURCE
     // --------------------------------------------------------
 
     const gif =
