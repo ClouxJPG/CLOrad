@@ -69,6 +69,173 @@ const CLORAD_PALETTE = [
 
 
 // ============================================================
+// FAST PALETTE LOOKUP
+// ============================================================
+//
+// 64 × 64 × 64 = 262144 ячейки.
+//
+// Каждый RGB сначала переводится в 6-битные компоненты,
+// после чего мгновенно получает один из 19 цветов.
+//
+// Это намного дешевле, чем искать ближайший цвет среди
+// 19 вариантов для каждого из ~1.2 млн пикселей.
+//
+// Результат ВСЕГДА является индексом CLORAD_PALETTE.
+// ============================================================
+
+const PALETTE_SIZE =
+  64;
+
+const PALETTE_SHIFT =
+  2;
+
+const PALETTE_LOOKUP =
+  new Uint8Array(
+    PALETTE_SIZE *
+    PALETTE_SIZE *
+    PALETTE_SIZE
+  );
+
+
+function buildPaletteLookup(){
+
+  for(
+    let r6 = 0;
+    r6 < PALETTE_SIZE;
+    r6++
+  ){
+
+    const r =
+      r6 * 4 + 2;
+
+
+    for(
+      let g6 = 0;
+      g6 < PALETTE_SIZE;
+      g6++
+    ){
+
+      const g =
+        g6 * 4 + 2;
+
+
+      for(
+        let b6 = 0;
+        b6 < PALETTE_SIZE;
+        b6++
+      ){
+
+        const b =
+          b6 * 4 + 2;
+
+
+        let best =
+          0;
+
+        let bestDistance =
+          Infinity;
+
+
+        for(
+          let i = 0;
+          i < CLORAD_PALETTE.length;
+          i++
+        ){
+
+          const color =
+            CLORAD_PALETTE[i];
+
+
+          const dr =
+            r -
+            color[0];
+
+          const dg =
+            g -
+            color[1];
+
+          const db =
+            b -
+            color[2];
+
+
+          const distance =
+            dr * dr +
+            dg * dg +
+            db * db;
+
+
+          if(
+            distance <
+            bestDistance
+          ){
+
+            bestDistance =
+              distance;
+
+            best =
+              i;
+
+          }
+
+        }
+
+
+        const index =
+          (
+            r6 *
+            PALETTE_SIZE *
+            PALETTE_SIZE
+          ) +
+          (
+            g6 *
+            PALETTE_SIZE
+          ) +
+          b6;
+
+
+        PALETTE_LOOKUP[index] =
+          best;
+
+      }
+
+    }
+
+  }
+
+}
+
+
+buildPaletteLookup();
+
+
+function paletteIndex(
+  r,
+  g,
+  b
+){
+
+  const index =
+    (
+      (r >> PALETTE_SHIFT) *
+      PALETTE_SIZE *
+      PALETTE_SIZE
+    ) +
+    (
+      (g >> PALETTE_SHIFT) *
+      PALETTE_SIZE
+    ) +
+    (
+      b >> PALETTE_SHIFT
+    );
+
+
+  return PALETTE_LOOKUP[index];
+
+}
+
+
+// ============================================================
 // CALIBRATION
 // ============================================================
 
@@ -249,7 +416,8 @@ function isRadarPixel(
     );
 
   const chroma =
-    max - min;
+    max -
+    min;
 
 
   if(
@@ -321,6 +489,7 @@ function isServiceArea(
     height;
 
 
+  // Легенда слева сверху
   if(
     sx <= 145 &&
     sy <= 365
@@ -331,6 +500,7 @@ function isServiceArea(
   }
 
 
+  // Верхняя служебная область
   if(
     sy <= 58
   ){
@@ -340,6 +510,7 @@ function isServiceArea(
   }
 
 
+  // Логотип РГГ/ЦАО слева снизу
   if(
     sx <= 160 &&
     sy >= 965
@@ -350,6 +521,7 @@ function isServiceArea(
   }
 
 
+  // Нижняя служебная строка
   if(
     sy >= 1105
   ){
@@ -359,6 +531,7 @@ function isServiceArea(
   }
 
 
+  // Нижний правый timestamp
   if(
     sx >= 760 &&
     sy >= 1060
@@ -369,6 +542,7 @@ function isServiceArea(
   }
 
 
+  // Верхний правый timestamp
   if(
     sx >= 735 &&
     sy <= 65
@@ -477,6 +651,8 @@ async function getGIF(){
       }
 
 
+      // Новый GIF → старые обработанные кадры больше
+      // не нужны.
       processedFrameCache.clear();
 
       cachedMetadata =
@@ -595,11 +771,15 @@ function fillSmallRadarHoles(
     height;
 
 
-  let mask =
+  const mask =
     new Uint8Array(
       pixelCount
     );
 
+
+  // ----------------------------------------------------------
+  // INITIAL MASK
+  // ----------------------------------------------------------
 
   for(
     let i = 0;
@@ -627,6 +807,10 @@ function fillSmallRadarHoles(
 
   }
 
+
+  // ----------------------------------------------------------
+  // TWO SMALL PASSES
+  // ----------------------------------------------------------
 
   const passes =
     2;
@@ -693,17 +877,14 @@ function fillSmallRadarHoles(
             }
 
 
-            const nx =
-              x + dx;
-
-            const ny =
-              y + dy;
-
-
             const ni =
-              ny *
+              (
+                y + dy
+              ) *
               width +
-              nx;
+              (
+                x + dx
+              );
 
 
             if(
@@ -743,7 +924,8 @@ function fillSmallRadarHoles(
         ){
 
           const cp =
-            candidate * 4;
+            candidate *
+            4;
 
 
           const cr =
@@ -766,32 +948,25 @@ function fillSmallRadarHoles(
           ){
 
             const op =
-              other * 4;
-
-
-            const dr =
-              Math.abs(
-                buffer[op] -
-                cr
-              );
-
-            const dg =
-              Math.abs(
-                buffer[op + 1] -
-                cg
-              );
-
-            const db =
-              Math.abs(
-                buffer[op + 2] -
-                cb
-              );
+              other *
+              4;
 
 
             if(
-              dr <= 18 &&
-              dg <= 18 &&
-              db <= 18
+              Math.abs(
+                buffer[op] -
+                cr
+              ) <= 18 &&
+
+              Math.abs(
+                buffer[op + 1] -
+                cg
+              ) <= 18 &&
+
+              Math.abs(
+                buffer[op + 2] -
+                cb
+              ) <= 18
             ){
 
               count++;
@@ -826,10 +1001,10 @@ function fillSmallRadarHoles(
         }
 
 
-        additions.push([
+        additions.push(
           index,
           bestSource
-        ]);
+        );
 
       }
 
@@ -837,15 +1012,16 @@ function fillSmallRadarHoles(
 
 
     for(
-      const addition
-      of additions
+      let i = 0;
+      i < additions.length;
+      i += 2
     ){
 
       const target =
-        addition[0];
+        additions[i];
 
       const source =
-        addition[1];
+        additions[i + 1];
 
 
       const tp =
@@ -865,7 +1041,7 @@ function fillSmallRadarHoles(
         buffer[sp + 2];
 
       buffer[tp + 3] =
-        buffer[sp + 3];
+        255;
 
 
       mask[target] =
@@ -888,89 +1064,22 @@ function fillSmallRadarHoles(
 
 
 // ============================================================
-// FIND NEAREST CLOrad COLOR
-// ============================================================
-
-function nearestCLOradColor(
-  r,
-  g,
-  b
-){
-
-  let best =
-    0;
-
-  let bestDistance =
-    Infinity;
-
-
-  for(
-    let i = 0;
-    i < CLORAD_PALETTE.length;
-    i++
-  ){
-
-    const color =
-      CLORAD_PALETTE[i];
-
-
-    const dr =
-      r -
-      color[0];
-
-    const dg =
-      g -
-      color[1];
-
-    const db =
-      b -
-      color[2];
-
-
-    const distance =
-      dr * dr +
-      dg * dg +
-      db * db;
-
-
-    if(
-      distance <
-      bestDistance
-    ){
-
-      bestDistance =
-        distance;
-
-      best =
-        i;
-
-    }
-
-  }
-
-
-  return best;
-
-}
-
-
-// ============================================================
-// FINAL STRICT PALETTE
+// STRICT CLOrad PALETTE
 // ============================================================
 //
 // ВАЖНО:
 //
-// Здесь буфер фактически пересобирается по палитре.
+// Эта функция вызывается ТОЛЬКО после:
 //
-// После этой функции невозможно получить, например:
+// 1. геопривязки
+// 2. удаления служебных областей
+// 3. удаления моря/фона
+// 4. заполнения мелких дыр
 //
-// #fff89c
-// #f9f097
-// #fff69a
+// Поэтому фон НЕ превращается в цвет радара.
 //
-// Все жёлтые пиксели будут буквально:
-//
-// 255, 248, 156
+// Каждый оставшийся непрозрачный радарный пиксель получает
+// ровно один из 19 цветов CLOrad.
 //
 // ============================================================
 
@@ -995,10 +1104,6 @@ function enforceStrictPalette(
       i * 4;
 
 
-    // --------------------------------------------------------
-    // ПРОЗРАЧНЫЙ ПИКСЕЛЬ
-    // --------------------------------------------------------
-
     if(
       buffer[p + 3] === 0
     ){
@@ -1019,7 +1124,7 @@ function enforceStrictPalette(
 
 
     // --------------------------------------------------------
-    // ЕСЛИ ЭТО НЕ РАДАР — УДАЛЯЕМ.
+    // Повторно защищаемся от фона.
     // --------------------------------------------------------
 
     if(
@@ -1038,12 +1143,8 @@ function enforceStrictPalette(
     }
 
 
-    // --------------------------------------------------------
-    // ВЫБИРАЕМ БЛИЖАЙШИЙ ЦВЕТ.
-    // --------------------------------------------------------
-
-    const paletteIndex =
-      nearestCLOradColor(
+    const index =
+      paletteIndex(
         r,
         g,
         b
@@ -1051,125 +1152,7 @@ function enforceStrictPalette(
 
 
     const color =
-      CLORAD_PALETTE[
-        paletteIndex
-      ];
-
-
-    // --------------------------------------------------------
-    // ЗАПИСЫВАЕМ КОНСТАНТНЫЕ RGB.
-    // --------------------------------------------------------
-
-    buffer[p] =
-      color[0];
-
-    buffer[p + 1] =
-      color[1];
-
-    buffer[p + 2] =
-      color[2];
-
-    buffer[p + 3] =
-      255;
-
-  }
-
-}
-
-
-// ============================================================
-// FINAL PALETTE VALIDATION
-// ============================================================
-//
-// Дополнительная страховка.
-//
-// Если какой-либо непрозрачный пиксель по какой-либо причине
-// не совпадает с одним из 19 цветов — он принудительно
-// переводится в ближайший допустимый цвет.
-//
-// ============================================================
-
-function validateStrictPalette(
-  buffer,
-  width,
-  height
-){
-
-  const pixelCount =
-    width *
-    height;
-
-
-  for(
-    let i = 0;
-    i < pixelCount;
-    i++
-  ){
-
-    const p =
-      i * 4;
-
-
-    if(
-      buffer[p + 3] === 0
-    ){
-
-      continue;
-
-    }
-
-
-    let valid =
-      false;
-
-
-    for(
-      let j = 0;
-      j < CLORAD_PALETTE.length;
-      j++
-    ){
-
-      const color =
-        CLORAD_PALETTE[j];
-
-
-      if(
-        buffer[p] === color[0] &&
-        buffer[p + 1] === color[1] &&
-        buffer[p + 2] === color[2]
-      ){
-
-        valid =
-          true;
-
-        break;
-
-      }
-
-    }
-
-
-    if(
-      valid
-    ){
-
-      continue;
-
-    }
-
-
-    const paletteIndex =
-      nearestCLOradColor(
-        buffer[p],
-        buffer[p + 1],
-        buffer[p + 2]
-      );
-
-
-    const color =
-      CLORAD_PALETTE[
-        paletteIndex
-      ];
+      CLORAD_PALETTE[index];
 
 
     buffer[p] =
@@ -1320,7 +1303,8 @@ async function renderFrame(
 
     const mercY =
       northMerc -
-      y * mercStep;
+      y *
+      mercStep;
 
 
     for(
@@ -1331,7 +1315,8 @@ async function renderFrame(
 
       const lon =
         west +
-        x * lonStep;
+        x *
+        lonStep;
 
 
       const sourcePoint =
@@ -1388,7 +1373,8 @@ async function renderFrame(
           sourceY *
           width +
           sourceX
-        ) * 4;
+        ) *
+        4;
 
 
       const r =
@@ -1431,7 +1417,8 @@ async function renderFrame(
           y *
           width +
           x
-        ) * 4;
+        ) *
+        4;
 
 
       output[outputIndex] =
@@ -1467,17 +1454,6 @@ async function renderFrame(
   // ==========================================================
 
   enforceStrictPalette(
-    output,
-    width,
-    height
-  );
-
-
-  // ==========================================================
-  // FINAL VALIDATION
-  // ==========================================================
-
-  validateStrictPalette(
     output,
     width,
     height
@@ -1577,9 +1553,17 @@ export default async function handler(
       );
 
 
+    // --------------------------------------------------------
+    // GET GIF
+    // --------------------------------------------------------
+
     const gif =
       await getGIF();
 
+
+    // --------------------------------------------------------
+    // METADATA
+    // --------------------------------------------------------
 
     const metadata =
       await getMetadata(
@@ -1627,3 +1611,156 @@ export default async function handler(
 
 
       setCORS(
+        res
+      );
+
+      setCache(
+        res
+      );
+
+
+      res.setHeader(
+        "Content-Type",
+        "application/json; charset=utf-8"
+      );
+
+
+      res.status(
+        200
+      ).json({
+
+        frames,
+
+        width,
+
+        height,
+
+        delays
+
+      });
+
+
+      return;
+
+    }
+
+
+    // ========================================================
+    // FRAME
+    // ========================================================
+
+    const totalFrames =
+      Number(
+        metadata.pages ||
+        1
+      );
+
+
+    let frame =
+      Number.isFinite(
+        requestedFrame
+      )
+        ? Math.floor(
+            requestedFrame
+          )
+        : totalFrames - 1;
+
+
+    if(
+      frame < 0
+    ){
+
+      frame =
+        0;
+
+    }
+
+
+    if(
+      frame >= totalFrames
+    ){
+
+      frame =
+        totalFrames - 1;
+
+    }
+
+
+    const png =
+      await renderFrame(
+        gif,
+        frame
+      );
+
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
+    setCORS(
+      res
+    );
+
+    setCache(
+      res
+    );
+
+
+    res.setHeader(
+      "Content-Type",
+      "image/png"
+    );
+
+
+    res.setHeader(
+      "Content-Length",
+      String(
+        png.length
+      )
+    );
+
+
+    res.status(
+      200
+    );
+
+
+    res.end(
+      png
+    );
+
+  }catch(error){
+
+    console.error(
+      "CLOrad radar-gif:",
+      error
+    );
+
+
+    setCORS(
+      res
+    );
+
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+
+    res.status(
+      500
+    ).json({
+
+      error:
+        "Radar GIF processing failed",
+
+      message:
+        error?.message ||
+        String(error)
+
+    });
+
+  }
+
+}
