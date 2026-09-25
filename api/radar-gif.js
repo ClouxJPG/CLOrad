@@ -74,8 +74,8 @@ const CLORAD_PALETTE = [
 //
 // 32 × 32 × 32 = 32768 ячеек.
 //
-// Это специально маленькая таблица, чтобы Vercel не тратил
-// лишнее время при холодном запуске функции.
+// Цвет исходного радара сначала проходит фильтр,
+// а затем мгновенно переводится в один из 19 цветов.
 // ============================================================
 
 const PALETTE_SIZE =
@@ -478,6 +478,7 @@ function isServiceArea(
     height;
 
 
+  // Левая легенда
   if(
     sx <= 145 &&
     sy <= 365
@@ -488,6 +489,7 @@ function isServiceArea(
   }
 
 
+  // Верхняя служебная область
   if(
     sy <= 58
   ){
@@ -497,6 +499,7 @@ function isServiceArea(
   }
 
 
+  // Нижний логотип
   if(
     sx <= 160 &&
     sy >= 965
@@ -507,6 +510,7 @@ function isServiceArea(
   }
 
 
+  // Нижняя строка
   if(
     sy >= 1105
   ){
@@ -516,6 +520,7 @@ function isServiceArea(
   }
 
 
+  // Нижний правый timestamp
   if(
     sx >= 760 &&
     sy >= 1060
@@ -526,6 +531,7 @@ function isServiceArea(
   }
 
 
+  // Верхний правый timestamp
   if(
     sx >= 735 &&
     sy <= 65
@@ -635,6 +641,8 @@ async function getGIF(){
       }
 
 
+      // Новый GIF → старые обработанные кадры больше
+      // не нужны.
       processedFrameCache.clear();
 
       cachedMetadata =
@@ -732,6 +740,17 @@ function setCache(
 // ============================================================
 // SMALL RADAR HOLE FILLER
 // ============================================================
+//
+// Здесь специально НЕ используется isRadarPixel().
+//
+// После геопривязки output содержит только настоящий радар
+// и прозрачный фон.
+//
+// Поэтому alpha > 0 = существующий радарный пиксель.
+//
+// Это позволяет корректно работать даже с l1, который сам
+// по себе имеет низкую насыщенность.
+// ============================================================
 
 function fillSmallRadarHoles(
   buffer,
@@ -760,6 +779,10 @@ function fillSmallRadarHoles(
     );
 
 
+  // ----------------------------------------------------------
+  // MASK
+  // ----------------------------------------------------------
+
   for(
     let i = 0;
     i < pixelCount;
@@ -771,12 +794,7 @@ function fillSmallRadarHoles(
 
 
     if(
-      buffer[p + 3] > 0 &&
-      isRadarPixel(
-        buffer[p],
-        buffer[p + 1],
-        buffer[p + 2]
-      )
+      buffer[p + 3] > 0
     ){
 
       mask[i] =
@@ -786,6 +804,10 @@ function fillSmallRadarHoles(
 
   }
 
+
+  // ----------------------------------------------------------
+  // TWO SMALL PASSES
+  // ----------------------------------------------------------
 
   for(
     let pass = 0;
@@ -802,6 +824,11 @@ function fillSmallRadarHoles(
       y++
     ){
 
+      const row =
+        y *
+        width;
+
+
       for(
         let x = 1;
         x < width - 1;
@@ -809,8 +836,7 @@ function fillSmallRadarHoles(
       ){
 
         const index =
-          y *
-          width +
+          row +
           x;
 
 
@@ -823,6 +849,10 @@ function fillSmallRadarHoles(
         }
 
 
+        // ----------------------------------------------------
+        // NEIGHBOURS
+        // ----------------------------------------------------
+
         const neighbours = [];
 
 
@@ -831,6 +861,13 @@ function fillSmallRadarHoles(
           dy <= 1;
           dy++
         ){
+
+          const neighbourRow =
+            (
+              y + dy
+            ) *
+            width;
+
 
           for(
             let dx = -1;
@@ -849,13 +886,9 @@ function fillSmallRadarHoles(
 
 
             const ni =
-              (
-                y + dy
-              ) *
-              width +
-              (
-                x + dx
-              );
+              neighbourRow +
+              x +
+              dx;
 
 
             if(
@@ -873,6 +906,7 @@ function fillSmallRadarHoles(
         }
 
 
+        // Нужно минимум 6 из 8.
         if(
           neighbours.length < 6
         ){
@@ -882,6 +916,14 @@ function fillSmallRadarHoles(
         }
 
 
+        // ----------------------------------------------------
+        // FIND DOMINANT EXACT COLOR
+        // ----------------------------------------------------
+        //
+        // Все существующие output-пиксели уже принадлежат
+        // CLOrad palette, поэтому сравниваем цвета точно.
+        // ----------------------------------------------------
+
         let bestSource =
           -1;
 
@@ -890,12 +932,18 @@ function fillSmallRadarHoles(
 
 
         for(
-          const candidate
-          of neighbours
+          let i = 0;
+          i < neighbours.length;
+          i++
         ){
 
+          const candidate =
+            neighbours[i];
+
+
           const cp =
-            candidate * 4;
+            candidate *
+            4;
 
 
           const cr =
@@ -913,29 +961,24 @@ function fillSmallRadarHoles(
 
 
           for(
-            const other
-            of neighbours
+            let j = 0;
+            j < neighbours.length;
+            j++
           ){
 
+            const other =
+              neighbours[j];
+
+
             const op =
-              other * 4;
+              other *
+              4;
 
 
             if(
-              Math.abs(
-                buffer[op] -
-                cr
-              ) <= 18 &&
-
-              Math.abs(
-                buffer[op + 1] -
-                cg
-              ) <= 18 &&
-
-              Math.abs(
-                buffer[op + 2] -
-                cb
-              ) <= 18
+              buffer[op] === cr &&
+              buffer[op + 1] === cg &&
+              buffer[op + 2] === cb
             ){
 
               count++;
@@ -980,6 +1023,10 @@ function fillSmallRadarHoles(
     }
 
 
+    // --------------------------------------------------------
+    // APPLY
+    // --------------------------------------------------------
+
     for(
       let i = 0;
       i < additions.length;
@@ -994,10 +1041,12 @@ function fillSmallRadarHoles(
 
 
       const tp =
-        target * 4;
+        target *
+        4;
 
       const sp =
-        source * 4;
+        source *
+        4;
 
 
       buffer[tp] =
@@ -1026,98 +1075,6 @@ function fillSmallRadarHoles(
       break;
 
     }
-
-  }
-
-}
-
-
-// ============================================================
-// STRICT PALETTE
-// ============================================================
-
-function enforceStrictPalette(
-  buffer,
-  width,
-  height
-){
-
-  const pixelCount =
-    width *
-    height;
-
-
-  for(
-    let i = 0;
-    i < pixelCount;
-    i++
-  ){
-
-    const p =
-      i * 4;
-
-
-    if(
-      buffer[p + 3] === 0
-    ){
-
-      continue;
-
-    }
-
-
-    const r =
-      buffer[p];
-
-    const g =
-      buffer[p + 1];
-
-    const b =
-      buffer[p + 2];
-
-
-    // Фон никогда не превращаем в радар.
-    if(
-      !isRadarPixel(
-        r,
-        g,
-        b
-      )
-    ){
-
-      buffer[p + 3] =
-        0;
-
-      continue;
-
-    }
-
-
-    const paletteIndex =
-      getPaletteIndex(
-        r,
-        g,
-        b
-      );
-
-
-    const color =
-      CLORAD_PALETTE[
-        paletteIndex
-      ];
-
-
-    buffer[p] =
-      color[0];
-
-    buffer[p + 1] =
-      color[1];
-
-    buffer[p + 2] =
-      color[2];
-
-    buffer[p + 3] =
-      255;
 
   }
 
@@ -1355,6 +1312,16 @@ async function renderFrame(
       }
 
 
+      // ------------------------------------------------------
+      // IMPORTANT
+      // ------------------------------------------------------
+      //
+      // Сначала фильтруем исходный пиксель.
+      //
+      // Поэтому море/серый фон никогда не превращается
+      // в один из цветов CLOrad.
+      // ------------------------------------------------------
+
       if(
         !isRadarPixel(
           r,
@@ -1368,6 +1335,20 @@ async function renderFrame(
       }
 
 
+      const paletteIndex =
+        getPaletteIndex(
+          r,
+          g,
+          b
+        );
+
+
+      const paletteColor =
+        CLORAD_PALETTE[
+          paletteIndex
+        ];
+
+
       const outputIndex =
         (
           y *
@@ -1377,14 +1358,18 @@ async function renderFrame(
         4;
 
 
+      // ------------------------------------------------------
+      // СРАЗУ ЗАПИСЫВАЕМ СТРОГИЙ ЦВЕТ ЛЕГЕНДЫ
+      // ------------------------------------------------------
+
       output[outputIndex] =
-        r;
+        paletteColor[0];
 
       output[outputIndex + 1] =
-        g;
+        paletteColor[1];
 
       output[outputIndex + 2] =
-        b;
+        paletteColor[2];
 
       output[outputIndex + 3] =
         255;
@@ -1399,17 +1384,6 @@ async function renderFrame(
   // ==========================================================
 
   fillSmallRadarHoles(
-    output,
-    width,
-    height
-  );
-
-
-  // ==========================================================
-  // STRICT CLOrad PALETTE
-  // ==========================================================
-
-  enforceStrictPalette(
     output,
     width,
     height
