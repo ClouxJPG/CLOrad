@@ -42,14 +42,6 @@ const processedFrameCache =
 // ============================================================
 // CLOrad PALETTE
 // ============================================================
-//
-// ТОЛЬКО эти 19 цветов могут использоваться
-// непрозрачными радарными пикселями.
-//
-// Они полностью соответствуют .l1 — .l19
-// из текущего index.html.
-//
-// ============================================================
 
 const CLORAD_PALETTE = [
 
@@ -69,8 +61,8 @@ const CLORAD_PALETTE = [
   [173, 117, 68 ], // l14
   [146, 75,  72 ], // l15
   [242, 170, 240], // l16
-  [232, 90,  231], // l17
-  [202, 60,  199], // l18
+  [232, 90, 231], // l17
+  [202, 60, 199], // l18
   [119, 124, 145]  // l19
 
 ];
@@ -191,15 +183,10 @@ function geoToSource(
   const basis = [
 
     1,
-
     x,
-
     y,
-
     x * x,
-
     x * y,
-
     y * y
 
   ];
@@ -239,20 +226,6 @@ function geoToSource(
 
 // ============================================================
 // RADAR COLOR FILTER
-// ============================================================
-//
-// Убираем:
-//
-// - моря
-// - океаны
-// - серую подложку
-// - серые зоны покрытия
-// - чёрные подписи
-// - чёрные линии
-// - серые границы
-// - служебную графику
-//
-// Оставляем цветные радарные поля.
 // ============================================================
 
 function isRadarPixel(
@@ -348,10 +321,6 @@ function isServiceArea(
     height;
 
 
-  // ------------------------------------------
-  // ЛЕГЕНДА
-  // ------------------------------------------
-
   if(
     sx <= 145 &&
     sy <= 365
@@ -362,10 +331,6 @@ function isServiceArea(
   }
 
 
-  // ------------------------------------------
-  // ВЕРХНИЙ ЗАГОЛОВОК
-  // ------------------------------------------
-
   if(
     sy <= 58
   ){
@@ -374,10 +339,6 @@ function isServiceArea(
 
   }
 
-
-  // ------------------------------------------
-  // РОСГИДРОМЕТ / ЦАО
-  // ------------------------------------------
 
   if(
     sx <= 160 &&
@@ -389,10 +350,6 @@ function isServiceArea(
   }
 
 
-  // ------------------------------------------
-  // НИЖНИЙ COPYRIGHT
-  // ------------------------------------------
-
   if(
     sy >= 1105
   ){
@@ -401,10 +358,6 @@ function isServiceArea(
 
   }
 
-
-  // ------------------------------------------
-  // НИЖНИЕ ЧАСЫ
-  // ------------------------------------------
 
   if(
     sx >= 760 &&
@@ -415,10 +368,6 @@ function isServiceArea(
 
   }
 
-
-  // ------------------------------------------
-  // ВЕРХНИЕ ЧАСЫ
-  // ------------------------------------------
 
   if(
     sx >= 735 &&
@@ -528,8 +477,6 @@ async function getGIF(){
       }
 
 
-      // Новый GIF:
-      // старые обработанные кадры удаляем.
       processedFrameCache.clear();
 
       cachedMetadata =
@@ -941,28 +888,93 @@ function fillSmallRadarHoles(
 
 
 // ============================================================
-// STRICT PALETTE QUANTIZATION
+// FIND NEAREST CLOrad COLOR
+// ============================================================
+
+function nearestCLOradColor(
+  r,
+  g,
+  b
+){
+
+  let best =
+    0;
+
+  let bestDistance =
+    Infinity;
+
+
+  for(
+    let i = 0;
+    i < CLORAD_PALETTE.length;
+    i++
+  ){
+
+    const color =
+      CLORAD_PALETTE[i];
+
+
+    const dr =
+      r -
+      color[0];
+
+    const dg =
+      g -
+      color[1];
+
+    const db =
+      b -
+      color[2];
+
+
+    const distance =
+      dr * dr +
+      dg * dg +
+      db * db;
+
+
+    if(
+      distance <
+      bestDistance
+    ){
+
+      bestDistance =
+        distance;
+
+      best =
+        i;
+
+    }
+
+  }
+
+
+  return best;
+
+}
+
+
+// ============================================================
+// FINAL STRICT PALETTE
 // ============================================================
 //
 // ВАЖНО:
 //
-// Эта функция НЕ обрабатывает фон.
+// Здесь буфер фактически пересобирается по палитре.
 //
-// Она вызывается только после:
-//   1. isRadarPixel()
-//   2. reprojection
-//   3. удаления служебной графики
-//   4. заполнения дыр
+// После этой функции невозможно получить, например:
 //
-// Поэтому море/фон не превращаются случайно
-// в цвета радара.
+// #fff89c
+// #f9f097
+// #fff69a
 //
-// Каждый существующий радарный пиксель получает
-// БЛИЖАЙШИЙ цвет из CLORAD_PALETTE.
+// Все жёлтые пиксели будут буквально:
+//
+// 255, 248, 156
 //
 // ============================================================
 
-function quantizeToCLOradPalette(
+function enforceStrictPalette(
   buffer,
   width,
   height
@@ -983,7 +995,10 @@ function quantizeToCLOradPalette(
       i * 4;
 
 
-    // Прозрачный пиксель оставляем прозрачным.
+    // --------------------------------------------------------
+    // ПРОЗРАЧНЫЙ ПИКСЕЛЬ
+    // --------------------------------------------------------
+
     if(
       buffer[p + 3] === 0
     ){
@@ -1003,8 +1018,10 @@ function quantizeToCLOradPalette(
       buffer[p + 2];
 
 
-    // Дополнительная защита:
-    // если это не радар — убираем его.
+    // --------------------------------------------------------
+    // ЕСЛИ ЭТО НЕ РАДАР — УДАЛЯЕМ.
+    // --------------------------------------------------------
+
     if(
       !isRadarPixel(
         r,
@@ -1021,11 +1038,89 @@ function quantizeToCLOradPalette(
     }
 
 
-    let bestPaletteIndex =
-      0;
+    // --------------------------------------------------------
+    // ВЫБИРАЕМ БЛИЖАЙШИЙ ЦВЕТ.
+    // --------------------------------------------------------
 
-    let bestDistance =
-      Infinity;
+    const paletteIndex =
+      nearestCLOradColor(
+        r,
+        g,
+        b
+      );
+
+
+    const color =
+      CLORAD_PALETTE[
+        paletteIndex
+      ];
+
+
+    // --------------------------------------------------------
+    // ЗАПИСЫВАЕМ КОНСТАНТНЫЕ RGB.
+    // --------------------------------------------------------
+
+    buffer[p] =
+      color[0];
+
+    buffer[p + 1] =
+      color[1];
+
+    buffer[p + 2] =
+      color[2];
+
+    buffer[p + 3] =
+      255;
+
+  }
+
+}
+
+
+// ============================================================
+// FINAL PALETTE VALIDATION
+// ============================================================
+//
+// Дополнительная страховка.
+//
+// Если какой-либо непрозрачный пиксель по какой-либо причине
+// не совпадает с одним из 19 цветов — он принудительно
+// переводится в ближайший допустимый цвет.
+//
+// ============================================================
+
+function validateStrictPalette(
+  buffer,
+  width,
+  height
+){
+
+  const pixelCount =
+    width *
+    height;
+
+
+  for(
+    let i = 0;
+    i < pixelCount;
+    i++
+  ){
+
+    const p =
+      i * 4;
+
+
+    if(
+      buffer[p + 3] === 0
+    ){
+
+      continue;
+
+    }
+
+
+    let valid =
+      false;
 
 
     for(
@@ -1038,56 +1133,53 @@ function quantizeToCLOradPalette(
         CLORAD_PALETTE[j];
 
 
-      const dr =
-        r -
-        color[0];
-
-      const dg =
-        g -
-        color[1];
-
-      const db =
-        b -
-        color[2];
-
-
-      // Евклидово расстояние RGB.
-      const distance =
-        dr * dr +
-        dg * dg +
-        db * db;
-
-
       if(
-        distance <
-        bestDistance
+        buffer[p] === color[0] &&
+        buffer[p + 1] === color[1] &&
+        buffer[p + 2] === color[2]
       ){
 
-        bestDistance =
-          distance;
+        valid =
+          true;
 
-        bestPaletteIndex =
-          j;
+        break;
 
       }
 
     }
 
 
-    const selected =
+    if(
+      valid
+    ){
+
+      continue;
+
+    }
+
+
+    const paletteIndex =
+      nearestCLOradColor(
+        buffer[p],
+        buffer[p + 1],
+        buffer[p + 2]
+      );
+
+
+    const color =
       CLORAD_PALETTE[
-        bestPaletteIndex
+        paletteIndex
       ];
 
 
     buffer[p] =
-      selected[0];
+      color[0];
 
     buffer[p + 1] =
-      selected[1];
+      color[1];
 
     buffer[p + 2] =
-      selected[2];
+      color[2];
 
     buffer[p + 3] =
       255;
@@ -1360,7 +1452,7 @@ async function renderFrame(
 
 
   // ==========================================================
-  // ЗАПОЛНЕНИЕ МЕЛКИХ ДЫР
+  // HOLE FILL
   // ==========================================================
 
   fillSmallRadarHoles(
@@ -1371,15 +1463,21 @@ async function renderFrame(
 
 
   // ==========================================================
-  // СТРОГАЯ ПАЛИТРА CLOrad
-  // ==========================================================
-  //
-  // Теперь каждый непрозрачный радарный пиксель
-  // будет одним из l1 — l19.
-  //
+  // STRICT PALETTE
   // ==========================================================
 
-  quantizeToCLOradPalette(
+  enforceStrictPalette(
+    output,
+    width,
+    height
+  );
+
+
+  // ==========================================================
+  // FINAL VALIDATION
+  // ==========================================================
+
+  validateStrictPalette(
     output,
     width,
     height
@@ -1423,11 +1521,6 @@ async function renderFrame(
     png
   );
 
-
-  /*
-     Максимум 12 кадров
-     одновременно в RAM.
-  */
 
   if(
     processedFrameCache.size >
@@ -1534,155 +1627,3 @@ export default async function handler(
 
 
       setCORS(
-        res
-      );
-
-      setCache(
-        res
-      );
-
-
-      res.setHeader(
-        "Content-Type",
-        "application/json; charset=utf-8"
-      );
-
-
-      return res
-        .status(200)
-        .json({
-
-          ok:
-            true,
-
-          frames,
-
-          width,
-
-          height,
-
-          delays
-
-        });
-
-    }
-
-
-    // ========================================================
-    // FRAME CHECK
-    // ========================================================
-
-    if(
-      !Number.isInteger(
-        requestedFrame
-      )
-    ){
-
-      setCORS(
-        res
-      );
-
-
-      return res
-        .status(400)
-        .json({
-
-          error:
-            "Укажи номер кадра: ?frame=0"
-
-        });
-
-    }
-
-
-    const pages =
-      Number(
-        metadata.pages ||
-        1
-      );
-
-
-    const frame =
-      Math.max(
-        0,
-        Math.min(
-          requestedFrame,
-          pages - 1
-        )
-      );
-
-
-    // ========================================================
-    // RENDER
-    // ========================================================
-
-    const png =
-      await renderFrame(
-        gif,
-        frame
-      );
-
-
-    // ========================================================
-    // RESPONSE
-    // ========================================================
-
-    setCORS(
-      res
-    );
-
-    setCache(
-      res
-    );
-
-
-    res.setHeader(
-      "Content-Type",
-      "image/png"
-    );
-
-
-    res.setHeader(
-      "Content-Length",
-      String(
-        png.length
-      )
-    );
-
-
-    return res
-      .status(200)
-      .send(
-        png
-      );
-
-
-  }catch(error){
-
-    console.error(
-      "CLOrad radar-gif error:",
-      error
-    );
-
-
-    setCORS(
-      res
-    );
-
-
-    return res
-      .status(500)
-      .json({
-
-        error:
-          "GIF API error",
-
-        message:
-          error?.message ||
-          String(error)
-
-      });
-
-  }
-
-}
