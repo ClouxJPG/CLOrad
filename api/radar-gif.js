@@ -15,7 +15,7 @@ const SOURCE_GIF =
 
 
 // ============================================================
-// SOURCE CACHE
+// CACHE
 // ============================================================
 
 const GIF_CACHE_MS =
@@ -34,25 +34,12 @@ let cachedMetadata =
   null;
 
 
-// ============================================================
-// PROCESSED FRAME CACHE
-// ============================================================
-
 const processedFrameCache =
   new Map();
 
 
 // ============================================================
-// SOURCE IMAGE CALIBRATION
-//
-// Калибровка сделана по географическим контрольным
-// точкам исходного Meteoinfo изображения.
-//
-// Формула:
-// [1, x, y, x², xy, y²]
-//
-// x = (lon - UC_LON) / US_LON
-// y = (mercatorY - UC_MERC) / US_MERC
+// CALIBRATION
 // ============================================================
 
 const UC_LON =
@@ -91,19 +78,28 @@ const PY = [
 
 
 // ============================================================
-// GEOGRAPHIC EXTENT
+// WEB MERCATOR BOUNDS
 // ============================================================
 
 const GIF_BOUNDS = {
-  south: 38.2155955810,
-  north: 69.6543707199,
-  west: 14.9892981264,
-  east: 72.9237642948
+
+  south:
+    38.2155955810,
+
+  north:
+    69.6543707199,
+
+  west:
+    14.9892981264,
+
+  east:
+    72.9237642948
+
 };
 
 
 // ============================================================
-// ORIGINAL CALIBRATION SIZE
+// ORIGINAL IMAGE SIZE
 // ============================================================
 
 const CALIBRATION_WIDTH =
@@ -137,7 +133,7 @@ function mercatorY(
 
 
 // ============================================================
-// SOURCE PIXEL FROM GEO
+// GEO → SOURCE PIXEL
 // ============================================================
 
 function geoToSource(
@@ -153,18 +149,29 @@ function geoToSource(
     (mercY - UC_MERC) /
     US_MERC;
 
+
   const basis = [
+
     1,
+
     x,
+
     y,
+
     x * x,
+
     x * y,
+
     y * y
+
   ];
 
 
-  let sx = 0;
-  let sy = 0;
+  let sx =
+    0;
+
+  let sy =
+    0;
 
 
   for(
@@ -193,7 +200,23 @@ function geoToSource(
 
 
 // ============================================================
-// SOURCE → RADAR PIXEL TEST
+// RADAR COLOR FILTER
+// ============================================================
+//
+// Здесь специально НЕ используется просто "цветной пиксель".
+//
+// Убираем:
+//
+// - моря
+// - океаны
+// - серую подложку
+// - серые зоны покрытия
+// - чёрные подписи
+// - чёрные линии
+// - серые границы
+// - служебную графику
+//
+// Оставляем цветные радарные поля.
 // ============================================================
 
 function isRadarPixel(
@@ -221,7 +244,16 @@ function isRadarPixel(
 
 
   if(
-    max === 0
+    max < 70
+  ){
+
+    return false;
+
+  }
+
+
+  if(
+    chroma < 30
   ){
 
     return false;
@@ -230,25 +262,20 @@ function isRadarPixel(
 
 
   const saturation =
-    chroma / max;
+    chroma /
+    max;
 
 
   /*
-     Основная защита от серой карты.
+     В исходной картинке море/океан
+     и серые зоны имеют примерно
+     S < 0.12.
 
-     Радар:
-       зелёный
-       голубой
-       синий
-       жёлтый
-       оранжевый
-       красный
-       пурпурный
+     У радарных цветов S значительно выше.
   */
 
   if(
-    saturation < 0.10 ||
-    chroma < 18
+    saturation < 0.15
   ){
 
     return false;
@@ -257,13 +284,13 @@ function isRadarPixel(
 
 
   /*
-     Убираем почти белые картографические
+     Почти белые картографические
      элементы.
   */
 
   if(
     max > 238 &&
-    chroma < 35
+    saturation < 0.20
   ){
 
     return false;
@@ -277,9 +304,7 @@ function isRadarPixel(
 
 
 // ============================================================
-// SERVICE ELEMENTS
-//
-// Координаты относятся к исходному 1122×1136 GIF.
+// SERVICE AREAS
 // ============================================================
 
 function isServiceArea(
@@ -301,7 +326,7 @@ function isServiceArea(
 
 
   // ------------------------------------------
-  // ЛЕГЕНДА СЛЕВА СВЕРХУ
+  // ЛЕГЕНДА
   // ------------------------------------------
 
   if(
@@ -315,7 +340,7 @@ function isServiceArea(
 
 
   // ------------------------------------------
-  // МЕТЕОРАД / ВЕРХНИЕ НАДПИСИ
+  // ВЕРХНИЙ ЗАГОЛОВОК
   // ------------------------------------------
 
   if(
@@ -328,7 +353,7 @@ function isServiceArea(
 
 
   // ------------------------------------------
-  // ЛОГО ЦАО / РОСГИДРОМЕТА
+  // РОСГИДРОМЕТ / ЦАО
   // ------------------------------------------
 
   if(
@@ -369,7 +394,7 @@ function isServiceArea(
 
 
   // ------------------------------------------
-  // ВЕРХНИЕ ЧАСЫ СПРАВА
+  // ВЕРХНИЕ ЧАСЫ
   // ------------------------------------------
 
   if(
@@ -388,7 +413,7 @@ function isServiceArea(
 
 
 // ============================================================
-// DOWNLOAD GIF
+// DOWNLOAD SOURCE GIF
 // ============================================================
 
 async function getGIF(){
@@ -424,6 +449,7 @@ async function getGIF(){
         await fetch(
           SOURCE_GIF,
           {
+
             method:
               "GET",
 
@@ -436,10 +462,12 @@ async function getGIF(){
 
               "Referer":
                 "https://meteoinfo.ru/radanim"
+
             },
 
             cache:
               "no-store"
+
           }
         );
 
@@ -478,10 +506,10 @@ async function getGIF(){
 
 
       /*
-         Получили новый GIF.
+         Новый GIF.
 
-         Все кадры старого GIF уничтожаем
-         из RAM-кэша.
+         Старые обработанные кадры
+         полностью выбрасываем из RAM.
       */
 
       processedFrameCache.clear();
@@ -550,7 +578,7 @@ async function getMetadata(
 
 
 // ============================================================
-// CORS
+// HEADERS
 // ============================================================
 
 function setCORS(
@@ -565,29 +593,20 @@ function setCORS(
 }
 
 
-// ============================================================
-// CACHE
-// ============================================================
-
 function setCache(
-  res,
-  browserSeconds = 5,
-  edgeSeconds = 30
+  res
 ){
 
   res.setHeader(
     "Cache-Control",
-
-    `public, max-age=${browserSeconds}, ` +
-    `s-maxage=${edgeSeconds}, ` +
-    `stale-while-revalidate=60`
+    "public, max-age=5, s-maxage=30, stale-while-revalidate=60"
   );
 
 }
 
 
 // ============================================================
-// FRAME RENDER
+// FRAME
 // ============================================================
 
 async function renderFrame(
@@ -613,13 +632,14 @@ async function renderFrame(
 
 
   // ----------------------------------------------------------
-  // DECODE SOURCE FRAME
+  // DECODE
   // ----------------------------------------------------------
 
   const decoded =
     await sharp(
       gif,
       {
+
         animated:
           true,
 
@@ -628,6 +648,7 @@ async function renderFrame(
 
         pages:
           1
+
       }
     )
     .ensureAlpha()
@@ -682,7 +703,10 @@ async function renderFrame(
 
 
   const lonStep =
-    (east - west) /
+    (
+      east -
+      west
+    ) /
     Math.max(
       1,
       width - 1
@@ -690,7 +714,10 @@ async function renderFrame(
 
 
   const mercStep =
-    (northMerc - southMerc) /
+    (
+      northMerc -
+      southMerc
+    ) /
     Math.max(
       1,
       height - 1
@@ -698,13 +725,7 @@ async function renderFrame(
 
 
   // ----------------------------------------------------------
-  // REPROJECT
-  //
-  // Каждый пиксель нового изображения
-  // получает обратную точку в исходном GIF.
-  //
-  // nearest-neighbour:
-  // никакого размытия радарных пикселей.
+  // REPROJECTION
   // ----------------------------------------------------------
 
   for(
@@ -736,18 +757,13 @@ async function renderFrame(
         );
 
 
-      /*
-         Масштабируем к реальному размеру GIF,
-         если Meteoinfo когда-нибудь изменит
-         разрешение изображения.
-      */
-
       const sourceX =
         Math.round(
           sourcePoint[0] *
           width /
           CALIBRATION_WIDTH
         );
+
 
       const sourceY =
         Math.round(
@@ -844,7 +860,7 @@ async function renderFrame(
         b;
 
       output[outputIndex + 3] =
-        a;
+        255;
 
     }
 
@@ -888,6 +904,11 @@ async function renderFrame(
     png
   );
 
+
+  /*
+     Максимум 12 кадров
+     одновременно в RAM.
+  */
 
   if(
     processedFrameCache.size >
@@ -997,11 +1018,8 @@ export default async function handler(
         res
       );
 
-
       setCache(
-        res,
-        5,
-        30
+        res
       );
 
 
@@ -1032,7 +1050,7 @@ export default async function handler(
 
 
     // ========================================================
-    // FRAME VALIDATION
+    // FRAME CHECK
     // ========================================================
 
     if(
@@ -1068,7 +1086,6 @@ export default async function handler(
     const frame =
       Math.max(
         0,
-
         Math.min(
           requestedFrame,
           pages - 1
@@ -1095,11 +1112,8 @@ export default async function handler(
       res
     );
 
-
     setCache(
-      res,
-      5,
-      30
+      res
     );
 
 
