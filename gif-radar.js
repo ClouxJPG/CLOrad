@@ -57,11 +57,6 @@
   let dmrlGridCanvas = null;
   let dmrlGridLayer = null;
 
-  /*
-     Тёмная карта.
-  */
-  let darkMapLayer = null;
-
   /* =======================================================
      HELPER
      ======================================================= */
@@ -1421,92 +1416,6 @@
   );
 
   /* =======================================================
-     DARK BASEMAP — INVERTED LEAFLET
-     ======================================================= */
-
-  function enableDarkMap() {
-    if (
-      !window.map
-    ) {
-      return;
-    }
-
-    if (
-      darkMapLayer
-    ) {
-      if (
-        !window.map.hasLayer(
-          darkMapLayer
-        )
-      ) {
-        darkMapLayer.addTo(
-          window.map
-        );
-      }
-
-      return;
-    }
-
-    darkMapLayer =
-      L.tileLayer(
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        {
-          maxZoom: 19,
-          attribution:
-            "© OpenStreetMap contributors",
-          className:
-            "clorad-inverted-leaflet"
-        }
-      );
-
-    darkMapLayer.addTo(
-      window.map
-    );
-
-    if (
-      !document.getElementById(
-        "clorad-inverted-leaflet-style"
-      )
-    ) {
-      const style =
-        document.createElement(
-          "style"
-        );
-
-      style.id =
-        "clorad-inverted-leaflet-style";
-
-      style.textContent = `
-        .clorad-inverted-leaflet {
-          filter:
-            invert(1)
-            hue-rotate(180deg)
-            brightness(.55)
-            contrast(1.25);
-        }
-      `;
-
-      document.head.appendChild(
-        style
-      );
-    }
-  }
-
-  function disableDarkMap() {
-    if (
-      darkMapLayer &&
-      window.map &&
-      window.map.hasLayer(
-        darkMapLayer
-      )
-    ) {
-      window.map.removeLayer(
-        darkMapLayer
-      );
-    }
-  }
-
-  /* =======================================================
      GIF STYLE
      ======================================================= */
 
@@ -2002,6 +1911,7 @@
       ) {
         dmrlGridLayer.bringToFront();
       }
+
     } catch (error) {
       console.error(
         "CLOrad GIF frame:",
@@ -2055,10 +1965,12 @@
       true;
 
     /*
-       Тёмная карта только
-       в режиме ДМРЛ.
+       Базовая карта НЕ переключается.
+
+       OpenFreeMap Dark уже установлен
+       в index.html и постоянно остаётся
+       под слоями CLOrad.
     */
-    enableDarkMap();
 
     setActiveNav(
       gifButton
@@ -2132,8 +2044,6 @@
 
       gifActive =
         false;
-
-      disableDarkMap();
 
       if (
         gifLayer
@@ -2216,9 +2126,9 @@
     gifImageCache.clear();
 
     /*
-       Возвращаем карту.
+       Базовая карта остаётся без изменений.
+       OpenFreeMap Dark продолжает работать.
     */
-    disableDarkMap();
 
     if (
       dmrlGridLayer &&
