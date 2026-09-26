@@ -1312,7 +1312,7 @@
   );
 
   /* =======================================================
-     DARK BASEMAP
+     DARK BASEMAP — INVERTED LEAFLET
      ======================================================= */
 
   function enableDarkMap() {
@@ -1340,19 +1340,47 @@
 
     darkMapLayer =
       L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         {
-          maxZoom: 20,
-          subdomains:
-            "abcd",
+          maxZoom: 19,
           attribution:
-            '© OpenStreetMap contributors © CARTO'
+            "© OpenStreetMap contributors",
+          className:
+            "clorad-inverted-leaflet"
         }
       );
 
     darkMapLayer.addTo(
       window.map
     );
+
+    if (
+      !document.getElementById(
+        "clorad-inverted-leaflet-style"
+      )
+    ) {
+      const style =
+        document.createElement(
+          "style"
+        );
+
+      style.id =
+        "clorad-inverted-leaflet-style";
+
+      style.textContent = `
+        .clorad-inverted-leaflet {
+          filter:
+            invert(1)
+            hue-rotate(180deg)
+            brightness(.55)
+            contrast(1.25);
+        }
+      `;
+
+      document.head.appendChild(
+        style
+      );
+    }
   }
 
   function disableDarkMap() {
@@ -2544,4 +2572,4 @@
     }
   }
 
-})();
+})()
