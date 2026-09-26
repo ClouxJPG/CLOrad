@@ -11,15 +11,10 @@
   crossorigin=""
 >
 
-<!-- CLOrad: MapLibre для OpenFreeMap Dark -->
 <link
   rel="stylesheet"
   href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css"
 >
-
-<script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
-
-<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
 
 <style>
 *{
@@ -1444,6 +1439,14 @@ body.light .frameInput{
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+
+<script>
+window.maplibregl = maplibregl;
+</script>
+
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+
 <script>
 
 /* =========================================================
@@ -1471,159 +1474,23 @@ const map =
 
 window.map = map;
 
-
 /* =========================================================
-   OPENFREEMAP DARK
+   CLOrad — OPENFREEMAP DARK
 ========================================================= */
 
 const cloradBaseMap =
   L.maplibreGL({
     style:
       "https://tiles.openfreemap.org/styles/dark",
+
     interactive:false,
+
     attribution:
       "© OpenFreeMap · © OpenStreetMap contributors"
   }).addTo(map);
 
 window.CLOradBaseMap =
   cloradBaseMap;
-
-
-/* =========================================================
-   LOCAL MAP LABELS
-========================================================= */
-
-function CLOradApplyLocalMapLabels(){
-
-  let gl;
-
-  try{
-
-    gl =
-      cloradBaseMap.getMaplibreMap();
-
-  }catch(error){
-
-    console.warn(
-      "CLOrad: MapLibre map недоступен",
-      error
-    );
-
-    return;
-
-  }
-
-
-  const style =
-    gl.getStyle();
-
-
-  if(
-    !style ||
-    !Array.isArray(style.layers)
-  ){
-
-    return;
-
-  }
-
-
-  const localName = [
-    "coalesce",
-    ["get","name"],
-    ["get","name:nonlatin"],
-    ["get","name:latin"]
-  ];
-
-
-  style.layers.forEach(
-    layer => {
-
-      if(
-        layer.type !== "symbol" ||
-        !layer.layout ||
-        layer.layout["text-field"] == null
-      ){
-
-        return;
-
-      }
-
-
-      let textField;
-
-      try{
-
-        textField =
-          JSON.stringify(
-            layer.layout["text-field"]
-          );
-
-      }catch{
-
-        return;
-
-      }
-
-
-      if(
-        !/name(?::|_en|\b)/i.test(
-          textField
-        )
-      ){
-
-        return;
-
-      }
-
-
-      try{
-
-        gl.setLayoutProperty(
-          layer.id,
-          "text-field",
-          localName
-        );
-
-      }catch(error){
-
-        console.warn(
-          "CLOrad: не удалось изменить язык:",
-          layer.id,
-          error
-        );
-
-      }
-
-    }
-  );
-
-}
-
-
-try{
-
-  const gl =
-    cloradBaseMap.getMaplibreMap();
-
-  gl.once(
-    "load",
-    () => {
-
-      CLOradApplyLocalMapLabels();
-
-    }
-  );
-
-}catch(error){
-
-  console.warn(
-    "CLOrad: MapLibre не запустился",
-    error
-  );
-
-}
-
 
 /* =========================================================
    HELPERS
@@ -1632,7 +1499,6 @@ try{
 const $ =
   id =>
     document.getElementById(id);
-
 
 function msg(text){
 
@@ -1665,7 +1531,6 @@ function msg(text){
     1800
   );
 }
-
 
 /* =========================================================
    MAP CONTROLS
@@ -1718,7 +1583,6 @@ $("geo").onclick = () => {
 
 };
 
-
 /* =========================================================
    LAYERS
 ========================================================= */
@@ -1765,7 +1629,6 @@ reflectivitySwitch.onclick = event => {
 
 };
 
-
 /* =========================================================
    LEGEND
 ========================================================= */
@@ -1783,7 +1646,6 @@ $("legendClose").onclick = () => {
   $("legendTab").classList.remove("hidden");
 
 };
-
 
 /* =========================================================
    NAVIGATION
@@ -1842,7 +1704,6 @@ nav.addEventListener(
     dragging = false;
   }
 );
-
 
 /* =========================================================
    SEARCH
@@ -1925,7 +1786,6 @@ $("searchInput").onkeydown =
     );
 
   };
-
 
 /* =========================================================
    SETTINGS
@@ -2011,7 +1871,6 @@ $("frameInput").onchange = () => {
 
 };
 
-
 /* =========================================================
    MENU
 ========================================================= */
@@ -2024,7 +1883,6 @@ $("menuBtn").onclick = () => {
   $("settings").classList.remove("open");
 
 };
-
 
 /* =========================================================
    THEME
@@ -2048,7 +1906,6 @@ $("themeBtn").onclick = () => {
   );
 
 };
-
 
 /* =========================================================
    CLOSE POPUPS
@@ -2079,7 +1936,6 @@ document.addEventListener(
   }
 );
 
-
 /* =========================================================
    IDARKMETEO
 ========================================================= */
@@ -2094,7 +1950,6 @@ let activeMetadata = null;
 
 let activeRequest = 0;
 let activeFrameRequest = 0;
-
 
 /* =========================================================
    PRODUCT CONFIG
@@ -2132,7 +1987,6 @@ const products = {
 
 };
 
-
 /* =========================================================
    PROXY
 ========================================================= */
@@ -2147,7 +2001,6 @@ function proxyUrl(path){
   );
 
 }
-
 
 /* =========================================================
    TIMEOUT FETCH
@@ -2186,7 +2039,6 @@ async function fetchWithTimeout(
 
 }
 
-
 /* =========================================================
    FORMAT TIME
 ========================================================= */
@@ -2220,7 +2072,6 @@ function formatFrameTime(value){
   );
 
 }
-
 
 /* =========================================================
    EPSG:3857 → LEAFLET BOUNDS
@@ -2266,7 +2117,6 @@ function makeBounds(box){
 
 }
 
-
 /* =========================================================
    DEFLATE
 ========================================================= */
@@ -2305,7 +2155,6 @@ async function inflateDeflate(
   );
 
 }
-
 
 /* =========================================================
    RDR PARSE
@@ -2725,7 +2574,6 @@ async function decodeRDR(
 
 }
 
-
 /* =========================================================
    RDR → IMAGE URL
 ========================================================= */
@@ -2811,7 +2659,6 @@ async function rdrToImageUrl(
 
 }
 
-
 /* =========================================================
    REMOVE CURRENT RASTER
 ========================================================= */
@@ -2840,7 +2687,6 @@ function removeActiveLayer(){
   }
 
 }
-
 
 /* =========================================================
    LOAD RAIN FRAME
@@ -3044,7 +2890,6 @@ async function loadFrame(
   );
 
 }
-
 
 /* =========================================================
    LOAD PRODUCT METADATA
@@ -3321,7 +3166,6 @@ async function loadProduct(
 
 }
 
-
 /* =========================================================
    STOP RADAR
 ========================================================= */
@@ -3389,7 +3233,6 @@ function stopRadar(){
 window.CLOradStopRadar =
   stopRadar;
 
-
 /* =========================================================
    RAIN BUTTON
 ========================================================= */
@@ -3408,7 +3251,6 @@ $("rainProduct").onclick =
     );
 
   };
-
 
 /* =========================================================
    ACTIVE NAV
@@ -3430,7 +3272,6 @@ function setActiveNav(button){
   );
 
 }
-
 
 /* =========================================================
    OTHER PRODUCT BUTTONS
@@ -3488,7 +3329,6 @@ navButtons.forEach(
 
   }
 );
-
 
 /* =========================================================
    TIMELINE
@@ -3572,7 +3412,6 @@ $("range").oninput =
     }
 
   };
-
 
 /* =========================================================
    PLAY
@@ -3681,7 +3520,6 @@ $("play").onclick =
 
   };
 
-
 /* =========================================================
    INITIAL STATE
 ========================================================= */
@@ -3721,7 +3559,6 @@ $("times").textContent =
 
 $("intensityValue").textContent =
   "Нет данных";
-
 
 /* =========================================================
    MAP RESIZE
