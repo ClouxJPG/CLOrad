@@ -32,10 +32,7 @@
   let gifPlayTimer = null;
   let gifLayer = null;
 
-  /*
-     Разрешение отображения.
-     По умолчанию 1×1.
-  */
+  /* 1×1 по умолчанию */
   let gifResolution = 1;
 
   /* =======================================================
@@ -53,163 +50,111 @@
   }
 
   /* =======================================================
-     RESOLUTION UI
-  ======================================================= */
+     GIF LAYER UI
+     ======================================================= */
 
-  function installGIFResolutionUI() {
+  function installGIFLayerUI() {
 
-    if (document.getElementById("clorad-gif-resolution")) {
+    const gifButton =
+      document.getElementById("gifRadarNav");
+
+    if (!gifButton) {
       return;
     }
 
-    const style = document.createElement("style");
+    /*
+       Уже установлен.
+    */
 
-    style.id = "clorad-gif-resolution-style";
+    if (
+      gifButton.dataset.cloradGifUI === "1"
+    ) {
+      return;
+    }
 
-    style.textContent = `
+    gifButton.dataset.cloradGifUI = "1";
 
-      #clorad-gif-resolution {
-        position: relative;
-        display: flex;
-        justify-content: center;
-        margin-top: 5px;
-        z-index: 10000;
-      }
+    /*
+       Меняем название существующего
+       GIF-слоя.
+    */
 
-      #clorad-gif-resolution-button {
-        position: relative;
-        width: 52px;
-        height: 28px;
+    const textNodes = [];
 
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 8px;
+    gifButton.childNodes.forEach(node => {
 
-        background: rgba(25,27,31,.96);
-        color: #fff;
+      if (
+        node.nodeType ===
+        Node.TEXT_NODE
+      ) {
 
-        font-size: 12px;
-        font-weight: 600;
-
-        display: flex;
-        align-items: center;
-        justify-content: center;
-
-        cursor: pointer;
-
-        -webkit-tap-highlight-color:
-          transparent;
-
-        box-shadow:
-          0 3px 12px rgba(0,0,0,.28);
-      }
-
-      #clorad-gif-resolution-button:active {
-        transform: scale(.97);
-      }
-
-      #clorad-gif-resolution-menu {
-        position: absolute;
-
-        left: 50%;
-        bottom: calc(100% + 6px);
-
-        transform:
-          translateX(-50%);
-
-        display: none;
-        flex-direction: row;
-        align-items: center;
-
-        gap: 4px;
-
-        padding: 4px;
-
-        border-radius: 9px;
-
-        background: rgba(25,27,31,.98);
-
-        border: 1px solid rgba(255,255,255,.12);
-
-        box-shadow:
-          0 5px 20px rgba(0,0,0,.38);
-
-        z-index: 10001;
-
-        white-space: nowrap;
-      }
-
-      #clorad-gif-resolution.open
-      #clorad-gif-resolution-menu {
-        display: flex;
-      }
-
-      .clorad-gif-resolution-option {
-
-        width: 42px;
-        height: 27px;
-
-        border: 0;
-        border-radius: 6px;
-
-        background: transparent;
-        color: rgba(255,255,255,.72);
-
-        font-size: 12px;
-        font-weight: 600;
-
-        cursor: pointer;
-
-        -webkit-tap-highlight-color:
-          transparent;
-      }
-
-      .clorad-gif-resolution-option:hover {
-        background:
-          rgba(255,255,255,.08);
-
-        color: #fff;
-      }
-
-      .clorad-gif-resolution-option.active {
-        background:
-          rgba(255,255,255,.13);
-
-        color: #fff;
-      }
-
-      /*
-         На очень узких экранах меню
-         не выходит за границы viewport.
-      */
-
-      @media (max-width: 380px) {
-
-        #clorad-gif-resolution-menu {
-          left: auto;
-          right: 0;
-          transform: none;
-        }
+        textNodes.push(node);
 
       }
 
-    `;
+    });
 
-    document.head.appendChild(style);
+    textNodes.forEach(node => {
+
+      node.textContent =
+        node.textContent.replace(
+          /GIF\s*радар/gi,
+          "ДМРЛ композит"
+        );
+
+    });
 
 
     /*
-       Контейнер создаётся около
-       существующей кнопки GIF-радара.
+       Если текст создаётся иначе —
+       добавляем нужное название.
     */
 
-    const container =
+    if (
+      !gifButton.textContent.includes(
+        "ДМРЛ композит"
+      )
+    ) {
+
+      /*
+         Сохраняем SVG-иконку.
+        Удаляем только текстовые узлы.
+      */
+
+      gifButton.childNodes.forEach(node => {
+
+        if (
+          node.nodeType ===
+          Node.TEXT_NODE
+        ) {
+
+          node.remove();
+
+        }
+
+      });
+
+      gifButton.appendChild(
+        document.createTextNode(
+          "ДМРЛ композит"
+        )
+      );
+
+    }
+
+
+    /* =====================================================
+       ВНУТРЕННИЙ БЛОК РАЗРЕШЕНИЯ
+       ===================================================== */
+
+    const resolution =
       document.createElement("div");
 
-    container.id =
+    resolution.id =
       "clorad-gif-resolution";
 
 
-    container.innerHTML = `
+    resolution.innerHTML = `
 
       <button
         id="clorad-gif-resolution-button"
@@ -253,39 +198,220 @@
 
 
     /*
-       Размещаем под кнопкой
-       ДМРЛ/GIF-слоя.
+       Добавляем прямо внутрь
+       существующего элемента слоя.
     */
 
-    const gifButton =
-      document.getElementById(
-        "gifRadarNav"
-      );
+    gifButton.appendChild(
+      resolution
+    );
 
-    if (gifButton) {
 
-      gifButton.insertAdjacentElement(
-        "afterend",
-        container
-      );
+    /* =====================================================
+       STYLE
+       ===================================================== */
 
-    } else {
+    if (
+      !document.getElementById(
+        "clorad-gif-resolution-style"
+      )
+    ) {
 
-      document.body.appendChild(
-        container
+      const style =
+        document.createElement("style");
+
+      style.id =
+        "clorad-gif-resolution-style";
+
+
+      style.textContent = `
+
+        /*
+           Сам элемент ДМРЛ композита.
+           Разрешаем ему содержать
+           дополнительный блок.
+        */
+
+        #gifRadarNav {
+          position: relative;
+        }
+
+
+        /*
+           Кнопка разрешения.
+        */
+
+        #clorad-gif-resolution {
+          position: relative;
+
+          width: 100%;
+
+          margin-top: 4px;
+
+          display: flex;
+          justify-content: center;
+
+          z-index: 10000;
+        }
+
+
+        #clorad-gif-resolution-button {
+
+          width: 46px;
+          height: 25px;
+
+          padding: 0;
+
+          border: 1px solid
+            rgba(255,255,255,.12);
+
+          border-radius: 7px;
+
+          background:
+            rgba(25,27,31,.96);
+
+          color: #fff;
+
+          font-size: 11px;
+          font-weight: 600;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          cursor: pointer;
+
+          -webkit-tap-highlight-color:
+            transparent;
+
+          box-shadow:
+            0 2px 8px
+            rgba(0,0,0,.25);
+        }
+
+
+        #clorad-gif-resolution-button:active {
+
+          transform:
+            scale(.96);
+
+        }
+
+
+        /*
+           Меню.
+           Открывается ВНИЗ.
+        */
+
+        #clorad-gif-resolution-menu {
+
+          position: absolute;
+
+          top: calc(100% + 5px);
+
+          left: 50%;
+
+          transform:
+            translateX(-50%);
+
+          display: none;
+
+          flex-direction: row;
+
+          align-items: center;
+
+          gap: 3px;
+
+          padding: 4px;
+
+          border-radius: 8px;
+
+          background:
+            rgba(25,27,31,.98);
+
+          border:
+            1px solid
+            rgba(255,255,255,.12);
+
+          box-shadow:
+            0 5px 18px
+            rgba(0,0,0,.38);
+
+          z-index: 10001;
+
+          white-space: nowrap;
+        }
+
+
+        #clorad-gif-resolution.open
+        #clorad-gif-resolution-menu {
+
+          display: flex;
+
+        }
+
+
+        .clorad-gif-resolution-option {
+
+          width: 39px;
+          height: 25px;
+
+          padding: 0;
+
+          border: 0;
+
+          border-radius: 6px;
+
+          background:
+            transparent;
+
+          color:
+            rgba(255,255,255,.72);
+
+          font-size: 11px;
+          font-weight: 600;
+
+          cursor: pointer;
+
+          -webkit-tap-highlight-color:
+            transparent;
+        }
+
+
+        .clorad-gif-resolution-option.active {
+
+          background:
+            rgba(255,255,255,.13);
+
+          color: #fff;
+
+        }
+
+
+        .clorad-gif-resolution-option:active {
+
+          background:
+            rgba(255,255,255,.18);
+
+        }
+
+      `;
+
+
+      document.head.appendChild(
+        style
       );
 
     }
 
 
+    /* =====================================================
+       EVENTS
+       ===================================================== */
+
     const button =
       document.getElementById(
         "clorad-gif-resolution-button"
-      );
-
-    const wrapper =
-      document.getElementById(
-        "clorad-gif-resolution"
       );
 
 
@@ -295,7 +421,7 @@
 
         event.stopPropagation();
 
-        wrapper.classList.toggle(
+        resolution.classList.toggle(
           "open"
         );
 
@@ -303,45 +429,48 @@
     );
 
 
-    container
+    resolution
       .querySelectorAll(
         ".clorad-gif-resolution-option"
       )
-      .forEach(
-        option => {
+      .forEach(option => {
 
-          option.addEventListener(
-            "click",
-            event => {
+        option.addEventListener(
+          "click",
+          event => {
 
-              event.stopPropagation();
+            event.stopPropagation();
 
-              const value =
-                Number(
-                  option.dataset.resolution
-                );
-
-              if (
-                value !== 1 &&
-                value !== 2 &&
-                value !== 4
-              ) {
-                return;
-              }
-
-              setGIFResolution(
-                value
+            const value =
+              Number(
+                option.dataset.resolution
               );
 
-              wrapper.classList.remove(
-                "open"
-              );
+
+            if (
+              value !== 1 &&
+              value !== 2 &&
+              value !== 4
+            ) {
+
+              return;
 
             }
-          );
 
-        }
-      );
+
+            setGIFResolution(
+              value
+            );
+
+
+            resolution.classList.remove(
+              "open"
+            );
+
+          }
+        );
+
+      });
 
 
     document.addEventListener(
@@ -349,12 +478,12 @@
       event => {
 
         if (
-          !container.contains(
+          !resolution.contains(
             event.target
           )
         ) {
 
-          wrapper.classList.remove(
+          resolution.classList.remove(
             "open"
           );
 
@@ -365,6 +494,10 @@
 
   }
 
+
+  /* =======================================================
+     RESOLUTION
+     ======================================================= */
 
   function setGIFResolution(
     value
@@ -379,6 +512,7 @@
         "clorad-gif-resolution-button"
       );
 
+
     if (button) {
 
       button.textContent =
@@ -391,26 +525,22 @@
       .querySelectorAll(
         ".clorad-gif-resolution-option"
       )
-      .forEach(
-        option => {
+      .forEach(option => {
 
-          option.classList.toggle(
-            "active",
-            Number(
-              option.dataset.resolution
-            ) === value
-          );
+        option.classList.toggle(
+          "active",
+          Number(
+            option.dataset.resolution
+          ) === value
+        );
 
-        }
-      );
+      });
 
 
     /*
-       Если радар уже открыт,
-       перезапрашиваем текущий кадр.
-
-       Интенсивность при этом
-       не вычисляется заново.
+       Если GIF уже открыт,
+       просто запрашиваем текущий
+       кадр в новом разрешении.
     */
 
     if (
@@ -423,7 +553,12 @@
           $("range")?.value || 0
         );
 
+
       gifImageCache.clear();
+
+
+      rebuildFrameUrls();
+
 
       showGIFFrame(
         index
@@ -436,7 +571,7 @@
 
   /* =======================================================
      STYLE
-  ======================================================= */
+     ======================================================= */
 
   function installGIFStyle() {
 
@@ -500,7 +635,7 @@
 
   /* =======================================================
      IMAGE PRELOAD
-  ======================================================= */
+     ======================================================= */
 
   function loadImage(
     url
@@ -642,7 +777,7 @@
 
   /* =======================================================
      FRAME URLS
-  ======================================================= */
+     ======================================================= */
 
   function buildFrameUrls(
     count
@@ -657,13 +792,6 @@
       i++
     ) {
 
-      /*
-         Разрешение передаётся API.
-
-         1×1 — исходная детализация.
-         2×2 / 4×4 — только дискретизация.
-      */
-
       result.push(
         `${API}?frame=${i}&resolution=${gifResolution}`
       );
@@ -677,17 +805,13 @@
 
 
   /* =======================================================
-     REBUILD URLS AFTER RESOLUTION CHANGE
+     REBUILD URLS
   ======================================================= */
 
   function rebuildFrameUrls() {
 
-    if (
-      !gifMeta
-    ) {
-
+    if (!gifMeta) {
       return;
-
     }
 
 
@@ -703,7 +827,7 @@
 
   /* =======================================================
      FRAME DELAYS
-  ======================================================= */
+     ======================================================= */
 
   function buildGIFDelays(
     count,
@@ -725,22 +849,12 @@
         );
 
 
-      if (
+      result.push(
         Number.isFinite(value) &&
         value > 0
-      ) {
-
-        result.push(
-          value
-        );
-
-      } else {
-
-        result.push(
-          700
-        );
-
-      }
+          ? value
+          : 700
+      );
 
     }
 
@@ -752,7 +866,7 @@
 
   /* =======================================================
      FRAME TIMES
-  ======================================================= */
+     ======================================================= */
 
   function buildGIFTimes(
     count
@@ -835,7 +949,7 @@
 
   /* =======================================================
      TIMELINE
-  ======================================================= */
+     ======================================================= */
 
   function updateGIFTimeline(
     index
@@ -875,7 +989,7 @@
 
 
     $("timeLabel").textContent =
-      "GIF радар · " +
+      "ДМРЛ композит · " +
       time;
 
 
@@ -898,7 +1012,7 @@
 
 
     $("framesInfo").textContent =
-      "GIF радар • кадров: " +
+      "ДМРЛ композит • кадров: " +
       count;
 
 
@@ -909,8 +1023,8 @@
 
 
   /* =======================================================
-     PRELOAD NEIGHBORS
-  ======================================================= */
+     PRELOAD
+     ======================================================= */
 
   function preloadGIFNeighbors(
     index
@@ -944,8 +1058,8 @@
 
 
   /* =======================================================
-     CREATE SINGLE OVERLAY
-  ======================================================= */
+     CREATE OVERLAY
+     ======================================================= */
 
   function createGIFLayer(
     url
@@ -983,7 +1097,7 @@
 
   /* =======================================================
      SHOW FRAME
-  ======================================================= */
+     ======================================================= */
 
   async function showGIFFrame(
     index
@@ -1109,7 +1223,7 @@
 
   /* =======================================================
      ACTIVATE
-  ======================================================= */
+     ======================================================= */
 
   async function activateGIF() {
 
@@ -1145,11 +1259,11 @@
 
 
     $("framesInfo").textContent =
-      "Загрузка GIF-радара…";
+      "Загрузка ДМРЛ композита…";
 
 
     $("timeLabel").textContent =
-      "Загрузка GIF-радара…";
+      "Загрузка ДМРЛ композита…";
 
 
     try {
@@ -1241,7 +1355,7 @@
 
 
       $("timeLabel").textContent =
-        "Ошибка GIF-радара";
+        "Ошибка ДМРЛ композита";
 
 
       $("framesInfo").textContent =
@@ -1251,7 +1365,7 @@
 
       msg(
         error?.message ||
-        "Ошибка GIF-радара"
+        "Ошибка ДМРЛ композита"
       );
 
     } finally {
@@ -1265,7 +1379,7 @@
 
   /* =======================================================
      DEACTIVATE
-  ======================================================= */
+     ======================================================= */
 
   function deactivateGIF() {
 
@@ -1371,7 +1485,7 @@
 
   /* =======================================================
      PLAY
-  ======================================================= */
+     ======================================================= */
 
   function playGIF() {
 
@@ -1522,8 +1636,8 @@
 
 
   /* =======================================================
-     GIF BUTTON
-  ======================================================= */
+     EXISTING GIF BUTTON
+     ======================================================= */
 
   let gifButton =
     document.getElementById(
@@ -1560,7 +1674,7 @@
         />
         <path d="M9 8v8l6-4z"/>
       </svg>
-      GIF радар
+      ДМРЛ композит
     `;
 
 
@@ -1583,7 +1697,7 @@
 
   /* =======================================================
      ACTIVE NAV
-  ======================================================= */
+     ======================================================= */
 
   function setActiveNav(
     button
@@ -1616,7 +1730,7 @@
 
   /* =======================================================
      RANGE
-  ======================================================= */
+     ======================================================= */
 
   $("range").addEventListener(
     "input",
@@ -1643,7 +1757,7 @@
 
   /* =======================================================
      PLAY BUTTON
-  ======================================================= */
+     ======================================================= */
 
   $("play").addEventListener(
     "click",
@@ -1670,11 +1784,27 @@
 
   /* =======================================================
      GIF BUTTON
-  ======================================================= */
+     ======================================================= */
 
   gifButton.addEventListener(
     "click",
     event => {
+
+      /*
+         Если нажата кнопка разрешения,
+         сам GIF-слой не переключаем.
+      */
+
+      if (
+        event.target.closest(
+          "#clorad-gif-resolution"
+        )
+      ) {
+
+        return;
+
+      }
+
 
       event.stopPropagation();
 
@@ -1686,7 +1816,7 @@
 
   /* =======================================================
      NAV SWITCHING
-  ======================================================= */
+     ======================================================= */
 
   nav.addEventListener(
     "click",
@@ -1736,7 +1866,7 @@
 
   /* =======================================================
      PUBLIC API
-  ======================================================= */
+     ======================================================= */
 
   window.CLOradDeactivateGIF =
     deactivateGIF;
@@ -1757,10 +1887,55 @@
 
   /* =======================================================
      INIT
-  ======================================================= */
+     ======================================================= */
 
   installGIFStyle();
 
-  installGIFResolutionUI();
+  /*
+     Ждём, если существующая
+     кнопка создаётся чуть позже.
+  */
+
+  installGIFLayerUI();
+
+
+  if (
+    !document.getElementById(
+      "clorad-gif-resolution"
+    )
+  ) {
+
+    const observer =
+      new MutationObserver(
+        () => {
+
+          installGIFLayerUI();
+
+          if (
+            document.getElementById(
+              "clorad-gif-resolution"
+            )
+          ) {
+
+            observer.disconnect();
+
+          }
+
+        }
+      );
+
+
+    observer.observe(
+      document.body,
+      {
+        childList:
+          true,
+
+        subtree:
+          true
+      }
+    );
+
+  }
 
 })();
