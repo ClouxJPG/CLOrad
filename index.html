@@ -11,6 +11,16 @@
   crossorigin=""
 >
 
+<!-- CLOrad: MapLibre для OpenFreeMap Dark -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css"
+>
+
+<script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+
 <style>
 *{
   box-sizing:border-box;
@@ -1461,17 +1471,158 @@ const map =
 
 window.map = map;
 
-L.tileLayer(
-  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  {
-    maxZoom:19,
-    minZoom:2,
-    attribution:"© OpenStreetMap",
-    updateWhenZooming:false,
-    updateWhenIdle:true,
-    keepBuffer:2
+
+/* =========================================================
+   OPENFREEMAP DARK
+========================================================= */
+
+const cloradBaseMap =
+  L.maplibreGL({
+    style:
+      "https://tiles.openfreemap.org/styles/dark",
+    interactive:false,
+    attribution:
+      "© OpenFreeMap · © OpenStreetMap contributors"
+  }).addTo(map);
+
+window.CLOradBaseMap =
+  cloradBaseMap;
+
+
+/* =========================================================
+   LOCAL MAP LABELS
+========================================================= */
+
+function CLOradApplyLocalMapLabels(){
+
+  let gl;
+
+  try{
+
+    gl =
+      cloradBaseMap.getMaplibreMap();
+
+  }catch(error){
+
+    console.warn(
+      "CLOrad: MapLibre map недоступен",
+      error
+    );
+
+    return;
+
   }
-).addTo(map);
+
+
+  const style =
+    gl.getStyle();
+
+
+  if(
+    !style ||
+    !Array.isArray(style.layers)
+  ){
+
+    return;
+
+  }
+
+
+  const localName = [
+    "coalesce",
+    ["get","name"],
+    ["get","name:nonlatin"],
+    ["get","name:latin"]
+  ];
+
+
+  style.layers.forEach(
+    layer => {
+
+      if(
+        layer.type !== "symbol" ||
+        !layer.layout ||
+        layer.layout["text-field"] == null
+      ){
+
+        return;
+
+      }
+
+
+      let textField;
+
+      try{
+
+        textField =
+          JSON.stringify(
+            layer.layout["text-field"]
+          );
+
+      }catch{
+
+        return;
+
+      }
+
+
+      if(
+        !/name(?::|_en|\b)/i.test(
+          textField
+        )
+      ){
+
+        return;
+
+      }
+
+
+      try{
+
+        gl.setLayoutProperty(
+          layer.id,
+          "text-field",
+          localName
+        );
+
+      }catch(error){
+
+        console.warn(
+          "CLOrad: не удалось изменить язык:",
+          layer.id,
+          error
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+try{
+
+  const gl =
+    cloradBaseMap.getMaplibreMap();
+
+  gl.once(
+    "load",
+    () => {
+
+      CLOradApplyLocalMapLabels();
+
+    }
+  );
+
+}catch(error){
+
+  console.warn(
+    "CLOrad: MapLibre не запустился",
+    error
+  );
+
+}
 
 
 /* =========================================================
@@ -1941,20 +2092,6 @@ let activeFrames = [];
 let activeLayer = null;
 let activeMetadata = null;
 
-/*
-   activeRequest —
-   отменяет старые загрузки продукта.
-
-   activeFrameRequest —
-   отдельно отменяет старые загрузки
-   отдельных кадров.
-
-   Это важно при быстром движении
-   таймлайна: старый кадр больше
-   не сможет добавить свой слой
-   поверх нового.
-*/
-
 let activeRequest = 0;
 let activeFrameRequest = 0;
 
@@ -2193,9 +2330,6 @@ async function decodeRDR(
 
   }
 
-
-  /* IDMR */
-
   const signature =
     String.fromCharCode(
       bytes[0],
@@ -2214,9 +2348,6 @@ async function decodeRDR(
 
   }
 
-
-  /* VERSION */
-
   if(
     bytes[4] !== 1
   ){
@@ -2226,9 +2357,6 @@ async function decodeRDR(
     );
 
   }
-
-
-  /* HEADER LENGTH */
 
   const view =
     new DataView(
@@ -2241,14 +2369,12 @@ async function decodeRDR(
       true
     );
 
-
   const headerStart =
     9;
 
   const headerEnd =
     headerStart +
     headerLength;
-
 
   if(
     headerEnd > bytes.length
@@ -2259,9 +2385,6 @@ async function decodeRDR(
     );
 
   }
-
-
-  /* HEADER JSON */
 
   const headerBytes =
     bytes.slice(
@@ -2293,20 +2416,13 @@ async function decodeRDR(
 
   }
 
-
   const body =
     bytes.slice(
       headerEnd
     );
 
-
-  /* =======================================================
-     STREAMS
-  ======================================================= */
-
   const lengths =
     header?.тело?.длины_потоков;
-
 
   if(
     !Array.isArray(lengths) ||
@@ -2318,7 +2434,6 @@ async function decodeRDR(
     );
 
   }
-
 
   const streams = [];
 
@@ -2353,17 +2468,11 @@ async function decodeRDR(
 
   }
 
-
-  /* =======================================================
-     COMPRESSION
-  ======================================================= */
-
   const compression =
     String(
       header?.тело?.жатьё ||
       "deflate"
     ).toLowerCase();
-
 
   if(
     compression !== "deflate"
@@ -2377,11 +2486,6 @@ async function decodeRDR(
 
   }
 
-
-  /* =======================================================
-     STREAM 0 — VALUES
-  ======================================================= */
-
   const valuesBytes =
     await inflateDeflate(
       streams[0]
@@ -2391,11 +2495,6 @@ async function decodeRDR(
     new Uint8Array(
       valuesBytes
     );
-
-
-  /* =======================================================
-     STREAM 1 — RLE LENGTHS
-  ======================================================= */
 
   const runBytes =
     await inflateDeflate(
@@ -2443,7 +2542,6 @@ async function decodeRDR(
 
   }
 
-
   if(
     shift !== 0
   ){
@@ -2453,7 +2551,6 @@ async function decodeRDR(
     );
 
   }
-
 
   if(
     values.length !== runs.length
@@ -2465,11 +2562,6 @@ async function decodeRDR(
 
   }
 
-
-  /* =======================================================
-     GRID SIZE
-  ======================================================= */
-
   const width =
     Number(
       header?.ширина
@@ -2479,7 +2571,6 @@ async function decodeRDR(
     Number(
       header?.высота
     );
-
 
   if(
     !Number.isInteger(width) ||
@@ -2494,27 +2585,19 @@ async function decodeRDR(
 
   }
 
-
   const pixelCount =
     width *
     height;
-
-
-  /* =======================================================
-     PALETTE
-  ======================================================= */
 
   const paletteBytes =
     await inflateDeflate(
       streams[2]
     );
 
-
   const paletteInfo =
     Number(
       header?.тело?.палитра
     ) || 4;
-
 
   if(
     paletteInfo < 4
@@ -2525,7 +2608,6 @@ async function decodeRDR(
     );
 
   }
-
 
   if(
     paletteBytes.length <
@@ -2538,20 +2620,13 @@ async function decodeRDR(
 
   }
 
-
-  /* =======================================================
-     EXPAND RLE → RGBA
-  ======================================================= */
-
   const rgba =
     new Uint8ClampedArray(
       pixelCount * 4
     );
 
-
   let pixel =
     0;
-
 
   for(
     let run = 0;
@@ -2567,7 +2642,6 @@ async function decodeRDR(
         runs[run]
       );
 
-
     if(
       length <= 0
     ){
@@ -2576,11 +2650,9 @@ async function decodeRDR(
 
     }
 
-
     const paletteOffset =
       code *
       paletteInfo;
-
 
     const r =
       paletteBytes[
@@ -2602,14 +2674,12 @@ async function decodeRDR(
         paletteOffset + 3
       ];
 
-
     const end =
       Math.min(
         pixel +
         length,
         pixelCount
       );
-
 
     for(
       ;
@@ -2636,7 +2706,6 @@ async function decodeRDR(
 
   }
 
-
   if(
     pixel !== pixelCount
   ){
@@ -2646,7 +2715,6 @@ async function decodeRDR(
     );
 
   }
-
 
   return {
     header,
@@ -2671,7 +2739,6 @@ async function rdrToImageUrl(
       buffer
     );
 
-
   const canvas =
     document.createElement(
       "canvas"
@@ -2683,7 +2750,6 @@ async function rdrToImageUrl(
   canvas.height =
     decoded.height;
 
-
   const ctx =
     canvas.getContext(
       "2d",
@@ -2693,7 +2759,6 @@ async function rdrToImageUrl(
       }
     );
 
-
   if(!ctx){
 
     throw new Error(
@@ -2702,7 +2767,6 @@ async function rdrToImageUrl(
 
   }
 
-
   const imageData =
     new ImageData(
       decoded.rgba,
@@ -2710,13 +2774,11 @@ async function rdrToImageUrl(
       decoded.height
     );
 
-
   ctx.putImageData(
     imageData,
     0,
     0
   );
-
 
   const blob =
     await new Promise(
@@ -2741,7 +2803,6 @@ async function rdrToImageUrl(
 
       }
     );
-
 
   return {
     url:URL.createObjectURL(blob),
@@ -2790,18 +2851,8 @@ async function loadFrame(
   requestId
 ){
 
-  /*
-     Каждый новый запрос кадра получает
-     собственный номер.
-
-     Если пользователь быстро двигает
-     таймлайн, старые запросы больше
-     не смогут создать второй слой.
-  */
-
   const frameRequestId =
     ++activeFrameRequest;
-
 
   if(
     requestId !== activeRequest
@@ -2810,7 +2861,6 @@ async function loadFrame(
     return;
 
   }
-
 
   if(
     !frame ||
@@ -2822,18 +2872,6 @@ async function loadFrame(
     );
 
   }
-
-
-  /*
-     Старый слой НЕ удаляем здесь.
-
-     Он остаётся видимым, пока новый
-     кадр полностью не скачан,
-     распакован и подготовлен.
-
-     Это убирает пустой экран
-     между кадрами.
-  */
 
   const response =
     await fetchWithTimeout(
@@ -2847,12 +2885,6 @@ async function loadFrame(
       60000
     );
 
-
-  /*
-     Проверяем актуальность сразу
-     после network await.
-  */
-
   if(
     requestId !== activeRequest ||
     frameRequestId !== activeFrameRequest
@@ -2861,7 +2893,6 @@ async function loadFrame(
     return;
 
   }
-
 
   if(
     !response.ok
@@ -2874,15 +2905,8 @@ async function loadFrame(
 
   }
 
-
   const buffer =
     await response.arrayBuffer();
-
-
-  /*
-     Пользователь мог выбрать другой
-     кадр во время скачивания.
-  */
 
   if(
     requestId !== activeRequest ||
@@ -2893,16 +2917,10 @@ async function loadFrame(
 
   }
 
-
   const result =
     await rdrToImageUrl(
       buffer
     );
-
-
-  /*
-     Проверяем ещё раз после декодирования.
-  */
 
   if(
     requestId !== activeRequest ||
@@ -2921,11 +2939,9 @@ async function loadFrame(
 
   }
 
-
   const box =
     activeMetadata?.box ||
     result.header?.box;
-
 
   if(
     !box
@@ -2945,16 +2961,13 @@ async function loadFrame(
 
   }
 
-
   const bounds =
     makeBounds(
       box
     );
 
-
   const oldLayer =
     activeLayer;
-
 
   const layer =
     L.imageOverlay(
@@ -2968,12 +2981,6 @@ async function loadFrame(
         className:"clorad-radar-raster"
       }
     );
-
-
-  /*
-     Ещё одна защита от устаревшего
-     кадра перед добавлением на карту.
-  */
 
   if(
     requestId !== activeRequest ||
@@ -2992,28 +2999,12 @@ async function loadFrame(
 
   }
 
-
-  /*
-     Новый слой становится активным
-     только после всех проверок.
-  */
-
   activeLayer =
     layer;
-
 
   layer.addTo(
     map
   );
-
-
-  /*
-     Теперь старый слой можно удалить.
-
-     Таким образом одновременно
-     существует максимум один
-     iDarkMeteo-слой.
-  */
 
   if(
     oldLayer &&
@@ -3027,23 +3018,15 @@ async function loadFrame(
 
   }
 
-
   $("timeLabel").textContent =
     formatFrameTime(
       frame.t
     );
 
-
   $("intensityValue").textContent =
     activeProduct === "rain"
       ? "мм/ч"
       : "—";
-
-
-  /*
-     Освобождаем blob URL после
-     удаления соответствующего слоя.
-  */
 
   layer.once(
     "remove",
@@ -3083,26 +3066,16 @@ async function loadProduct(
 
   }
 
-
   const requestId =
     ++activeRequest;
 
-
-  /*
-     При смене продукта старые
-     запросы кадров также становятся
-     недействительными.
-  */
-
   activeFrameRequest++;
-
 
   activeProduct =
     productName;
 
   activeMetadata =
     null;
-
 
   $("loadingFrames").classList.add(
     "show"
@@ -3113,7 +3086,6 @@ async function loadProduct(
 
   $("timeLabel").textContent =
     "Подключение к радару…";
-
 
   try{
 
@@ -3133,7 +3105,6 @@ async function loadProduct(
         30000
       );
 
-
     if(
       requestId !== activeRequest
     ){
@@ -3141,7 +3112,6 @@ async function loadProduct(
       return;
 
     }
-
 
     if(
       !response.ok
@@ -3170,7 +3140,6 @@ async function loadProduct(
 
       }
 
-
       throw new Error(
         "HTTP " +
         response.status +
@@ -3183,10 +3152,8 @@ async function loadProduct(
 
     }
 
-
     const metadata =
       await response.json();
-
 
     if(
       requestId !== activeRequest
@@ -3195,7 +3162,6 @@ async function loadProduct(
       return;
 
     }
-
 
     if(
       !metadata ||
@@ -3210,10 +3176,8 @@ async function loadProduct(
 
     }
 
-
     activeMetadata =
       metadata;
-
 
     let frames =
       metadata.frames
@@ -3227,22 +3191,11 @@ async function loadProduct(
           frameCount
         );
 
-
-    /*
-       API:
-       newest → oldest
-
-       Таймлайн:
-       oldest → newest
-    */
-
     frames =
       frames.reverse();
 
-
     activeFrames =
       frames;
-
 
     if(
       frames.length === 0
@@ -3254,16 +3207,13 @@ async function loadProduct(
 
     }
 
-
     $("range").max =
       Math.max(
         0,
         frames.length - 1
       );
 
-
     let selectedIndex;
-
 
     if(
       keepCurrentFrame
@@ -3284,15 +3234,12 @@ async function loadProduct(
 
     }
 
-
     $("range").value =
       selectedIndex;
-
 
     $("framesInfo").textContent =
       "Загружено кадров: " +
       frames.length;
-
 
     $("times").innerHTML =
       "<span>" +
@@ -3308,18 +3255,15 @@ async function loadProduct(
       ) +
       "</span>";
 
-
     const selectedFrame =
       frames[
         selectedIndex
       ];
 
-
     await loadFrame(
       selectedFrame,
       requestId
     );
-
 
     if(
       requestId !== activeRequest
@@ -3329,11 +3273,9 @@ async function loadProduct(
 
     }
 
-
     $("loadingFrames").classList.remove(
       "show"
     );
-
 
   }catch(error){
 
@@ -3345,24 +3287,19 @@ async function loadProduct(
 
     }
 
-
     console.error(
       "CLOrad Idarkmeteo:",
       error
     );
 
-
     $("loadingFrames").classList.remove(
       "show"
     );
 
-
     removeActiveLayer();
-
 
     $("timeLabel").textContent =
       "Ошибка подключения";
-
 
     $("framesInfo").textContent =
       error?.name === "AbortError"
@@ -3372,10 +3309,8 @@ async function loadProduct(
             "Ошибка загрузки кадра"
           );
 
-
     $("intensityValue").textContent =
       "Нет данных";
-
 
     msg(
       error?.message ||
@@ -3393,15 +3328,9 @@ async function loadProduct(
 
 function stopRadar(){
 
-  /*
-     Отменяем все предыдущие запросы
-     продукта и кадров.
-  */
-
   activeRequest++;
 
   activeFrameRequest++;
-
 
   activeProduct =
     null;
@@ -3411,12 +3340,6 @@ function stopRadar(){
 
   activeMetadata =
     null;
-
-
-  /*
-     Останавливаем воспроизведение,
-     если оно было запущено.
-  */
 
   if(
     playing
@@ -3437,14 +3360,7 @@ function stopRadar(){
 
   }
 
-
-  /*
-     Удаляем единственный активный
-     iDarkMeteo-слой.
-  */
-
   removeActiveLayer();
-
 
   $("range").max =
     0;
@@ -3470,15 +3386,6 @@ function stopRadar(){
 
 }
 
-
-/*
-   Делаем функцию доступной
-   для gif-radar.js.
-
-   При включении GIF он сможет
-   полностью остановить iDarkMeteo.
-*/
-
 window.CLOradStopRadar =
   stopRadar;
 
@@ -3491,11 +3398,6 @@ $("rainProduct").onclick =
   event => {
 
     event.stopPropagation();
-
-    /*
-       Если GIF активен, gif-radar.js
-       перехватит переключение раньше.
-    */
 
     setActiveNav(
       $("rainProduct")
@@ -3555,16 +3457,6 @@ navButtons.forEach(
       "click",
       () => {
 
-        /*
-           Если активен GIF,
-           перед переходом на другой
-           раздел останавливаем его.
-
-           layersNav специально исключён:
-           открытие "Слои" не должно
-           выключать GIF.
-        */
-
         if(
           typeof window.CLOradDeactivateGIF ===
           "function"
@@ -3574,7 +3466,6 @@ navButtons.forEach(
 
         }
 
-
         if(
           typeof window.CLOradStopRadar ===
           "function"
@@ -3583,7 +3474,6 @@ navButtons.forEach(
           window.CLOradStopRadar();
 
         }
-
 
         setActiveNav(
           button
@@ -3607,14 +3497,6 @@ navButtons.forEach(
 $("range").oninput =
   async () => {
 
-    /*
-       Если gif-radar.js активен,
-       он сам обрабатывает таймлайн.
-
-       Этот обработчик нужен только
-       для iDarkMeteo.
-    */
-
     if(
       typeof window.CLOradGIFActive ===
       "function" &&
@@ -3624,7 +3506,6 @@ $("range").oninput =
       return;
 
     }
-
 
     if(
       !activeProduct ||
@@ -3636,7 +3517,6 @@ $("range").oninput =
 
     }
 
-
     const index =
       Number(
         $("range").value
@@ -3647,19 +3527,16 @@ $("range").oninput =
         index
       ];
 
-
     if(!frame){
 
       return;
 
     }
 
-
     $("timeLabel").textContent =
       formatFrameTime(
         frame.t
       );
-
 
     try{
 
@@ -3667,17 +3544,14 @@ $("range").oninput =
         "show"
       );
 
-
       await loadFrame(
         frame,
         activeRequest
       );
 
-
       $("loadingFrames").classList.remove(
         "show"
       );
-
 
     }catch(error){
 
@@ -3710,11 +3584,6 @@ let playTimer = null;
 $("play").onclick =
   () => {
 
-    /*
-       GIF имеет собственный обработчик
-       в gif-radar.js.
-    */
-
     if(
       typeof window.CLOradGIFActive ===
       "function" &&
@@ -3724,7 +3593,6 @@ $("play").onclick =
       return;
 
     }
-
 
     if(
       !activeFrames.length
@@ -3738,10 +3606,8 @@ $("play").onclick =
 
     }
 
-
     playing =
       !playing;
-
 
     if(!playing){
 
@@ -3759,10 +3625,8 @@ $("play").onclick =
 
     }
 
-
     $("play").innerHTML =
       '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
-
 
     playTimer =
       setInterval(
@@ -3786,15 +3650,12 @@ $("play").onclick =
 
           }
 
-
           let index =
             Number(
               $("range").value
             );
 
-
           index++;
-
 
           if(
             index >=
@@ -3805,10 +3666,8 @@ $("play").onclick =
 
           }
 
-
           $("range").value =
             index;
-
 
           $("range").dispatchEvent(
             new Event(
