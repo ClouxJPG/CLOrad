@@ -1,149 +1,37 @@
+// ============================================================
+// CLOrad — Meteoinfo GIF Radar API
+// GIF → очистка → геопривязка → Web Mercator
+// → строгая палитра CLOrad → PNG
+// ============================================================
+
 import sharp from "sharp";
 
 
-/* =========================================================
-   CLOrad — Meteoinfo GIF Radar
-
-   ВАЖНО:
-   Исходная GIF уже содержит готовую классификацию
-   Meteoinfo.
-
-   Поэтому мы НЕ пытаемся определить уровень
-   по палитре CLOrad.
-
-   Схема:
-
-   Meteoinfo RGB
-        ↓
-   исходный класс Meteoinfo 1..19
-        ↓
-   соответствующий CLOrad l1..l19
-
-   ========================================================= */
-
-
-/* =========================================================
-   SOURCE
-========================================================= */
+// ============================================================
+// SOURCE
+// ============================================================
 
 const SOURCE_GIF =
   "https://meteoinfo.ru/hmc-output/rmap/phenomena.gif";
 
 
-/* =========================================================
-   CACHE
-========================================================= */
+// ============================================================
+// CACHE
+// ============================================================
 
-let gifCache = null;
+const GIF_CACHE_MS = 30000;
 
-let gifCacheTime = 0;
+let cachedGIF = null;
+let cachedAt = 0;
+let loadingGIF = null;
+let cachedMetadata = null;
 
-const GIF_CACHE_MS =
-  30 * 1000;
-
-
-const processedFrames =
-  new Map();
-
-const MAX_PROCESSED_FRAMES =
-  12;
+const processedFrameCache = new Map();
 
 
-/* =========================================================
-   SOURCE / CALIBRATION SIZE
-========================================================= */
-
-const SOURCE_WIDTH =
-  1200;
-
-const SOURCE_HEIGHT =
-  1200;
-
-
-/*
- * Контрольные точки измерялись
- * на изображении 1122 × 1136.
- */
-
-const CALIBRATION_WIDTH =
-  1122;
-
-const CALIBRATION_HEIGHT =
-  1136;
-
-
-/* =========================================================
-   CONTROL-POINT GEOGRAPHY
-========================================================= */
-
-/*
- * pixel X/Y -> longitude
- * pixel X/Y -> WebMercator Y
- */
-
-const LON_COEF = [
-
-  14.98929812639779,
-
-  0.0102952150,
-
-  0.0335153132,
-
-  0.00000752017763,
-
-  0.0000109901938,
-
- -0.0000117058138
-
-];
-
-
-const MERC_COEF = [
-
-  0.992404855,
-
-  0.000621648749,
-
- -0.000164715385,
-
-  0.0000000227981213,
-
- -0.000000336199981,
-
- -0.0000000641834479
-
-];
-
-
-/* =========================================================
-   OUTPUT GEOGRAPHIC EXTENT
-========================================================= */
-
-const GEO = {
-
-  west:
-    14.9892981264,
-
-  east:
-    72.9237642948,
-
-  south:
-    38.2155955810,
-
-  north:
-    69.6543707199
-
-};
-
-
-/* =========================================================
-   CLOrad PALETTE
-
-   Это палитра уже самого CLOrad.
-
-   Номер позиции здесь должен соответствовать
-   номеру исходного класса Meteoinfo.
-========================================================= */
+// ============================================================
+// CLOrad PALETTE
+// ============================================================
 
 const CLORAD_PALETTE = [
 
@@ -170,594 +58,322 @@ const CLORAD_PALETTE = [
 ];
 
 
-/* =========================================================
-   METEOINFO SOURCE PALETTE
+// ============================================================
+// FAST PALETTE LOOKUP
+// ============================================================
 
-   Цвета сняты с присланного исходного кадра
-   Meteoinfo 1122 × 1136.
+const PALETTE_SIZE = 32;
 
-   JPEG даёт небольшое отклонение RGB, поэтому ниже
-   используется ближайший исходный класс с допуском.
+const PALETTE_LOOKUP =
+  new Uint8Array(
+    PALETTE_SIZE *
+    PALETTE_SIZE *
+    PALETTE_SIZE
+  );
 
-   ПОРЯДОК = ПОРЯДОК ЛЕГЕНДЫ METEOINFO.
 
-   1  Обл. в ср. яр.
-   2  Обл. ост. обл.
-   3  Ос. слаб.
-   4  Ос. умер.
-   5  Ос. сильн.
-   6  Куб. обл.
-   7  Лив. слаб.
-   8  Лив. умер.
-   9  Лив. сильн.
-   10 Гроза (R)
-   11 Гроза (R)
-   12 Гроза R
-   13 Град слаб.
-   14 Град умер.
-   15 Град сильн.
-   16 Гроза+шкв слаб.
-   17 Гроза+шкв умер.
-   18 Гроза+шкв сильн.
-   19 Смерч
-========================================================= */
+function buildPaletteLookup(){
 
-const METEOINFO_PALETTE = [
+  for(let r6 = 0; r6 < PALETTE_SIZE; r6++){
 
-  [160,171,175], // 1
-  [170,198,254], // 2
-  [132,250,160], // 3
-  [91,192,99],   // 4
-  [67,149,45],   // 5
-  [254,255,147], // 6
-  [83,134,244],  // 7
-  [20,52,243],   // 8
-  [1,4,105],     // 9
-  [240,180,154], // 10
-  [240,96,130],  // 11
-  [230,52,30],   // 12
-  [192,109,43],  // 13
-  [118,61,18],   // 14
-  [82,20,7],     // 15
-  [240,175,249], // 16
-  [237,97,248],  // 17
-  [186,40,196],  // 18
-  [55,55,83]     // 19
+    const r = r6 * 8 + 4;
 
+    for(let g6 = 0; g6 < PALETTE_SIZE; g6++){
+
+      const g = g6 * 8 + 4;
+
+      for(let b6 = 0; b6 < PALETTE_SIZE; b6++){
+
+        const b = b6 * 8 + 4;
+
+        let best = 0;
+        let bestDistance = Infinity;
+
+        for(
+          let i = 0;
+          i < CLORAD_PALETTE.length;
+          i++
+        ){
+
+          const c = CLORAD_PALETTE[i];
+
+          const dr = r - c[0];
+          const dg = g - c[1];
+          const db = b - c[2];
+
+          const distance =
+            dr * dr +
+            dg * dg +
+            db * db;
+
+          if(distance < bestDistance){
+
+            bestDistance = distance;
+            best = i;
+
+          }
+
+        }
+
+        const index =
+          r6 * PALETTE_SIZE * PALETTE_SIZE +
+          g6 * PALETTE_SIZE +
+          b6;
+
+        PALETTE_LOOKUP[index] = best;
+
+      }
+
+    }
+
+  }
+
+}
+
+buildPaletteLookup();
+
+
+function getPaletteIndex(r,g,b){
+
+  return PALETTE_LOOKUP[
+    (r >> 3) * PALETTE_SIZE * PALETTE_SIZE +
+    (g >> 3) * PALETTE_SIZE +
+    (b >> 3)
+  ];
+
+}
+
+
+// ============================================================
+// CALIBRATION
+// ============================================================
+
+const UC_LON =
+  42.7295125;
+
+const UC_MERC =
+  1.159140403966;
+
+const US_LON =
+  11.984477282034;
+
+const US_MERC =
+  0.080017466461;
+
+
+// source X
+const PX = [
+   614.702787260693,
+   213.524267491052,
+    86.865800553715,
+    17.052995641967,
+   -18.941081998370,
+    -3.466637383242
 ];
 
 
-/* =========================================================
-   COLOR DISTANCE
-========================================================= */
+// source Y
+const PY = [
+   548.709828924571,
+   231.245550214358,
+   -80.613999910294,
+   -23.817051905972,
+   -12.895624928117,
+     3.365220370149
+];
 
-function colorDistance(
 
-  r,
-  g,
-  b,
-  c
+// ============================================================
+// GIF GEOGRAPHIC BOUNDS
+// ============================================================
 
-){
+const GIF_BOUNDS = {
 
-  const dr =
-    r - c[0];
+  south: 38.2155955810,
+  north: 69.6543707199,
+  west: 14.9892981264,
+  east: 72.9237642948
 
-  const dg =
-    g - c[1];
+};
 
-  const db =
-    b - c[2];
 
-  return (
+// ============================================================
+// ORIGINAL IMAGE SIZE
+// ============================================================
 
-    dr * dr +
-    dg * dg +
-    db * db
+const CALIBRATION_WIDTH = 1122;
+const CALIBRATION_HEIGHT = 1136;
 
-  );
 
-}
+// ============================================================
+// MERCATOR
+// ============================================================
 
+function mercatorY(lat){
 
-/* =========================================================
-   METEOINFO COLOR -> CLASS
-
-   КЛЮЧЕВОЕ ИЗМЕНЕНИЕ.
-
-   Раньше:
-
-     Meteoinfo RGB
-       ↓
-     ближайший CLOrad RGB
-
-   Теперь:
-
-     Meteoinfo RGB
-       ↓
-     ближайший Meteoinfo CLASS
-       ↓
-     тот же номер CLOrad CLASS
-========================================================= */
-
-function sourceColorToLevel(
-
-  r,
-  g,
-  b
-
-){
-
-  let best =
-    -1;
-
-  let bestDistance =
-    Infinity;
-
-
-  for (
-
-    let i = 0;
-
-    i <
-      METEOINFO_PALETTE.length;
-
-    i++
-
-  ){
-
-    const d =
-      colorDistance(
-
-        r,
-        g,
-        b,
-
-        METEOINFO_PALETTE[i]
-
-      );
-
-
-    if (
-
-      d <
-      bestDistance
-
-    ){
-
-      bestDistance =
-        d;
-
-      best =
-        i;
-
-    }
-
-  }
-
-
-  /*
-   * Защита от случайного
-   * определения фона как радара.
-
-   * Для GIF цвета классов должны находиться
-   * достаточно близко к палитре Meteoinfo.
-   */
-
-  if (
-
-    bestDistance >
-    9000
-
-  ){
-
-    return -1;
-
-  }
-
-
-  return best;
-
-}
-
-
-/* =========================================================
-   RADAR / SOURCE PIXEL FILTER
-========================================================= */
-
-function isRadarPixel(
-
-  r,
-  g,
-  b
-
-){
-
-  /*
-   * Теперь НЕ используем старое условие:
-
-       chroma < 30 → удалить
-
-   * потому что класс "Смерч" и некоторые другие
-   * специальные обозначения могут быть тёмными
-   * и малонасыщенными.
-
-   * Вместо этого проверяем, насколько цвет
-   * вообще похож на один из 19 цветов Meteoinfo.
-   */
-
-  let bestDistance =
-    Infinity;
-
-
-  for (
-
-    const c
-    of METEOINFO_PALETTE
-
-  ){
-
-    const d =
-      colorDistance(
-
-        r,
-        g,
-        b,
-        c
-
-      );
-
-
-    if (
-
-      d <
-      bestDistance
-
-    ){
-
-      bestDistance =
-        d;
-
-    }
-
-  }
-
-
-  return (
-
-    bestDistance <=
-    9000
-
-  );
-
-}
-
-
-/* =========================================================
-   MERCATOR
-========================================================= */
-
-function mercatorY(
-
-  lat
-
-){
-
-  const r =
+  const rad =
     lat *
     Math.PI /
     180;
 
-
   return Math.log(
-
     Math.tan(
-
       Math.PI / 4 +
-      r / 2
-
+      rad / 2
     )
-
   );
 
 }
 
 
-/* =========================================================
-   QUADRATIC CALIBRATION
-========================================================= */
+// ============================================================
+// GEO → SOURCE PIXEL
+// ============================================================
 
-function quadratic(
-
-  coef,
-  x,
-  y
-
-){
-
-  return (
-
-    coef[0] +
-
-    coef[1] * x +
-
-    coef[2] * y +
-
-    coef[3] * x * x +
-
-    coef[4] * x * y +
-
-    coef[5] * y * y
-
-  );
-
-}
-
-
-/* =========================================================
-   SOURCE PIXEL -> GEO
-========================================================= */
-
-function sourcePixelToGeo(
-
-  sourceX,
-  sourceY
-
-){
+function geoToSource(lon, mercY){
 
   const x =
-    sourceX *
-    CALIBRATION_WIDTH /
-    SOURCE_WIDTH;
-
+    (lon - UC_LON) /
+    US_LON;
 
   const y =
-    sourceY *
-    CALIBRATION_HEIGHT /
-    SOURCE_HEIGHT;
+    (mercY - UC_MERC) /
+    US_MERC;
 
+  const xx = x * x;
+  const xy = x * y;
+  const yy = y * y;
 
-  const lon =
-    quadratic(
+  const sx =
+    PX[0] +
+    PX[1] * x +
+    PX[2] * y +
+    PX[3] * xx +
+    PX[4] * xy +
+    PX[5] * yy;
 
-      LON_COEF,
-      x,
-      y
+  const sy =
+    PY[0] +
+    PY[1] * x +
+    PY[2] * y +
+    PY[3] * xx +
+    PY[4] * xy +
+    PY[5] * yy;
 
-    );
-
-
-  const my =
-    quadratic(
-
-      MERC_COEF,
-      x,
-      y
-
-    );
-
-
-  const lat =
-
-    (
-
-      2 *
-      Math.atan(
-        Math.exp(my)
-      ) -
-
-      Math.PI / 2
-
-    ) *
-
-    180 /
-    Math.PI;
-
-
-  return {
-
-    lon,
-    lat,
-    mercY: my
-
-  };
+  return [sx,sy];
 
 }
 
 
-/* =========================================================
-   GEO -> OUTPUT PIXEL
-========================================================= */
+// ============================================================
+// RADAR PIXEL FILTER
+// ============================================================
 
-function geoToOutputPixel(
+function isRadarPixel(r,g,b){
 
-  lon,
-  mercY
+  const max =
+    Math.max(r,g,b);
 
-){
+  const min =
+    Math.min(r,g,b);
 
-  const northMerc =
-    mercatorY(
-      GEO.north
-    );
+  const chroma =
+    max - min;
 
+  if(max < 70){
+    return false;
+  }
 
-  const southMerc =
-    mercatorY(
-      GEO.south
-    );
+  if(chroma < 30){
+    return false;
+  }
 
+  const saturation =
+    chroma / max;
 
-  const x =
+  if(saturation < 0.15){
+    return false;
+  }
 
-    (
+  if(
+    max > 238 &&
+    saturation < 0.20
+  ){
+    return false;
+  }
 
-      lon -
-      GEO.west
-
-    ) /
-
-    (
-
-      GEO.east -
-      GEO.west
-
-    ) *
-
-    (
-
-      SOURCE_WIDTH - 1
-
-    );
-
-
-  const y =
-
-    (
-
-      northMerc -
-      mercY
-
-    ) /
-
-    (
-
-      northMerc -
-      southMerc
-
-    ) *
-
-    (
-
-      SOURCE_HEIGHT - 1
-
-    );
-
-
-  return {
-
-    x,
-    y
-
-  };
+  return true;
 
 }
 
 
-/* =========================================================
-   SERVICE AREA
-========================================================= */
+// ============================================================
+// SERVICE AREAS
+// ============================================================
 
 function isServiceArea(
-
-  sourceX,
-  sourceY
-
+  x,
+  y,
+  width,
+  height
 ){
 
-  const x =
-    sourceX *
+  const sx =
+    x *
     CALIBRATION_WIDTH /
-    SOURCE_WIDTH;
+    width;
 
-
-  const y =
-    sourceY *
+  const sy =
+    y *
     CALIBRATION_HEIGHT /
-    SOURCE_HEIGHT;
+    height;
 
 
-  /*
-   * Левая легенда.
-   */
-
-  if (
-
-    x <= 145 &&
-    y <= 365
-
+  // Левая легенда
+  if(
+    sx <= 145 &&
+    sy <= 365
   ){
-
     return true;
-
   }
 
 
-  /*
-   * Верхняя служебная область.
-   */
-
-  if (
-
-    y <= 58
-
-  ){
-
+  // Верхняя служебная область
+  if(sy <= 58){
     return true;
-
   }
 
 
-  /*
-   * Нижний левый логотип.
-   */
-
-  if (
-
-    x <= 160 &&
-    y >= 965
-
+  // Нижний логотип
+  if(
+    sx <= 160 &&
+    sy >= 965
   ){
-
     return true;
-
   }
 
 
-  /*
-   * Нижняя служебная линия.
-   */
-
-  if (
-
-    y >= 1105
-
-  ){
-
+  // Нижняя строка
+  if(sy >= 1105){
     return true;
-
   }
 
 
-  /*
-   * Нижний правый timestamp.
-   */
-
-  if (
-
-    x >= 760 &&
-    y >= 1060
-
+  // Нижний правый timestamp
+  if(
+    sx >= 760 &&
+    sy >= 1060
   ){
-
     return true;
-
   }
 
 
-  /*
-   * Верхний правый timestamp.
-   */
-
-  if (
-
-    x >= 735 &&
-    y <= 65
-
+  // Верхний правый timestamp
+  if(
+    sx >= 735 &&
+    sy <= 65
   ){
-
     return true;
-
   }
 
 
@@ -766,820 +382,637 @@ function isServiceArea(
 }
 
 
-/* =========================================================
-   DOWNLOAD GIF
-========================================================= */
+// ============================================================
+// DOWNLOAD GIF
+// ============================================================
 
 async function getGIF(){
 
   const now =
     Date.now();
 
-
-  if (
-
-    gifCache &&
-
-    now -
-      gifCacheTime <
-      GIF_CACHE_MS
-
+  if(
+    cachedGIF &&
+    now - cachedAt < GIF_CACHE_MS
   ){
-
-    return gifCache;
-
+    return cachedGIF;
   }
 
+  if(loadingGIF){
+    return loadingGIF;
+  }
 
-  const response =
-    await fetch(
+  loadingGIF =
+    (async () => {
 
-      SOURCE_GIF,
+      const response =
+        await fetch(
+          SOURCE_GIF,
+          {
+            method: "GET",
 
-      {
+            headers: {
 
-        headers: {
+              "User-Agent":
+                "Mozilla/5.0",
 
-          "User-Agent":
-            "Mozilla/5.0 (compatible; CLOrad/1.0)",
+              "Accept":
+                "image/gif,*/*",
 
-          "Accept":
-            "image/gif,image/*,*/*",
+              "Referer":
+                "https://meteoinfo.ru/radanim"
 
-          "Referer":
-            "https://meteoinfo.ru/radanim"
+            },
 
-        }
+            cache:
+              "no-store"
+
+          }
+        );
+
+
+      if(!response.ok){
+
+        throw new Error(
+          "Meteoinfo HTTP " +
+          response.status
+        );
 
       }
 
-    );
+
+      const arrayBuffer =
+        await response.arrayBuffer();
+
+      const buffer =
+        Buffer.from(arrayBuffer);
 
 
-  if (
+      if(!buffer.length){
 
-    !response.ok
+        throw new Error(
+          "Meteoinfo вернул пустой GIF"
+        );
 
-  ){
-
-    throw new Error(
-
-      `Meteoinfo GIF HTTP ${response.status}`
-
-    );
-
-  }
+      }
 
 
-  const buffer =
-    Buffer.from(
+      // Новый GIF → старые PNG больше не нужны
+      processedFrameCache.clear();
 
-      await response.arrayBuffer()
+      cachedMetadata = null;
 
-    );
+      cachedGIF = buffer;
+
+      cachedAt =
+        Date.now();
 
 
-  /*
-   * Если Meteoinfo прислал
-   * новый GIF — старые
-   * обработанные кадры удаляем.
-   */
+      return buffer;
 
-  if (
+    })();
 
-    !gifCache ||
 
-    !gifCache.equals(
-      buffer
-    )
+  try{
 
-  ){
+    return await loadingGIF;
 
-    processedFrames.clear();
+  }finally{
+
+    loadingGIF = null;
 
   }
-
-
-  gifCache =
-    buffer;
-
-  gifCacheTime =
-    now;
-
-
-  return gifCache;
 
 }
 
 
-/* =========================================================
-   METADATA
-========================================================= */
+// ============================================================
+// METADATA
+// ============================================================
 
-async function getMetadata(
+async function getMetadata(gif){
 
-  gif
+  if(cachedMetadata){
+    return cachedMetadata;
+  }
 
-){
-
-  const metadata =
-
+  cachedMetadata =
     await sharp(
-
       gif,
-
       {
         animated: true
       }
-
     )
     .metadata();
 
-
-  return {
-
-    frames:
-      metadata.pages || 1,
-
-    width:
-      metadata.width || 1200,
-
-    height:
-      metadata.height || 1200,
-
-    delays:
-      metadata.delay || []
-
-  };
+  return cachedMetadata;
 
 }
 
 
-/* =========================================================
-   HOLE FILL
+// ============================================================
+// HEADERS
+// ============================================================
 
-   Оставляем существующий механизм,
-   потому что он исправляет только отверстия,
-   возникающие после перепроекции.
-========================================================= */
+function setCORS(res){
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+}
+
+
+function setCache(res){
+
+  res.setHeader(
+    "Cache-Control",
+    "public, max-age=5, s-maxage=30, stale-while-revalidate=60"
+  );
+
+}
+
+
+// ============================================================
+// SMALL RADAR HOLE FILLER
+// ============================================================
 
 function fillSmallRadarHoles(
-
-  pixels,
+  buffer,
   width,
   height
-
 ){
 
+  if(
+    width < 3 ||
+    height < 3
+  ){
+    return;
+  }
+
+
+  const pixelCount =
+    width * height;
+
   const mask =
-    new Uint8Array(
-
-      width *
-      height
-
-    );
+    new Uint8Array(pixelCount);
 
 
-  for (
-
+  // MASK
+  for(
     let i = 0;
-
-    i <
-      width * height;
-
+    i < pixelCount;
     i++
-
   ){
 
-    if (
+    const p = i * 4;
 
-      pixels[
-        i * 4 + 3
-      ] > 0
-
-    ){
-
-      mask[i] =
-        1;
-
+    if(buffer[p + 3] > 0){
+      mask[i] = 1;
     }
 
   }
 
 
-  const result =
-    Buffer.from(
-      pixels
-    );
-
-
-  for (
-
+  // TWO PASSES
+  for(
     let pass = 0;
-
     pass < 2;
-
     pass++
-
   ){
 
-    for (
+    const additions = [];
 
+
+    for(
       let y = 1;
-
-      y <
-        height - 1;
-
+      y < height - 1;
       y++
-
     ){
 
-      for (
+      const row =
+        y * width;
 
+
+      for(
         let x = 1;
-
-        x <
-          width - 1;
-
+        x < width - 1;
         x++
-
       ){
 
         const index =
-          y * width + x;
+          row + x;
 
 
-        if (
-
-          mask[index]
-
-        ){
-
+        if(mask[index]){
           continue;
-
         }
 
 
-        const neighbors = [
-
-          index - width,
-          index + width,
-          index - 1,
-          index + 1,
-
-          index -
-            width -
-            1,
-
-          index -
-            width +
-            1,
-
-          index +
-            width -
-            1,
-
-          index +
-            width +
-            1
-
-        ];
+        const neighbours = [];
 
 
-        const colors =
-          new Map();
-
-
-        let count =
-          0;
-
-
-        for (
-
-          const n
-          of neighbors
-
+        for(
+          let dy = -1;
+          dy <= 1;
+          dy++
         ){
 
-          if (
+          const neighbourRow =
+            (y + dy) * width;
 
-            !mask[n]
 
+          for(
+            let dx = -1;
+            dx <= 1;
+            dx++
           ){
 
-            continue;
-
-          }
-
-
-          const p =
-            n * 4;
-
-
-          const key =
-            `${result[p]},${result[p + 1]},${result[p + 2]}`;
+            if(
+              dx === 0 &&
+              dy === 0
+            ){
+              continue;
+            }
 
 
-          colors.set(
-
-            key,
-
-            (
-
-              colors.get(key) ||
-              0
-
-            ) + 1
-
-          );
+            const ni =
+              neighbourRow +
+              x +
+              dx;
 
 
-          count++;
-
-        }
-
-
-        if (
-
-          count < 6
-
-        ){
-
-          continue;
-
-        }
-
-
-        let bestKey =
-          null;
-
-        let bestCount =
-          0;
-
-
-        for (
-
-          const [
-            key,
-            value
-          ]
-
-          of colors
-
-        ){
-
-          if (
-
-            value >
-            bestCount
-
-          ){
-
-            bestCount =
-              value;
-
-            bestKey =
-              key;
+            if(mask[ni]){
+              neighbours.push(ni);
+            }
 
           }
 
         }
 
 
-        if (
+        if(neighbours.length < 6){
+          continue;
+        }
 
-          !bestKey ||
+
+        let bestSource = -1;
+        let bestCount = 0;
+
+
+        for(
+          let i = 0;
+          i < neighbours.length;
+          i++
+        ){
+
+          const candidate =
+            neighbours[i];
+
+          const cp =
+            candidate * 4;
+
+          const cr =
+            buffer[cp];
+
+          const cg =
+            buffer[cp + 1];
+
+          const cb =
+            buffer[cp + 2];
+
+          let count = 0;
+
+
+          for(
+            let j = 0;
+            j < neighbours.length;
+            j++
+          ){
+
+            const op =
+              neighbours[j] * 4;
+
+            if(
+              buffer[op] === cr &&
+              buffer[op + 1] === cg &&
+              buffer[op + 2] === cb
+            ){
+              count++;
+            }
+
+          }
+
+
+          if(count > bestCount){
+
+            bestCount = count;
+            bestSource = candidate;
+
+          }
+
+        }
+
+
+        if(
+          bestSource < 0 ||
           bestCount < 4
-
         ){
-
           continue;
-
         }
 
 
-        const rgb =
-
-          bestKey
-            .split(",")
-            .map(Number);
-
-
-        const p =
-          index * 4;
-
-
-        result[p] =
-          rgb[0];
-
-        result[p + 1] =
-          rgb[1];
-
-        result[p + 2] =
-          rgb[2];
-
-        result[p + 3] =
-          255;
-
-
-        mask[index] =
-          1;
+        additions.push(
+          index,
+          bestSource
+        );
 
       }
 
     }
 
+
+    // APPLY
+    for(
+      let i = 0;
+      i < additions.length;
+      i += 2
+    ){
+
+      const target =
+        additions[i];
+
+      const source =
+        additions[i + 1];
+
+      const tp =
+        target * 4;
+
+      const sp =
+        source * 4;
+
+
+      buffer[tp] =
+        buffer[sp];
+
+      buffer[tp + 1] =
+        buffer[sp + 1];
+
+      buffer[tp + 2] =
+        buffer[sp + 2];
+
+      buffer[tp + 3] =
+        255;
+
+
+      mask[target] = 1;
+
+    }
+
+
+    if(additions.length === 0){
+      break;
+    }
+
   }
-
-
-  return result;
 
 }
 
 
-/* =========================================================
-   RENDER FRAME
-========================================================= */
+// ============================================================
+// RENDER FRAME
+// ============================================================
 
 async function renderFrame(
-
   gif,
   frame
-
 ){
 
   const cacheKey =
     String(frame);
 
 
-  if (
-
-    processedFrames.has(
-      cacheKey
-    )
-
+  if(
+    processedFrameCache.has(cacheKey)
   ){
-
-    return processedFrames.get(
-      cacheKey
-    );
-
+    return processedFrameCache.get(cacheKey);
   }
 
 
-  /*
-   * Достаём конкретный кадр
-   * реальной GIF.
-   */
-
-  const source =
-
+  // DECODE
+  const decoded =
     await sharp(
-
       gif,
-
       {
-
         animated: true,
-
-        page:
-          frame,
-
-        pages:
-          1
-
+        page: frame,
+        pages: 1
       }
-
     )
     .ensureAlpha()
     .raw()
     .toBuffer({
-
-      resolveWithObject:
-        true
-
+      resolveWithObject: true
     });
 
 
-  const srcWidth =
-    source.info.width;
+  const width =
+    decoded.info.width;
+
+  const height =
+    decoded.info.height;
+
+  const source =
+    decoded.data;
 
 
-  const srcHeight =
-    source.info.height;
-
-
-  const src =
-    source.data;
-
-
-  if (
-
-    srcWidth !==
-      SOURCE_WIDTH ||
-
-    srcHeight !==
-      SOURCE_HEIGHT
-
-  ){
-
-    throw new Error(
-
-      `Неожиданный размер GIF: ${srcWidth}×${srcHeight}`
-
-    );
-
-  }
-
-
-  /*
-   * Итоговый Web Mercator PNG.
-   */
-
+  // OUTPUT
   const output =
-
     Buffer.alloc(
-
-      SOURCE_WIDTH *
-      SOURCE_HEIGHT *
+      width *
+      height *
       4
-
     );
 
 
-  /*
-   * Переносим каждый исходный
-   * пиксель в географически
-   * правильную позицию.
-   */
+  // MERCATOR EXTENT
+  const west =
+    GIF_BOUNDS.west;
 
-  for (
+  const east =
+    GIF_BOUNDS.east;
 
-    let sy = 0;
+  const southMerc =
+    mercatorY(
+      GIF_BOUNDS.south
+    );
 
-    sy <
-      SOURCE_HEIGHT;
+  const northMerc =
+    mercatorY(
+      GIF_BOUNDS.north
+    );
 
-    sy++
 
+  const lonStep =
+    (
+      east - west
+    ) /
+    Math.max(
+      1,
+      width - 1
+    );
+
+
+  const mercStep =
+    (
+      northMerc - southMerc
+    ) /
+    Math.max(
+      1,
+      height - 1
+    );
+
+
+  // REPROJECTION
+  for(
+    let y = 0;
+    y < height;
+    y++
   ){
 
-    for (
+    const mercY =
+      northMerc -
+      y * mercStep;
 
-      let sx = 0;
 
-      sx <
-        SOURCE_WIDTH;
-
-      sx++
-
+    for(
+      let x = 0;
+      x < width;
+      x++
     ){
 
+      const lon =
+        west +
+        x * lonStep;
+
+
+      const sourcePoint =
+        geoToSource(
+          lon,
+          mercY
+        );
+
+
+      const sourceX =
+        Math.round(
+          sourcePoint[0] *
+          width /
+          CALIBRATION_WIDTH
+        );
+
+
+      const sourceY =
+        Math.round(
+          sourcePoint[1] *
+          height /
+          CALIBRATION_HEIGHT
+        );
+
+
+      if(
+        sourceX < 0 ||
+        sourceX >= width ||
+        sourceY < 0 ||
+        sourceY >= height
+      ){
+        continue;
+      }
+
+
+      if(
+        isServiceArea(
+          sourceX,
+          sourceY,
+          width,
+          height
+        )
+      ){
+        continue;
+      }
+
+
       const sourceIndex =
-
         (
-
-          sy *
-          srcWidth +
-          sx
-
+          sourceY *
+          width +
+          sourceX
         ) * 4;
 
 
-      const alpha =
-        src[
-          sourceIndex + 3
-        ];
-
-
-      if (
-
-        alpha < 30
-
-      ){
-
-        continue;
-
-      }
-
-
-      /*
-       * Служебные элементы
-       * исходного изображения.
-       */
-
-      if (
-
-        isServiceArea(
-
-          sx,
-          sy
-
-        )
-
-      ){
-
-        continue;
-
-      }
-
-
       const r =
-        src[
-          sourceIndex
-        ];
-
+        source[sourceIndex];
 
       const g =
-        src[
-          sourceIndex + 1
-        ];
-
+        source[sourceIndex + 1];
 
       const b =
-        src[
-          sourceIndex + 2
-        ];
+        source[sourceIndex + 2];
+
+      const a =
+        source[sourceIndex + 3];
 
 
-      /*
-       * Сначала определяем,
-       * является ли пиксель цветом
-       * одного из 19 классов Meteoinfo.
-       */
+      if(!a){
+        continue;
+      }
 
-      if (
 
+      // FILTER
+      if(
         !isRadarPixel(
           r,
           g,
           b
         )
-
       ){
-
         continue;
-
       }
 
 
-      /*
-       * ВАЖНО:
-
-         Здесь получается ИНДЕКС
-         ИСХОДНОГО класса Meteoinfo.
-
-         Не индекс CLOrad по RGB.
-      */
-
-      const level =
-
-        sourceColorToLevel(
-
+      // CLOrad CLASS
+      const paletteIndex =
+        getPaletteIndex(
           r,
           g,
           b
-
         );
 
-
-      if (
-
-        level < 0
-
-      ){
-
-        continue;
-
-      }
-
-
-      /*
-       * География исходного
-       * пикселя.
-       */
-
-      const geo =
-
-        sourcePixelToGeo(
-
-          sx,
-          sy
-
-        );
-
-
-      if (
-
-        geo.lon <
-          GEO.west - 1 ||
-
-        geo.lon >
-          GEO.east + 1 ||
-
-        geo.lat <
-          GEO.south - 1 ||
-
-        geo.lat >
-          GEO.north + 1
-
-      ){
-
-        continue;
-
-      }
-
-
-      /*
-       * Географическая позиция
-       * в итоговом PNG.
-       */
-
-      const target =
-
-        geoToOutputPixel(
-
-          geo.lon,
-          geo.mercY
-
-        );
-
-
-      const tx =
-        Math.round(
-          target.x
-        );
-
-
-      const ty =
-        Math.round(
-          target.y
-        );
-
-
-      if (
-
-        tx < 0 ||
-        ty < 0 ||
-
-        tx >= SOURCE_WIDTH ||
-        ty >= SOURCE_HEIGHT
-
-      ){
-
-        continue;
-
-      }
-
-
-      const targetIndex =
-
-        (
-
-          ty *
-          SOURCE_WIDTH +
-          tx
-
-        ) * 4;
-
-
-      /*
-       * ОДИНАКОВЫЙ НОМЕР КЛАССА:
-
-         Meteoinfo #1 -> CLOrad l1
-         Meteoinfo #2 -> CLOrad l2
-         ...
-         Meteoinfo #19 -> CLOrad l19
-      */
 
       const color =
-
         CLORAD_PALETTE[
-          level
+          paletteIndex
         ];
 
 
-      output[
-        targetIndex
-      ] =
+      const outputIndex =
+        (
+          y *
+          width +
+          x
+        ) * 4;
+
+
+      output[outputIndex] =
         color[0];
 
-
-      output[
-        targetIndex + 1
-      ] =
+      output[outputIndex + 1] =
         color[1];
 
-
-      output[
-        targetIndex + 2
-      ] =
+      output[outputIndex + 2] =
         color[2];
 
-
-      output[
-        targetIndex + 3
-      ] =
+      output[outputIndex + 3] =
         255;
 
     }
@@ -1587,93 +1020,60 @@ async function renderFrame(
   }
 
 
-  /*
-   * Убираем только маленькие
-   * дырки от перепроекции.
-   */
-
-  const filled =
-
-    fillSmallRadarHoles(
-
-      output,
-
-      SOURCE_WIDTH,
-      SOURCE_HEIGHT
-
-    );
+  // HOLES
+  fillSmallRadarHoles(
+    output,
+    width,
+    height
+  );
 
 
-  /*
-   * PNG.
-   */
-
+  // PNG
   const png =
-
     await sharp(
-
-      filled,
-
+      output,
       {
-
         raw: {
-
-          width:
-            SOURCE_WIDTH,
-
-          height:
-            SOURCE_HEIGHT,
-
-          channels:
-            4
-
+          width,
+          height,
+          channels: 4
         }
-
       }
-
     )
     .png({
-
-      compressionLevel:
-        6,
-
-      adaptiveFiltering:
-        false
-
+      compressionLevel: 3,
+      adaptiveFiltering: false,
+      palette: false
     })
     .toBuffer();
 
 
-  processedFrames.set(
-
+  // CACHE
+  processedFrameCache.set(
     cacheKey,
     png
-
   );
 
 
-  /*
-   * Ограничение памяти.
-   */
-
-  while (
-
-    processedFrames.size >
-    MAX_PROCESSED_FRAMES
-
+  while(
+    processedFrameCache.size > 12
   ){
 
-    const first =
-
-      processedFrames
+    const firstKey =
+      processedFrameCache
         .keys()
         .next()
         .value;
 
+    if(
+      firstKey !== undefined
+    ){
 
-    processedFrames.delete(
-      first
-    );
+      processedFrameCache.delete(
+        firstKey
+      );
+
+    }
 
   }
 
@@ -1683,161 +1083,163 @@ async function renderFrame(
 }
 
 
-/* =========================================================
-   API HANDLER
-========================================================= */
+// ============================================================
+// API HANDLER
+// ============================================================
 
 export default async function handler(
-
   req,
   res
-
 ){
 
-  try {
+  try{
 
+    const mode =
+      String(
+        req.query?.mode || ""
+      );
+
+
+    const requestedFrame =
+      Number(
+        req.query?.frame
+      );
+
+
+    // SOURCE
     const gif =
       await getGIF();
 
 
-    /* =====================================================
-       META
-    ===================================================== */
-
-    if (
-
-      req.query.mode ===
-      "meta"
-
-    ){
-
-      const metadata =
-
-        await getMetadata(
-          gif
-        );
-
-
-      res.setHeader(
-
-        "Cache-Control",
-        "no-store"
-
-      );
-
-
-      return res
-        .status(200)
-        .json(
-          metadata
-        );
-
-    }
-
-
-    /* =====================================================
-       FRAME
-    ===================================================== */
-
-    let frame =
-
-      Number(
-        req.query.frame
-      );
-
-
-    if (
-
-      !Number.isFinite(
-        frame
-      )
-
-    ){
-
-      frame =
-        0;
-
-    }
-
-
+    // METADATA
     const metadata =
-
       await getMetadata(
         gif
       );
 
 
-    frame =
+    // META
+    if(
+      mode === "meta"
+    ){
 
-      Math.max(
+      const frames =
+        Number(
+          metadata.pages || 1
+        );
 
-        0,
+      const width =
+        Number(
+          metadata.width || 0
+        );
 
-        Math.min(
+      const height =
+        Number(
+          metadata.pageHeight ||
+          metadata.height ||
+          0
+        );
 
-          metadata.frames - 1,
-
-          Math.floor(frame)
-
+      const delays =
+        Array.isArray(
+          metadata.delay
         )
+          ? metadata.delay
+          : [];
 
+
+      setCORS(res);
+      setCache(res);
+
+      res.setHeader(
+        "Content-Type",
+        "application/json; charset=utf-8"
       );
+
+
+      return res
+        .status(200)
+        .json({
+
+          frames,
+          width,
+          height,
+          delays
+
+        });
+
+    }
+
+
+    // FRAME
+    const totalFrames =
+      Number(
+        metadata.pages || 1
+      );
+
+
+    let frame =
+      Number.isFinite(
+        requestedFrame
+      )
+        ? Math.floor(
+            requestedFrame
+          )
+        : totalFrames - 1;
+
+
+    if(frame < 0){
+      frame = 0;
+    }
+
+    if(frame >= totalFrames){
+      frame = totalFrames - 1;
+    }
 
 
     const png =
-
       await renderFrame(
-
         gif,
         frame
-
       );
 
 
-    res.setHeader(
+    setCORS(res);
+    setCache(res);
 
+
+    res.setHeader(
       "Content-Type",
       "image/png"
-
     );
 
 
     res.setHeader(
-
-      "Cache-Control",
-      "public, max-age=30, stale-while-revalidate=60"
-
-    );
-
-
-    res.setHeader(
-
       "Content-Length",
       String(
         png.length
       )
-
     );
 
 
     return res
       .status(200)
-      .send(
-        png
-      );
+      .send(png);
 
 
-  } catch (
-
-    error
-
-  ){
+  }catch(error){
 
     console.error(
-
       "CLOrad radar-gif:",
       error
+    );
 
+
+    setCORS(res);
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
     );
 
 
@@ -1846,7 +1248,7 @@ export default async function handler(
       .json({
 
         error:
-          "Radar frame loading failed",
+          "Radar GIF processing failed",
 
         message:
           error?.message ||
