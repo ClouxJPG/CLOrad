@@ -18,16 +18,6 @@
   ];
 
   /*
-     Область отображения сетки.
-     Это отдельная правильная прямоугольная
-     область, НЕ форма GIF.
-  */
-  const DMRL_GRID_BOUNDS = [
-    [44.0, 20.0],
-    [62.5, 56.5]
-  ];
-
-  /*
      Разрешения:
        1 = 1×1
        2 = 2×2
@@ -734,11 +724,6 @@
           this._canvas.style.display =
             "block";
 
-          /*
-             ВАЖНО:
-             сетка находится в отдельной
-             географической Leaflet-панели.
-          */
           this._canvas.style.zIndex =
             "650";
 
@@ -884,10 +869,6 @@
     canvas.style.height =
       size.y + "px";
 
-    /*
-       Канвас привязан к географической
-       позиции карты.
-    */
     const topLeft =
       map.containerPointToLayerPoint(
         [0, 0]
@@ -923,39 +904,22 @@
       size.y
     );
 
-    /*
-       ======================================================
-       НОВАЯ ЛОГИКА:
-       сетка строится как РЕГУЛЯРНАЯ
-       прямоугольная пиксельная матрица.
+    /* =====================================================
+       ИЗМЕНЕНО ТОЛЬКО ЗДЕСЬ:
+       сетка теперь является настоящей
+       пиксельной сеткой PNG.
 
-       GIF здесь вообще не используется
-       для определения формы сетки.
-       ======================================================
-    */
+       Сервер создаёт PNG:
+         width  = gifMeta.width
+         height = gifMeta.height
 
-    const south =
-      DMRL_GRID_BOUNDS[0][0];
+       и географически привязывает его
+       к GIF_BOUNDS в Web Mercator.
 
-    const west =
-      DMRL_GRID_BOUNDS[0][1];
+       Поэтому DMRL_GRID_BOUNDS больше
+       НЕ используется.
+       ===================================================== */
 
-    const north =
-      DMRL_GRID_BOUNDS[1][0];
-
-    const east =
-      DMRL_GRID_BOUNDS[1][1];
-
-    /*
-       Берём фактический размер
-       растрового кадра ДМРЛ.
-
-       Если API вернул width/height —
-       используем их.
-
-       Если нет — текущий размер
-       Meteoinfo GIF.
-    */
     const rasterWidth =
       Number(
         gifMeta?.width
@@ -968,12 +932,6 @@
       ) ||
       1136;
 
-    /*
-       Одна ячейка = один пиксель.
-
-       2×2 = группа из 2×2 пикселей.
-       4×4 = группа из 4×4 пикселей.
-    */
     const columns =
       Math.ceil(
         rasterWidth /
@@ -993,39 +951,99 @@
       return;
     }
 
+    const north =
+      GIF_BOUNDS[1][0];
+
+    const east =
+      GIF_BOUNDS[1][1];
+
+    const south =
+      GIF_BOUNDS[0][0];
+
+    const west =
+      GIF_BOUNDS[0][1];
+
     /*
-       Размер одной ячейки
-       в географических координатах.
+       ВАЖНО:
 
-       Все клетки одинаковые.
+       Сервер делает строки PNG
+       линейными по Web Mercator:
 
-       Никакого масштабирования
-       по форме GIF.
+         northMerc - y * mercStep
+
+       Поэтому здесь делаем ТО ЖЕ САМОЕ.
+
+       Нельзя использовать просто:
+         lat = north - i * latStep
+
+       потому что широта в Web Mercator
+       нелинейна.
     */
-    const lonStep =
-      (
-        east -
-        west
-      ) /
-      rasterWidth *
-      gifResolution;
 
-    const latStep =
-      (
-        north -
+    function mercatorY(
+      lat
+    ) {
+      const rad =
+        lat *
+        Math.PI /
+        180;
+
+      return Math.log(
+        Math.tan(
+          Math.PI / 4 +
+          rad / 2
+        )
+      );
+    }
+
+    function inverseMercatorY(
+      value
+    ) {
+      return (
+        Math.atan(
+          Math.sinh(
+            value
+          )
+        ) *
+        180 /
+        Math.PI
+      );
+    }
+
+    const northMerc =
+      mercatorY(
+        north
+      );
+
+    const southMerc =
+      mercatorY(
         south
-      ) /
-      rasterHeight *
-      gifResolution;
+      );
 
     /*
-       Находим видимую часть
-       прямоугольной области.
+       Полный растр в проектированных
+       координатах карты.
     */
     const northWest =
       map.latLngToContainerPoint(
         [
           north,
+          west
+        ]
+      );
+
+    const northEast =
+      map.latLngToContainerPoint(
+        [
+          north,
+          east
+        ]
+      );
+
+    const southWest =
+      map.latLngToContainerPoint(
+        [
+          south,
           west
         ]
       );
@@ -1038,34 +1056,74 @@
         ]
       );
 
+    /*
+       Для вертикальных линий
+       долгота линейная.
+    */
+    const westX =
+      northWest.x;
+
+    const eastX =
+      northEast.x;
+
+    const rasterPixelWidth =
+      (
+        eastX -
+        westX
+      ) /
+      rasterWidth;
+
+    /*
+       Для горизонтальных линий
+       используем Mercator.
+
+       Это обеспечивает соответствие:
+         PNG row 0     = north
+         PNG row 1     = следующий пиксель
+         PNG row 2     = следующий пиксель
+         ...
+         PNG row height = south
+    */
+    const northY =
+      northWest.y;
+
+    const southY =
+      southWest.y;
+
+    const rasterPixelHeight =
+      (
+        southY -
+        northY
+      ) /
+      rasterHeight;
+
+    /*
+       Видимая область.
+    */
     const left =
       Math.min(
         northWest.x,
-        southEast.x
+        southWest.x
       );
 
     const right =
       Math.max(
-        northWest.x,
+        northEast.x,
         southEast.x
       );
 
     const top =
       Math.min(
         northWest.y,
-        southEast.y
+        northEast.y
       );
 
     const bottom =
       Math.max(
-        northWest.y,
+        southWest.y,
         southEast.y
       );
 
-    /*
-       Если область полностью
-       за экраном — ничего не рисуем.
-    */
     if (
       right < 0 ||
       bottom < 0 ||
@@ -1074,17 +1132,6 @@
     ) {
       return;
     }
-
-    /*
-       ======================================================
-       РИСУЕМ СТРОГО ПО LAT/LON.
-       Это важно:
-       каждая вертикальная линия имеет
-       постоянную долготу,
-       каждая горизонтальная —
-       постоянную широту.
-       ======================================================
-    */
 
     ctx.lineWidth =
       1;
@@ -1095,81 +1142,119 @@
     ctx.beginPath();
 
     /*
-       Вертикальные линии.
+       =====================================================
+       ВЕРТИКАЛЬНЫЕ ЛИНИИ
+
+       Одна линия = одна граница
+       группы пикселей по X.
+       =====================================================
     */
+
     for (
       let i = 0;
       i <= columns;
       i++
     ) {
-      const lon =
+      const pixelX =
         Math.min(
-          east,
-          west +
-            i *
-            lonStep
+          rasterWidth,
+          i *
+          gifResolution
         );
 
-      const p1 =
-        map.latLngToContainerPoint(
-          [
-            north,
-            lon
-          ]
-        );
-
-      const p2 =
-        map.latLngToContainerPoint(
-          [
-            south,
-            lon
-          ]
-        );
+      const x =
+        westX +
+        pixelX *
+        rasterPixelWidth;
 
       if (
-        p1.x < -2 ||
-        p1.x > size.x + 2
+        x < -2 ||
+        x > size.x + 2
       ) {
         continue;
       }
 
       ctx.moveTo(
         Math.round(
-          p1.x
+          x
         ) + 0.5,
         Math.max(
           0,
-          p1.y
+          top
         )
       );
 
       ctx.lineTo(
         Math.round(
-          p2.x
+          x
         ) + 0.5,
         Math.min(
           size.y,
-          p2.y
+          bottom
         )
       );
     }
 
     /*
-       Горизонтальные линии.
+       =====================================================
+       ГОРИЗОНТАЛЬНЫЕ ЛИНИИ
+
+       Одна линия = одна граница
+       группы пикселей по Y.
+
+       Координата полностью соответствует
+       Mercator-геопривязке PNG.
+       =====================================================
     */
+
     for (
       let i = 0;
       i <= rows;
       i++
     ) {
-      const lat =
-        Math.max(
-          south,
-          north -
-            i *
-            latStep
+      const pixelY =
+        Math.min(
+          rasterHeight,
+          i *
+          gifResolution
         );
 
+      /*
+         Положение непосредственно
+         в проекции PNG.
+      */
+      const y =
+        northY +
+        pixelY *
+        rasterPixelHeight;
+
+      /*
+         Дополнительно вычисляем
+         географическую широту этой
+         строки через обратный Mercator.
+         Это сохраняет математическую
+         привязку к серверному растру.
+      */
+      const merc =
+        northMerc -
+        (
+          pixelY /
+          rasterHeight
+        ) *
+        (
+          northMerc -
+          southMerc
+        );
+
+      const lat =
+        inverseMercatorY(
+          merc
+        );
+
+      /*
+         Получаем реальную экранную
+         координату через Leaflet.
+      */
       const p1 =
         map.latLngToContainerPoint(
           [
@@ -1186,9 +1271,16 @@
           ]
         );
 
+      const lineY =
+        (
+          p1.y +
+          p2.y
+        ) /
+        2;
+
       if (
-        p1.y < -2 ||
-        p1.y > size.y + 2
+        lineY < -2 ||
+        lineY > size.y + 2
       ) {
         continue;
       }
@@ -1196,20 +1288,20 @@
       ctx.moveTo(
         Math.max(
           0,
-          p1.x
+          left
         ),
         Math.round(
-          p1.y
+          lineY
         ) + 0.5
       );
 
       ctx.lineTo(
         Math.min(
           size.x,
-          p2.x
+          right
         ),
         Math.round(
-          p2.y
+          lineY
         ) + 0.5
       );
     }
@@ -1217,7 +1309,7 @@
     ctx.stroke();
 
     /*
-       Внешняя рамка рабочей области.
+       Внешняя рамка самого PNG.
     */
     ctx.strokeStyle =
       "rgba(255,255,255,0.55)";
