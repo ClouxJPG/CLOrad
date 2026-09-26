@@ -18,6 +18,12 @@
   ];
 
   /*
+     Минимальный зум для отображения
+     сетки данных ДМРЛ.
+  */
+  const DMRL_GRID_MIN_ZOOM = 7;
+
+  /*
      Разрешения:
        1 = 1×1
        2 = 2×2
@@ -724,9 +730,6 @@
           this._canvas.style.display =
             "block";
 
-          this._canvas.style.zIndex =
-            "650";
-
           map.getPane(
             "dmrlGridPane"
           ).appendChild(
@@ -772,6 +775,42 @@
             null;
         },
 
+        /*
+           ВАЖНО:
+
+           Это кастомный Canvas Layer,
+           поэтому у него изначально нет
+           стандартного Leaflet
+           bringToFront().
+
+           Добавляем метод вручную,
+           чтобы существующий вызов:
+
+             dmrlGridLayer.bringToFront();
+
+           больше не выдавал ошибку.
+        */
+        bringToFront() {
+          if (
+            !this._canvas ||
+            !this._canvas.parentNode
+          ) {
+            return this;
+          }
+
+          const pane =
+            this._canvas.parentNode;
+
+          pane.appendChild(
+            this._canvas
+          );
+
+          this._canvas.style.zIndex =
+            "650";
+
+          return this;
+        },
+
         _reset() {
           if (
             !this._map ||
@@ -780,8 +819,14 @@
             return;
           }
 
+          /*
+             Сетка появляется только
+             начиная с DMRL_GRID_MIN_ZOOM.
+          */
           if (
-            !dmrlGridEnabled
+            !dmrlGridEnabled ||
+            this._map.getZoom() <
+              DMRL_GRID_MIN_ZOOM
           ) {
             this._canvas.style.display =
               "none";
@@ -820,8 +865,14 @@
       return;
     }
 
+    /*
+       Сетка отключается ниже
+       установленного минимального зума.
+    */
     if (
-      !dmrlGridEnabled
+      !dmrlGridEnabled ||
+      window.map.getZoom() <
+        DMRL_GRID_MIN_ZOOM
     ) {
       dmrlGridCanvas.style.display =
         "none";
@@ -905,19 +956,19 @@
     );
 
     /* =====================================================
-       ИЗМЕНЕНО ТОЛЬКО ЗДЕСЬ:
-       сетка теперь является настоящей
-       пиксельной сеткой PNG.
+       СЕТКА ЯВЛЯЕТСЯ ПИКСЕЛЬНОЙ СЕТКОЙ PNG.
 
        Сервер создаёт PNG:
+
          width  = gifMeta.width
          height = gifMeta.height
 
-       и географически привязывает его
-       к GIF_BOUNDS в Web Mercator.
+       Географическая область:
 
-       Поэтому DMRL_GRID_BOUNDS больше
-       НЕ используется.
+         GIF_BOUNDS
+
+       Поэтому шаг сетки соответствует
+       реальным пикселям/ячейкам растра.
        ===================================================== */
 
     const rasterWidth =
@@ -963,22 +1014,9 @@
     const west =
       GIF_BOUNDS[0][1];
 
-    /*
-       ВАЖНО:
-
-       Сервер делает строки PNG
-       линейными по Web Mercator:
-
-         northMerc - y * mercStep
-
-       Поэтому здесь делаем ТО ЖЕ САМОЕ.
-
-       Нельзя использовать просто:
-         lat = north - i * latStep
-
-       потому что широта в Web Mercator
-       нелинейна.
-    */
+    /* =====================================================
+       WEB MERCATOR
+       ===================================================== */
 
     function mercatorY(
       lat
@@ -1020,10 +1058,10 @@
         south
       );
 
-    /*
-       Полный растр в проектированных
-       координатах карты.
-    */
+    /* =====================================================
+       ГЕОГРАФИЧЕСКИЕ КООРДИНАТЫ
+       ===================================================== */
+
     const northWest =
       map.latLngToContainerPoint(
         [
@@ -1076,13 +1114,6 @@
     /*
        Для горизонтальных линий
        используем Mercator.
-
-       Это обеспечивает соответствие:
-         PNG row 0     = north
-         PNG row 1     = следующий пиксель
-         PNG row 2     = следующий пиксель
-         ...
-         PNG row height = south
     */
     const northY =
       northWest.y;
@@ -1098,7 +1129,7 @@
       rasterHeight;
 
     /*
-       Видимая область.
+       Видимая область растра.
     */
     const left =
       Math.min(
@@ -1141,18 +1172,19 @@
 
     ctx.beginPath();
 
-    /*
-       =====================================================
+    /* =====================================================
        ВЕРТИКАЛЬНЫЕ ЛИНИИ
 
-       Одна линия = одна граница
-       группы пикселей по X.
-       =====================================================
-    */
+       ВАЖНО:
+       начинаем с 1 и заканчиваем columns - 1.
+
+       Поэтому внешняя граница PNG
+       не рисуется.
+       ===================================================== */
 
     for (
-      let i = 0;
-      i <= columns;
+      let i = 1;
+      i < columns;
       i++
     ) {
       const pixelX =
@@ -1195,21 +1227,16 @@
       );
     }
 
-    /*
-       =====================================================
+    /* =====================================================
        ГОРИЗОНТАЛЬНЫЕ ЛИНИИ
 
-       Одна линия = одна граница
-       группы пикселей по Y.
-
-       Координата полностью соответствует
-       Mercator-геопривязке PNG.
-       =====================================================
-    */
+       Внешние верхняя и нижняя границы
+       НЕ рисуются.
+       ===================================================== */
 
     for (
-      let i = 0;
-      i <= rows;
+      let i = 1;
+      i < rows;
       i++
     ) {
       const pixelY =
@@ -1220,20 +1247,7 @@
         );
 
       /*
-         Положение непосредственно
-         в проекции PNG.
-      */
-      const y =
-        northY +
-        pixelY *
-        rasterPixelHeight;
-
-      /*
-         Дополнительно вычисляем
-         географическую широту этой
-         строки через обратный Mercator.
-         Это сохраняет математическую
-         привязку к серверному растру.
+         Mercator-положение строки.
       */
       const merc =
         northMerc -
@@ -1309,20 +1323,10 @@
     ctx.stroke();
 
     /*
-       Внешняя рамка самого PNG.
+       Внешняя рамка намеренно НЕ рисуется.
+       Сетка должна состоять только из
+       внутренних линий данных ДМРЛ.
     */
-    ctx.strokeStyle =
-      "rgba(255,255,255,0.55)";
-
-    ctx.lineWidth =
-      1.2;
-
-    ctx.strokeRect(
-      left + 0.5,
-      top + 0.5,
-      right - left,
-      bottom - top
-    );
   }
 
   /* =======================================================
@@ -1362,6 +1366,19 @@
       }
 
       drawDMRLGrid();
+
+      /*
+         Сразу ставим сетку выше
+         остальных overlay.
+      */
+      if (
+        dmrlGridLayer &&
+        typeof dmrlGridLayer.bringToFront ===
+          "function"
+      ) {
+        dmrlGridLayer.bringToFront();
+      }
+
     } else {
       if (
         dmrlGridCanvas
@@ -1983,7 +2000,7 @@
         dmrlGridEnabled &&
         dmrlGridLayer
       ) {
-         dmrlGridLayer.bringToFront();
+        dmrlGridLayer.bringToFront();
       }
     } catch (error) {
       console.error(
