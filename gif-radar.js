@@ -5,28 +5,28 @@
    ========================================================= */
 (() => {
   "use strict";
+
   /* =======================================================
      CONFIG
      ======================================================= */
+
   const API = "/api/radar-gif";
-  /*
-     Географическая область ДМРЛ.
-     Это та же область, которая используется
-     текущим GIF-слоем CLOrad.
-  */
+
   const GIF_BOUNDS = [
     [38.2155955810, 14.9892981264],
     [69.6543707199, 72.9237642948]
   ];
+
   /*
      Область отображения сетки.
-     Западная часть России + Беларусь.
-     Сетка не идёт по всей огромной области GIF.
+     Это отдельная правильная прямоугольная
+     область, НЕ форма GIF.
   */
   const DMRL_GRID_BOUNDS = [
     [44.0, 20.0],
     [62.5, 56.5]
   ];
+
   /*
      Разрешения:
        1 = 1×1
@@ -38,9 +38,11 @@
     2,
     4
   ];
+
   /* =======================================================
      STATE
      ======================================================= */
+
   let gifActive = false;
   let gifFrames = [];
   let gifFrameTimes = [];
@@ -51,40 +53,42 @@
   let gifPlaying = false;
   let gifPlayTimer = null;
   let gifLayer = null;
-  /*
-     Текущее разрешение ДМРЛ.
-  */
+
   let gifResolution = 1;
-  /*
-     Состояние сетки.
-  */
+
   let dmrlGridEnabled = false;
-  /*
-     Canvas сетки.
-  */
+
   let dmrlGridCanvas = null;
-  /*
-     Leaflet-слой сетки.
-  */
   let dmrlGridLayer = null;
+
+  /*
+     Тёмная карта.
+  */
+  let darkMapLayer = null;
+
   /* =======================================================
      HELPER
      ======================================================= */
+
   const $ = id =>
     document.getElementById(id);
+
   function showLoading() {
     $("loadingFrames")?.classList.add(
       "show"
     );
   }
+
   function hideLoading() {
     $("loadingFrames")?.classList.remove(
       "show"
     );
   }
+
   /* =======================================================
      SETTINGS — ОБЩИЙ СТИЛЬ
      ======================================================= */
+
   function installDMRLSettingsStyle() {
     if (
       document.getElementById(
@@ -93,12 +97,15 @@
     ) {
       return;
     }
+
     const style =
       document.createElement(
         "style"
       );
+
     style.id =
       "clorad-dmrl-settings-style";
+
     style.textContent = `
       #gifResolutionSetting
       .clorad-dmrl-resolution-options {
@@ -106,6 +113,7 @@
         width: 100%;
         gap: 7px;
       }
+
       #gifResolutionSetting
       .clorad-dmrl-resolution-option {
         flex: 1;
@@ -128,6 +136,7 @@
           color .15s ease,
           border-color .15s ease;
       }
+
       #gifResolutionSetting
       .clorad-dmrl-resolution-option.active {
         background:
@@ -137,11 +146,13 @@
         color:
           #fff;
       }
+
       #gifResolutionSetting
       .clorad-dmrl-resolution-option:active {
         transform:
           scale(.97);
       }
+
       #dmrlGridSetting
       .clorad-dmrl-grid-toggle {
         width: 100%;
@@ -151,6 +162,7 @@
         gap: 12px;
         cursor: pointer;
       }
+
       #dmrlGridSetting
       .clorad-dmrl-grid-toggle-text {
         color:
@@ -158,6 +170,7 @@
         font-size: 13px;
         font-weight: 500;
       }
+
       #dmrlGridSetting
       .clorad-dmrl-grid-switch {
         position: relative;
@@ -172,6 +185,7 @@
         transition:
           background .15s ease;
       }
+
       #dmrlGridSetting
       .clorad-dmrl-grid-switch::after {
         content: "";
@@ -185,16 +199,19 @@
         transition:
           transform .15s ease;
       }
+
       #dmrlGridSetting.active
       .clorad-dmrl-grid-switch {
         background:
           rgba(95,190,130,.65);
       }
+
       #dmrlGridSetting.active
       .clorad-dmrl-grid-switch::after {
         transform:
           translateX(18px);
       }
+
       body.light
       #gifResolutionSetting
       .clorad-dmrl-resolution-option {
@@ -205,6 +222,7 @@
         color:
           rgba(0,0,0,.62);
       }
+
       body.light
       #gifResolutionSetting
       .clorad-dmrl-resolution-option.active {
@@ -215,12 +233,14 @@
         color:
           #111;
       }
+
       body.light
       #dmrlGridSetting
       .clorad-dmrl-grid-toggle-text {
         color:
           rgba(0,0,0,.68);
       }
+
       body.light
       #dmrlGridSetting
       .clorad-dmrl-grid-switch {
@@ -229,6 +249,7 @@
         border-color:
           rgba(0,0,0,.10);
       }
+
       body.light
       #dmrlGridSetting.active
       .clorad-dmrl-grid-switch {
@@ -236,21 +257,26 @@
           rgba(70,160,100,.65);
       }
     `;
+
     document.head.appendChild(
       style
     );
   }
+
   /* =======================================================
      SETTINGS — РАЗРЕШЕНИЕ ДМРЛ
      ======================================================= */
+
   function installGIFResolutionSetting() {
     const settings =
       document.getElementById(
         "settings"
       );
+
     if (!settings) {
       return;
     }
+
     if (
       document.getElementById(
         "gifResolutionSetting"
@@ -258,14 +284,18 @@
     ) {
       return;
     }
+
     const setting =
       document.createElement(
         "div"
       );
+
     setting.className =
       "setting";
+
     setting.id =
       "gifResolutionSetting";
+
     setting.innerHTML = `
       <button
         class="settingHead"
@@ -279,6 +309,7 @@
           ›
         </span>
       </button>
+
       <div
         class="settingBody"
         id="gifResolutionBody"
@@ -293,6 +324,7 @@
           >
             1×1
           </button>
+
           <button
             class="clorad-dmrl-resolution-option"
             type="button"
@@ -300,6 +332,7 @@
           >
             2×2
           </button>
+
           <button
             class="clorad-dmrl-resolution-option"
             type="button"
@@ -310,10 +343,12 @@
         </div>
       </div>
     `;
+
     const framesSetting =
       document.getElementById(
         "framesSetting"
       );
+
     if (framesSetting) {
       framesSetting.after(
         setting
@@ -323,19 +358,23 @@
         setting
       );
     }
+
     const head =
       document.getElementById(
         "gifResolutionHead"
       );
+
     if (head) {
       head.addEventListener(
         "click",
         event => {
           event.stopPropagation();
+
           const isOpen =
             setting.classList.contains(
               "open"
             );
+
           document
             .querySelectorAll(
               ".setting.open"
@@ -351,6 +390,7 @@
                 }
               }
             );
+
           setting.classList.toggle(
             "open",
             !isOpen
@@ -358,6 +398,7 @@
         }
       );
     }
+
     setting
       .querySelectorAll(
         ".clorad-dmrl-resolution-option"
@@ -368,10 +409,12 @@
             "click",
             event => {
               event.stopPropagation();
+
               const value =
                 Number(
                   option.dataset.resolution
                 );
+
               if (
                 !ALLOWED_RESOLUTIONS.includes(
                   value
@@ -379,6 +422,7 @@
               ) {
                 return;
               }
+
               setGIFResolution(
                 value
               );
@@ -386,8 +430,10 @@
           );
         }
       );
+
     updateGIFResolutionButtons();
   }
+
   function updateGIFResolutionButtons() {
     document
       .querySelectorAll(
@@ -404,17 +450,21 @@
         }
       );
   }
+
   /* =======================================================
      SETTINGS — СЕТКА ДМРЛ
      ======================================================= */
+
   function installDMRLGridSetting() {
     const settings =
       document.getElementById(
         "settings"
       );
+
     if (!settings) {
       return;
     }
+
     if (
       document.getElementById(
         "dmrlGridSetting"
@@ -422,14 +472,18 @@
     ) {
       return;
     }
+
     const setting =
       document.createElement(
         "div"
       );
+
     setting.className =
       "setting";
+
     setting.id =
       "dmrlGridSetting";
+
     setting.innerHTML = `
       <button
         class="settingHead"
@@ -439,10 +493,12 @@
         <span>
           Сетка данных ДМРЛ
         </span>
+
         <span class="settingArrow">
           ›
         </span>
       </button>
+
       <div
         class="settingBody"
         id="dmrlGridBody"
@@ -458,16 +514,19 @@
           >
             Показывать сетку данных
           </span>
+
           <span
             class="clorad-dmrl-grid-switch"
           ></span>
         </div>
       </div>
     `;
+
     const resolutionSetting =
       document.getElementById(
         "gifResolutionSetting"
       );
+
     if (resolutionSetting) {
       resolutionSetting.after(
         setting
@@ -477,19 +536,23 @@
         setting
       );
     }
+
     const head =
       document.getElementById(
         "dmrlGridHead"
       );
+
     if (head) {
       head.addEventListener(
         "click",
         event => {
           event.stopPropagation();
+
           const isOpen =
             setting.classList.contains(
               "open"
             );
+
           document
             .querySelectorAll(
               ".setting.open"
@@ -505,6 +568,7 @@
                 }
               }
             );
+
           setting.classList.toggle(
             "open",
             !isOpen
@@ -512,20 +576,24 @@
         }
       );
     }
+
     const toggle =
       document.getElementById(
         "dmrlGridToggle"
       );
+
     if (toggle) {
       toggle.addEventListener(
         "click",
         event => {
           event.stopPropagation();
+
           setDMRLGridEnabled(
             !dmrlGridEnabled
           );
         }
       );
+
       toggle.addEventListener(
         "keydown",
         event => {
@@ -535,6 +603,7 @@
           ) {
             event.preventDefault();
             event.stopPropagation();
+
             setDMRLGridEnabled(
               !dmrlGridEnabled
             );
@@ -542,24 +611,30 @@
         }
       );
     }
+
     updateDMRLGridButton();
   }
+
   function updateDMRLGridButton() {
     const setting =
       document.getElementById(
         "dmrlGridSetting"
       );
+
     if (!setting) {
       return;
     }
+
     setting.classList.toggle(
       "active",
       dmrlGridEnabled
     );
   }
+
   /* =======================================================
      RESOLUTION
      ======================================================= */
+
   function setGIFResolution(
     value
   ) {
@@ -570,22 +645,18 @@
     ) {
       value = 1;
     }
+
     gifResolution =
       value;
+
     updateGIFResolutionButtons();
-    /*
-       Меняем сетку сразу.
-    */
+
     if (
       dmrlGridEnabled
     ) {
       drawDMRLGrid();
     }
-    /*
-       Если GIF уже открыт,
-       запрашиваем кадр с новым
-       параметром resolution.
-    */
+
     if (
       gifActive &&
       gifFrames.length
@@ -594,83 +665,21 @@
         Number(
           $("range")?.value || 0
         );
+
       gifImageCache.clear();
+
       rebuildFrameUrls();
+
       showGIFFrame(
         index
       );
     }
   }
-  /* =======================================================
-     GRID — MERCATOR
-     ======================================================= */
-  function mercatorProject(
-    lat,
-    lon
-  ) {
-    const R =
-      6378137;
-    const x =
-      R *
-      lon *
-      Math.PI /
-      180;
-    const latRad =
-      Math.max(
-        -85.05112878,
-        Math.min(
-          85.05112878,
-          lat
-        )
-      ) *
-      Math.PI /
-      180;
-    const y =
-      R *
-      Math.log(
-        Math.tan(
-          Math.PI / 4 +
-          latRad / 2
-        )
-      );
-    return {
-      x,
-      y
-    };
-  }
-  function getDMRLGridBounds() {
-    const south =
-      DMRL_GRID_BOUNDS[0][0];
-    const west =
-      DMRL_GRID_BOUNDS[0][1];
-    const north =
-      DMRL_GRID_BOUNDS[1][0];
-    const east =
-      DMRL_GRID_BOUNDS[1][1];
-    const sw =
-      mercatorProject(
-        south,
-        west
-      );
-    const ne =
-      mercatorProject(
-        north,
-        east
-      );
-    return {
-      south,
-      west,
-      north,
-      east,
-      minX: sw.x,
-      maxX: ne.x,
-      minY: sw.y,
-      maxY: ne.y
-    };
-  }
+
   /* =======================================================
      GRID — CANVAS LAYER
      ======================================================= */
+
   function createDMRLGridLayer() {
     if (
       dmrlGridLayer ||
@@ -678,45 +687,86 @@
     ) {
       return;
     }
+
+    /*
+       Отдельная панель выше
+       радара и остальных overlay.
+    */
+    if (
+      !window.map.getPane(
+        "dmrlGridPane"
+      )
+    ) {
+      window.map.createPane(
+        "dmrlGridPane"
+      );
+
+      window.map.getPane(
+        "dmrlGridPane"
+      ).style.zIndex =
+        "650";
+    }
+
     const GridLayer =
       L.Layer.extend({
+
         onAdd(map) {
           this._map =
             map;
+
           this._canvas =
             document.createElement(
               "canvas"
             );
+
           this._canvas.className =
             "clorad-dmrl-grid-canvas";
+
           this._canvas.style.position =
             "absolute";
+
           this._canvas.style.pointerEvents =
             "none";
+
           this._canvas.style.zIndex =
-            "5";
+            "650";
+
           this._canvas.style.display =
             "block";
-          map.getPanes()
-            .overlayPane
-            .appendChild(
-              this._canvas
-            );
+
+          /*
+             ВАЖНО:
+             сетка находится в отдельной
+             географической Leaflet-панели.
+          */
+          this._canvas.style.zIndex =
+            "650";
+
+          map.getPane(
+            "dmrlGridPane"
+          ).appendChild(
+            this._canvas
+          );
+
           dmrlGridCanvas =
             this._canvas;
+
           map.on(
             "move zoom resize viewreset",
             this._reset,
             this
           );
+
           this._reset();
         },
+
         onRemove(map) {
           map.off(
             "move zoom resize viewreset",
             this._reset,
             this
           );
+
           if (
             this._canvas &&
             this._canvas.parentNode
@@ -726,13 +776,17 @@
                 this._canvas
               );
           }
+
           dmrlGridCanvas =
             null;
+
           this._canvas =
             null;
+
           this._map =
             null;
         },
+
         _reset() {
           if (
             !this._map ||
@@ -740,20 +794,26 @@
           ) {
             return;
           }
+
           if (
             !dmrlGridEnabled
           ) {
             this._canvas.style.display =
               "none";
+
             return;
           }
+
           this._canvas.style.display =
             "block";
+
           drawDMRLGrid();
         }
       });
+
     dmrlGridLayer =
       new GridLayer();
+
     if (
       dmrlGridEnabled
     ) {
@@ -762,9 +822,11 @@
       );
     }
   }
+
   /* =======================================================
      GRID — DRAW
      ======================================================= */
+
   function drawDMRLGrid() {
     if (
       !dmrlGridCanvas ||
@@ -772,26 +834,34 @@
     ) {
       return;
     }
+
     if (
       !dmrlGridEnabled
     ) {
       dmrlGridCanvas.style.display =
         "none";
+
       return;
     }
+
     dmrlGridCanvas.style.display =
       "block";
+
     const map =
       window.map;
+
     const canvas =
       dmrlGridCanvas;
+
     const size =
       map.getSize();
+
     const dpr =
       Math.min(
         window.devicePixelRatio || 1,
         2
       );
+
     canvas.width =
       Math.max(
         1,
@@ -799,6 +869,7 @@
           size.x * dpr
         )
       );
+
     canvas.height =
       Math.max(
         1,
@@ -806,25 +877,36 @@
           size.y * dpr
         )
       );
+
     canvas.style.width =
       size.x + "px";
+
     canvas.style.height =
       size.y + "px";
+
+    /*
+       Канвас привязан к географической
+       позиции карты.
+    */
     const topLeft =
       map.containerPointToLayerPoint(
         [0, 0]
       );
+
     L.DomUtil.setPosition(
       canvas,
       topLeft
     );
+
     const ctx =
       canvas.getContext(
         "2d"
       );
+
     if (!ctx) {
       return;
     }
+
     ctx.setTransform(
       dpr,
       0,
@@ -833,218 +915,316 @@
       0,
       0
     );
+
     ctx.clearRect(
       0,
       0,
       size.x,
       size.y
     );
+
     /*
-       Область сетки.
+       ======================================================
+       НОВАЯ ЛОГИКА:
+       сетка строится как РЕГУЛЯРНАЯ
+       прямоугольная пиксельная матрица.
+
+       GIF здесь вообще не используется
+       для определения формы сетки.
+       ======================================================
     */
-    const bounds =
-      getDMRLGridBounds();
+
+    const south =
+      DMRL_GRID_BOUNDS[0][0];
+
+    const west =
+      DMRL_GRID_BOUNDS[0][1];
+
+    const north =
+      DMRL_GRID_BOUNDS[1][0];
+
+    const east =
+      DMRL_GRID_BOUNDS[1][1];
+
+    /*
+       Берём фактический размер
+       растрового кадра ДМРЛ.
+
+       Если API вернул width/height —
+       используем их.
+
+       Если нет — текущий размер
+       Meteoinfo GIF.
+    */
+    const rasterWidth =
+      Number(
+        gifMeta?.width
+      ) ||
+      1122;
+
+    const rasterHeight =
+      Number(
+        gifMeta?.height
+      ) ||
+      1136;
+
+    /*
+       Одна ячейка = один пиксель.
+
+       2×2 = группа из 2×2 пикселей.
+       4×4 = группа из 4×4 пикселей.
+    */
+    const columns =
+      Math.ceil(
+        rasterWidth /
+        gifResolution
+      );
+
+    const rows =
+      Math.ceil(
+        rasterHeight /
+        gifResolution
+      );
+
+    if (
+      columns < 1 ||
+      rows < 1
+    ) {
+      return;
+    }
+
+    /*
+       Размер одной ячейки
+       в географических координатах.
+
+       Все клетки одинаковые.
+
+       Никакого масштабирования
+       по форме GIF.
+    */
+    const lonStep =
+      (
+        east -
+        west
+      ) /
+      rasterWidth *
+      gifResolution;
+
+    const latStep =
+      (
+        north -
+        south
+      ) /
+      rasterHeight *
+      gifResolution;
+
+    /*
+       Находим видимую часть
+       прямоугольной области.
+    */
     const northWest =
       map.latLngToContainerPoint(
         [
-          bounds.north,
-          bounds.west
+          north,
+          west
         ]
       );
+
     const southEast =
       map.latLngToContainerPoint(
         [
-          bounds.south,
-          bounds.east
+          south,
+          east
         ]
       );
-    /*
-       Клетка в метрах.
-    */
-    const cellSize =
-      gifResolution * 1000;
-    /*
-       Web-Mercator метрический
-       масштаб в текущей точке.
-    */
-    const centerLat =
-      (
-        bounds.north +
-        bounds.south
-      ) / 2;
-    const centerPoint =
-      map.latLngToContainerPoint(
-        [
-          centerLat,
-          bounds.west
-        ]
-      );
-    const oneKmPoint =
-      map.latLngToContainerPoint(
-        [
-          centerLat,
-          bounds.west +
-            (
-              1000 /
-              (
-                6378137 *
-                Math.cos(
-                  centerLat *
-                  Math.PI /
-                  180
-                )
-              )
-            ) *
-            180 /
-            Math.PI
-        ]
-      );
-    let pixelsPerKm =
-      Math.abs(
-        oneKmPoint.x -
-        centerPoint.x
-      );
-    /*
-       Защита от странных значений.
-    */
-    if (
-      !Number.isFinite(
-        pixelsPerKm
-      ) ||
-      pixelsPerKm <= 0
-    ) {
-      return;
-    }
-    const cellPixels =
-      pixelsPerKm *
-      gifResolution;
-    /*
-       Если клетка стала меньше
-       половины пикселя — не рисуем
-       миллионы линий.
-    */
-    if (
-      cellPixels < 0.5
-    ) {
-      return;
-    }
-    /*
-       Границы Canvas.
-    */
+
     const left =
       Math.min(
         northWest.x,
         southEast.x
       );
+
     const right =
       Math.max(
         northWest.x,
         southEast.x
       );
+
     const top =
       Math.min(
         northWest.y,
         southEast.y
       );
+
     const bottom =
       Math.max(
         northWest.y,
         southEast.y
       );
+
     /*
-       Ограничиваем сетку
-       текущим экраном.
+       Если область полностью
+       за экраном — ничего не рисуем.
     */
-    const startX =
-      Math.max(
-        0,
-        Math.floor(
-          left /
-          cellPixels
-        ) *
-        cellPixels
-      );
-    const startY =
-      Math.max(
-        0,
-        Math.floor(
-          top /
-          cellPixels
-        ) *
-        cellPixels
-      );
-    const endX =
-      Math.min(
-        size.x,
-        right
-      );
-    const endY =
-      Math.min(
-        size.y,
-        bottom
-      );
+    if (
+      right < 0 ||
+      bottom < 0 ||
+      left > size.x ||
+      top > size.y
+    ) {
+      return;
+    }
+
     /*
-       Сетка должна быть тонкой.
+       ======================================================
+       РИСУЕМ СТРОГО ПО LAT/LON.
+       Это важно:
+       каждая вертикальная линия имеет
+       постоянную долготу,
+       каждая горизонтальная —
+       постоянную широту.
+       ======================================================
     */
+
     ctx.lineWidth =
       1;
+
     ctx.strokeStyle =
-      "rgba(255,255,255,0.24)";
+      "rgba(255,255,255,0.34)";
+
     ctx.beginPath();
+
     /*
        Вертикальные линии.
     */
     for (
-      let x = startX;
-      x <= endX;
-      x += cellPixels
+      let i = 0;
+      i <= columns;
+      i++
     ) {
+      const lon =
+        Math.min(
+          east,
+          west +
+            i *
+            lonStep
+        );
+
+      const p1 =
+        map.latLngToContainerPoint(
+          [
+            north,
+            lon
+          ]
+        );
+
+      const p2 =
+        map.latLngToContainerPoint(
+          [
+            south,
+            lon
+          ]
+        );
+
       if (
-        x < left ||
-        x > right
+        p1.x < -2 ||
+        p1.x > size.x + 2
       ) {
         continue;
       }
+
       ctx.moveTo(
-        Math.round(x) + 0.5,
-        top
+        Math.round(
+          p1.x
+        ) + 0.5,
+        Math.max(
+          0,
+          p1.y
+        )
       );
+
       ctx.lineTo(
-        Math.round(x) + 0.5,
-        bottom
+        Math.round(
+          p2.x
+        ) + 0.5,
+        Math.min(
+          size.y,
+          p2.y
+        )
       );
     }
+
     /*
        Горизонтальные линии.
     */
     for (
-      let y = startY;
-      y <= endY;
-      y += cellPixels
+      let i = 0;
+      i <= rows;
+      i++
     ) {
+      const lat =
+        Math.max(
+          south,
+          north -
+            i *
+            latStep
+        );
+
+      const p1 =
+        map.latLngToContainerPoint(
+          [
+            lat,
+            west
+          ]
+        );
+
+      const p2 =
+        map.latLngToContainerPoint(
+          [
+            lat,
+            east
+          ]
+        );
+
       if (
-        y < top ||
-        y > bottom
+        p1.y < -2 ||
+        p1.y > size.y + 2
       ) {
         continue;
       }
+
       ctx.moveTo(
-        left,
-        Math.round(y) + 0.5
+        Math.max(
+          0,
+          p1.x
+        ),
+        Math.round(
+          p1.y
+        ) + 0.5
       );
+
       ctx.lineTo(
-        right,
-        Math.round(y) + 0.5
+        Math.min(
+          size.x,
+          p2.x
+        ),
+        Math.round(
+          p2.y
+        ) + 0.5
       );
     }
+
     ctx.stroke();
+
     /*
-       Рамка рабочей области.
+       Внешняя рамка рабочей области.
     */
     ctx.strokeStyle =
-      "rgba(255,255,255,0.38)";
+      "rgba(255,255,255,0.55)";
+
     ctx.lineWidth =
-      1;
+      1.2;
+
     ctx.strokeRect(
       left + 0.5,
       top + 0.5,
@@ -1052,9 +1232,11 @@
       bottom - top
     );
   }
+
   /* =======================================================
      GRID — ENABLE / DISABLE
      ======================================================= */
+
   function setDMRLGridEnabled(
     enabled
   ) {
@@ -1062,16 +1244,20 @@
       Boolean(
         enabled
       );
+
     updateDMRLGridButton();
+
     if (
       !window.map
     ) {
       return;
     }
+
     if (
       dmrlGridEnabled
     ) {
       createDMRLGridLayer();
+
       if (
         dmrlGridLayer &&
         !window.map.hasLayer(
@@ -1082,6 +1268,7 @@
           window.map
         );
       }
+
       drawDMRLGrid();
     } else {
       if (
@@ -1091,6 +1278,7 @@
           dmrlGridCanvas.getContext(
             "2d"
           );
+
         if (ctx) {
           ctx.clearRect(
             0,
@@ -1099,14 +1287,17 @@
             dmrlGridCanvas.height
           );
         }
+
         dmrlGridCanvas.style.display =
           "none";
       }
     }
   }
+
   /* =======================================================
      GRID — RESIZE
      ======================================================= */
+
   window.addEventListener(
     "resize",
     () => {
@@ -1119,9 +1310,69 @@
       }
     }
   );
+
+  /* =======================================================
+     DARK BASEMAP
+     ======================================================= */
+
+  function enableDarkMap() {
+    if (
+      !window.map
+    ) {
+      return;
+    }
+
+    if (
+      darkMapLayer
+    ) {
+      if (
+        !window.map.hasLayer(
+          darkMapLayer
+        )
+      ) {
+        darkMapLayer.addTo(
+          window.map
+        );
+      }
+
+      return;
+    }
+
+    darkMapLayer =
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        {
+          maxZoom: 20,
+          subdomains:
+            "abcd",
+          attribution:
+            '© OpenStreetMap contributors © CARTO'
+        }
+      );
+
+    darkMapLayer.addTo(
+      window.map
+    );
+  }
+
+  function disableDarkMap() {
+    if (
+      darkMapLayer &&
+      window.map &&
+      window.map.hasLayer(
+        darkMapLayer
+      )
+    ) {
+      window.map.removeLayer(
+        darkMapLayer
+      );
+    }
+  }
+
   /* =======================================================
      GIF STYLE
      ======================================================= */
+
   function installGIFStyle() {
     if (
       document.getElementById(
@@ -1130,12 +1381,15 @@
     ) {
       return;
     }
+
     const style =
       document.createElement(
         "style"
       );
+
     style.id =
       "clorad-gif-style";
+
     style.textContent = `
       .clorad-gif-radar-image {
         image-rendering:
@@ -1153,6 +1407,7 @@
         max-height:
           none !important;
       }
+
       .clorad-dmrl-grid-canvas {
         pointer-events:
           none !important;
@@ -1160,13 +1415,16 @@
           none !important;
       }
     `;
+
     document.head.appendChild(
       style
     );
   }
+
   /* =======================================================
      IMAGE PRELOAD
      ======================================================= */
+
   function loadImage(
     url
   ) {
@@ -1179,6 +1437,7 @@
         url
       );
     }
+
     const promise =
       new Promise(
         (
@@ -1187,38 +1446,47 @@
         ) => {
           const img =
             new Image();
+
           img.decoding =
             "async";
+
           img.onload =
             () => {
               resolve(
                 img
               );
             };
+
           img.onerror =
             () => {
               gifImageCache.delete(
                 url
               );
+
               reject(
                 new Error(
                   "Не удалось загрузить ДМРЛ-кадр"
                 )
               );
             };
+
           img.src =
             url;
         }
       );
+
     gifImageCache.set(
       url,
       promise
     );
+
     return promise;
   }
+
   /* =======================================================
      META
      ======================================================= */
+
   async function loadGIFMeta() {
     const response =
       await fetch(
@@ -1230,6 +1498,7 @@
             "no-store"
         }
       );
+
     if (
       !response.ok
     ) {
@@ -1238,8 +1507,10 @@
         response.status
       );
     }
+
     const data =
       await response.json();
+
     if (
       !data ||
       !Number.isInteger(
@@ -1253,17 +1524,22 @@
         "GIF API вернул некорректные данные"
       );
     }
+
     gifMeta =
       data;
+
     return data;
   }
+
   /* =======================================================
      FRAME URLS
      ======================================================= */
+
   function buildFrameUrls(
     count
   ) {
     const result = [];
+
     for (
       let i = 0;
       i < count;
@@ -1273,15 +1549,19 @@
         `${API}?frame=${i}&resolution=${gifResolution}`
       );
     }
+
     return result;
   }
+
   /* =======================================================
      REBUILD URLS
      ======================================================= */
+
   function rebuildFrameUrls() {
     if (!gifMeta) {
       return;
     }
+
     gifFrames =
       buildFrameUrls(
         Number(
@@ -1289,14 +1569,17 @@
         )
       );
   }
+
   /* =======================================================
      FRAME DELAYS
      ======================================================= */
+
   function buildGIFDelays(
     count,
     delays
   ) {
     const result = [];
+
     for (
       let i = 0;
       i < count;
@@ -1306,6 +1589,7 @@
         Number(
           delays?.[i]
         );
+
       result.push(
         Number.isFinite(
           value
@@ -1315,34 +1599,43 @@
           : 700
       );
     }
+
     return result;
   }
+
   /* =======================================================
      FRAME TIMES
      ======================================================= */
+
   function buildGIFTimes(
     count
   ) {
     const result = [];
+
     const newest =
       new Date();
+
     newest.setSeconds(
       0,
       0
     );
+
     newest.setMinutes(
       Math.floor(
         newest.getMinutes() /
         10
       ) * 10
     );
+
     const spanMinutes =
       180;
+
     const step =
       count > 1
         ? spanMinutes /
           (count - 1)
         : 0;
+
     for (
       let i = 0;
       i < count;
@@ -1351,12 +1644,14 @@
       const minutesAgo =
         spanMinutes -
         i * step;
+
       const date =
         new Date(
           newest.getTime() -
           minutesAgo *
           60000
         );
+
       result.push(
         date.toLocaleTimeString(
           "ru-RU",
@@ -1371,11 +1666,14 @@
         )
       );
     }
+
     return result;
   }
+
   /* =======================================================
      TIMELINE
      ======================================================= */
+
   function updateGIFTimeline(
     index
   ) {
@@ -1384,23 +1682,30 @@
     ) {
       return;
     }
+
     const count =
       gifFrames.length;
+
     $("range").min =
       0;
+
     $("range").max =
       Math.max(
         0,
         count - 1
       );
+
     $("range").value =
       index;
+
     const time =
       gifFrameTimes[index] ||
       "—";
+
     $("timeLabel").textContent =
       "ДМРЛ композит · " +
       time;
+
     $("times").innerHTML =
       "<span>" +
       (
@@ -1416,15 +1721,19 @@
         "—"
       ) +
       "</span>";
+
     $("framesInfo").textContent =
       "ДМРЛ композит • кадров: " +
       count;
+
     $("intensityValue").textContent =
       "радар";
   }
+
   /* =======================================================
      PRELOAD
      ======================================================= */
+
   function preloadGIFNeighbors(
     index
   ) {
@@ -1450,9 +1759,11 @@
         }
       );
   }
+
   /* =======================================================
      CREATE GIF OVERLAY
      ======================================================= */
+
   function createGIFLayer(
     url
   ) {
@@ -1471,14 +1782,18 @@
             "clorad-gif-radar-image"
         }
       );
+
     layer.addTo(
       window.map
     );
+
     return layer;
   }
+
   /* =======================================================
      SHOW FRAME
      ======================================================= */
+
   async function showGIFFrame(
     index
   ) {
@@ -1488,6 +1803,7 @@
     ) {
       return;
     }
+
     index =
       Math.max(
         0,
@@ -1496,14 +1812,18 @@
           gifFrames.length - 1
         )
       );
+
     const requestId =
       ++gifFrameRequest;
+
     const url =
       gifFrames[index];
+
     try {
       await loadImage(
         url
       );
+
       if (
         !gifActive ||
         requestId !==
@@ -1511,6 +1831,7 @@
       ) {
         return;
       }
+
       if (
         !gifLayer
       ) {
@@ -1523,31 +1844,34 @@
           url
         );
       }
+
       gifLayer.setOpacity(
         1
       );
+
       gifLayer.bringToFront();
+
       updateGIFTimeline(
         index
       );
+
       preloadGIFNeighbors(
         index
       );
-      /*
-         Сетка должна оставаться
-         поверх/рядом с радаром.
-      */
+
       if (
         dmrlGridEnabled &&
         dmrlGridLayer
       ) {
         dmrlGridLayer.bringToFront();
       }
+
     } catch (error) {
       console.error(
         "CLOrad GIF frame:",
         error
       );
+
       if (
         requestId ===
         gifFrameRequest
@@ -1562,6 +1886,7 @@
           );
         }
       }
+
     } finally {
       if (
         requestId ===
@@ -1571,74 +1896,109 @@
       }
     }
   }
+
   /* =======================================================
      ACTIVATE
      ======================================================= */
+
   async function activateGIF() {
     if (
       gifActive
     ) {
       return;
     }
-    /*
-       Останавливаем другие
-       радарные режимы.
-    */
+
     if (
       typeof window.CLOradStopRadar ===
       "function"
     ) {
       window.CLOradStopRadar();
     }
+
     gifActive =
       true;
+
+    /*
+       Тёмная карта только
+       в режиме ДМРЛ.
+    */
+    enableDarkMap();
+
     setActiveNav(
       gifButton
     );
+
     showLoading();
+
     $("framesInfo").textContent =
       "Загрузка ДМРЛ композита…";
+
     $("timeLabel").textContent =
       "Загрузка ДМРЛ композита…";
+
     try {
       const meta =
         await loadGIFMeta();
+
       if (
         !gifActive
       ) {
         return;
       }
+
       gifMeta =
         meta;
+
       const count =
         Number(
           meta.frames
         );
+
       gifFrames =
         buildFrameUrls(
           count
         );
+
       gifFrameTimes =
         buildGIFTimes(
           count
         );
+
       gifFrameDelays =
         buildGIFDelays(
           count,
           meta.delays
         );
+
+      /*
+         После получения meta
+         сетка сразу пересчитывается
+         по реальному размеру растра.
+      */
+      if (
+        dmrlGridEnabled
+      ) {
+        drawDMRLGrid();
+      }
+
       const newestIndex =
         gifFrames.length - 1;
+
       await showGIFFrame(
         newestIndex
       );
+
     } catch (error) {
       console.error(
         "CLOrad GIF:",
         error
       );
+
       gifActive =
         false;
+
+      disableDarkMap();
+
       if (
         gifLayer
       ) {
@@ -1651,14 +2011,18 @@
             gifLayer
           );
         }
+
         gifLayer =
           null;
       }
+
       $("timeLabel").textContent =
         "Ошибка ДМРЛ композита";
+
       $("framesInfo").textContent =
         error?.message ||
         "Не удалось загрузить ДМРЛ";
+
       if (
         typeof msg ===
         "function"
@@ -1668,18 +2032,24 @@
           "Ошибка ДМРЛ композита"
         );
       }
+
     } finally {
       hideLoading();
     }
   }
+
   /* =======================================================
      DEACTIVATE
      ======================================================= */
+
   function deactivateGIF() {
     gifFrameRequest++;
+
     gifActive =
       false;
+
     stopGIFPlayback();
+
     if (
       gifLayer &&
       window.map &&
@@ -1691,22 +2061,29 @@
         gifLayer
       );
     }
+
     gifLayer =
       null;
+
     gifFrames =
       [];
+
     gifFrameTimes =
       [];
+
     gifFrameDelays =
       [];
+
     gifMeta =
       null;
+
     gifImageCache.clear();
+
     /*
-       Сетка тоже скрывается,
-       потому что она относится
-       к ДМРЛ-композиту.
+       Возвращаем карту.
     */
+    disableDarkMap();
+
     if (
       dmrlGridLayer &&
       window.map &&
@@ -1718,32 +2095,38 @@
         dmrlGridLayer
       );
     }
+
     if (
       $("range")
     ) {
       $("range").max =
         0;
+
       $("range").value =
         0;
     }
+
     if (
       $("times")
     ) {
       $("times").textContent =
         "";
     }
+
     if (
       $("timeLabel")
     ) {
       $("timeLabel").textContent =
         "Радар не подключён";
     }
+
     if (
       $("framesInfo")
     ) {
       $("framesInfo").textContent =
         "Радар пока не подключён";
     }
+
     if (
       $("intensityValue")
     ) {
@@ -1751,9 +2134,11 @@
         "Нет данных";
     }
   }
+
   /* =======================================================
      PLAY
      ======================================================= */
+
   function playGIF() {
     if (
       !gifActive ||
@@ -1761,18 +2146,22 @@
     ) {
       return;
     }
+
     if (
       gifPlaying
     ) {
       stopGIFPlayback();
       return;
     }
+
     gifPlaying =
       true;
+
     $("play").innerHTML =
       '<svg viewBox="0 0 24 24">' +
       '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' +
       '</svg>';
+
     const playNext =
       () => {
         if (
@@ -1782,11 +2171,14 @@
           stopGIFPlayback();
           return;
         }
+
         let index =
           Number(
             $("range").value
           );
+
         index++;
+
         if (
           index >=
           gifFrames.length
@@ -1794,26 +2186,32 @@
           index =
             0;
         }
+
         $("range").value =
           index;
+
         const delay =
           Number(
             gifFrameDelays[index]
           ) ||
           700;
+
         showGIFFrame(
           index
         );
+
         gifPlayTimer =
           setTimeout(
             playNext,
             delay
           );
       };
+
     const currentIndex =
       Number(
         $("range").value
       );
+
     const firstDelay =
       Number(
         gifFrameDelays[
@@ -1821,15 +2219,18 @@
         ]
       ) ||
       700;
+
     gifPlayTimer =
       setTimeout(
         playNext,
         firstDelay
       );
   }
+
   function stopGIFPlayback() {
     gifPlaying =
       false;
+
     if (
       gifPlayTimer
     ) {
@@ -1837,8 +2238,10 @@
         gifPlayTimer
       );
     }
+
     gifPlayTimer =
       null;
+
     if (
       $("play")
     ) {
@@ -1848,17 +2251,16 @@
         '</svg>';
     }
   }
+
   /* =======================================================
      GIF BUTTON
      ======================================================= */
+
   let gifButton =
     document.getElementById(
       "gifRadarNav"
     );
-  /*
-     Если кнопки ещё нет —
-     создаём её.
-  */
+
   if (
     !gifButton
   ) {
@@ -1866,10 +2268,13 @@
       document.createElement(
         "button"
       );
+
     gifButton.className =
       "n";
+
     gifButton.id =
       "gifRadarNav";
+
     gifButton.innerHTML = `
       <svg viewBox="0 0 24 24">
         <rect
@@ -1879,14 +2284,18 @@
           height="16"
           rx="2"
         />
+
         <path
           d="M9 8v8l6-4z"
         />
       </svg>
+
       ДМРЛ композит
     `;
+
     const rainButton =
       $("rainProduct");
+
     if (
       rainButton
     ) {
@@ -1898,16 +2307,16 @@
         document.querySelector(
           ".nav"
         );
+
       navElement?.appendChild(
         gifButton
       );
     }
+
   } else {
-    /*
-       Гарантируем название.
-    */
     const textNodes =
       [];
+
     gifButton.childNodes
       .forEach(
         node => {
@@ -1921,6 +2330,7 @@
           }
         }
       );
+
     textNodes.forEach(
       node => {
         node.textContent =
@@ -1931,9 +2341,11 @@
       }
     );
   }
+
   /* =======================================================
      ACTIVE NAV
      ======================================================= */
+
   function setActiveNav(
     button
   ) {
@@ -1947,6 +2359,7 @@
             "active"
           )
       );
+
     if (
       button
     ) {
@@ -1955,9 +2368,11 @@
       );
     }
   }
+
   /* =======================================================
      RANGE
      ======================================================= */
+
   $("range")?.addEventListener(
     "input",
     () => {
@@ -1966,6 +2381,7 @@
       ) {
         return;
       }
+
       showGIFFrame(
         Number(
           $("range").value
@@ -1973,9 +2389,11 @@
       );
     }
   );
+
   /* =======================================================
      PLAY BUTTON
      ======================================================= */
+
   $("play")?.addEventListener(
     "click",
     event => {
@@ -1984,28 +2402,36 @@
       ) {
         return;
       }
+
       event.stopImmediatePropagation();
+
       playGIF();
     },
     true
   );
+
   /* =======================================================
      GIF BUTTON
      ======================================================= */
+
   gifButton.addEventListener(
     "click",
     event => {
       event.stopPropagation();
+
       activateGIF();
     }
   );
+
   /* =======================================================
      NAV SWITCHING
      ======================================================= */
+
   const nav =
     document.querySelector(
       ".nav"
     );
+
   nav?.addEventListener(
     "click",
     event => {
@@ -2013,59 +2439,68 @@
         event.target.closest(
           ".n"
         );
+
       if (
         !button
       ) {
         return;
       }
+
       if (
         button.id ===
         "layersNav"
       ) {
         return;
       }
+
       if (
         button ===
         gifButton
       ) {
         return;
       }
+
       deactivateGIF();
     },
     true
   );
+
   /* =======================================================
      PUBLIC API
      ======================================================= */
+
   window.CLOradDeactivateGIF =
     deactivateGIF;
+
   window.CLOradGIFActive =
     () =>
       gifActive;
+
   window.CLOradShowGIFFrame =
     showGIFFrame;
+
   window.CLOradPlayGIF =
     playGIF;
+
   window.CLOradSetDMRLGrid =
     setDMRLGridEnabled;
+
   window.CLOradDMRLGridActive =
     () =>
       dmrlGridEnabled;
+
   /* =======================================================
      INIT
      ======================================================= */
+
   installGIFStyle();
+
   installDMRLSettingsStyle();
-  /*
-     Настройки могут создаваться
-     другим скриптом позже.
-  */
+
   installGIFResolutionSetting();
+
   installDMRLGridSetting();
-  /*
-     Если settings ещё нет —
-     ждём появления DOM.
-  */
+
   if (
     !document.getElementById(
       "gifResolutionSetting"
@@ -2078,7 +2513,9 @@
       new MutationObserver(
         () => {
           installGIFResolutionSetting();
+
           installDMRLGridSetting();
+
           if (
             document.getElementById(
               "gifResolutionSetting"
@@ -2091,6 +2528,7 @@
           }
         }
       );
+
     if (
       document.body
     ) {
@@ -2105,4 +2543,5 @@
       );
     }
   }
+
 })();
