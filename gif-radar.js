@@ -1982,8 +1982,9 @@
       if (
         dmrlGridEnabled &&
         dmrlGridLayer
-      ) 
-
+      ) {
+         dmrlGridLayer.bringToFront();
+      }
     } catch (error) {
       console.error(
         "CLOrad GIF frame:",
