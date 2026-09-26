@@ -21,39 +21,63 @@ const MAX_PROCESSED_FRAMES = 12;
 ========================================================= */
 
 const CLORAD_PALETTE = [
-  [185, 193, 199], // l1
-  [169, 199, 244], // l2
-  [99, 237, 165],  // l3
-  [67, 207, 137],  // l4
-  [77, 184, 78],   // l5
-  [255, 248, 156], // l6
-  [117, 166, 239], // l7
-  [82, 121, 237],  // l8
-  [80, 74, 155],   // l9
-  [255, 192, 168], // l10
-  [250, 130, 160], // l11
-  [255, 77, 77],   // l12
-  [219, 146, 72],  // l13
-  [173, 117, 68],  // l14
-  [146, 75, 72],   // l15
-  [242, 170, 240], // l16
-  [232, 90, 231],  // l17
-  [202, 60, 199],  // l18
-  [119, 124, 145]  // l19
+  [185,193,199],
+  [169,199,244],
+  [99,237,165],
+  [67,207,137],
+  [77,184,78],
+  [255,248,156],
+  [117,166,239],
+  [82,121,237],
+  [80,74,155],
+  [255,192,168],
+  [250,130,160],
+  [255,77,77],
+  [219,146,72],
+  [173,117,68],
+  [146,75,72],
+  [242,170,240],
+  [232,90,231],
+  [202,60,199],
+  [119,124,145]
 ];
 
 
 /* =========================================================
-   SOURCE CALIBRATION
+   GIF / CALIBRATION SIZES
 ========================================================= */
 
 /*
- * Контрольные точки из исходной GIF 1122×1136.
+ * Контрольные точки были измерены
+ * на изображении 1122 × 1136.
  *
- * lon/lat -> исходный пиксель GIF.
- *
- * Для перепроекции используем Web Mercator Y.
+ * Реальный GIF:
+ * 1200 × 1200.
  */
+
+const CALIBRATION_WIDTH = 1122;
+const CALIBRATION_HEIGHT = 1136;
+
+const SOURCE_WIDTH = 1200;
+const SOURCE_HEIGHT = 1200;
+
+
+/*
+ * Масштаб между скриншотом,
+ * по которому строилась калибровка,
+ * и настоящей GIF.
+ */
+
+const SCALE_X =
+  SOURCE_WIDTH / CALIBRATION_WIDTH;
+
+const SCALE_Y =
+  SOURCE_HEIGHT / CALIBRATION_HEIGHT;
+
+
+/* =========================================================
+   ORIGINAL CALIBRATION
+========================================================= */
 
 const PX = [
    614.702787260693,
@@ -79,19 +103,18 @@ const UC_MERC =
 const US_MERC =
   0.080017466461;
 
-const UC =
-  42.7295125;
 
-const US =
-  11.984477282034;
-
+/* =========================================================
+   LEAFLET BOUNDS
+========================================================= */
 
 /*
- * Географический охват,
- * полученный из той же калибровки.
+ * ВАЖНО:
+ * эти bounds оставляем теми же,
+ * которые уже используются в gif-radar.js.
  */
 
-const GEO = {
+const GIF_BOUNDS = {
   west: 14.9892981264,
   east: 72.9237642948,
   south: 38.2155955810,
@@ -99,23 +122,12 @@ const GEO = {
 };
 
 
-/*
- * Исходная карта фактически находится
- * почти в квадратном Web Mercator охвате.
- *
- * Ширина оставляем 1200.
- * Высоту рассчитываем по Mercator,
- * а не по обычной широте.
- */
-
-const OUTPUT_WIDTH = 1200;
-
-
 /* =========================================================
    MERCATOR
 ========================================================= */
 
 function mercatorY(lat) {
+
   const r =
     lat * Math.PI / 180;
 
@@ -128,50 +140,11 @@ function mercatorY(lat) {
 }
 
 
-function inverseMercatorY(y) {
-  return (
-    2 *
-      Math.atan(
-        Math.exp(y)
-      ) -
-    Math.PI / 2
-  ) * 180 / Math.PI;
-}
-
-
-const MERC_WEST =
-  GEO.west * Math.PI / 180;
-
-const MERC_EAST =
-  GEO.east * Math.PI / 180;
-
-const MERC_SOUTH =
-  mercatorY(GEO.south);
-
-const MERC_NORTH =
-  mercatorY(GEO.north);
-
-const MERC_WIDTH =
-  MERC_EAST -
-  MERC_WEST;
-
-const MERC_HEIGHT =
-  MERC_NORTH -
-  MERC_SOUTH;
-
-const OUTPUT_HEIGHT =
-  Math.round(
-    OUTPUT_WIDTH *
-    MERC_HEIGHT /
-    MERC_WIDTH
-  );
-
-
 /* =========================================================
-   GEO -> SOURCE PIXEL
+   GEO -> CALIBRATION PIXEL
 ========================================================= */
 
-function geoToSource(
+function geoToCalibrationPixel(
   lon,
   lat
 ) {
@@ -179,21 +152,16 @@ function geoToSource(
   const lonRad =
     lon * Math.PI / 180;
 
-  const my =
+  const mercY =
     mercatorY(lat);
 
-
-  /*
-   * Нормализованные координаты
-   * относительно центра калибровки.
-   */
 
   const u =
     lonRad -
     UC_MERC;
 
   const v =
-    my -
+    mercY -
     US_MERC;
 
 
@@ -233,6 +201,40 @@ function geoToSource(
 
 
 /* =========================================================
+   GEO -> REAL 1200×1200 GIF PIXEL
+========================================================= */
+
+function geoToSourcePixel(
+  lon,
+  lat
+) {
+
+  const [
+    calibrationX,
+    calibrationY
+  ] =
+    geoToCalibrationPixel(
+      lon,
+      lat
+    );
+
+
+  /*
+   * КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
+   *
+   * калибровка была сделана
+   * на 1122×1136,
+   * а настоящий GIF 1200×1200.
+   */
+
+  return [
+    calibrationX * SCALE_X,
+    calibrationY * SCALE_Y
+  ];
+}
+
+
+/* =========================================================
    COLOR DISTANCE
 ========================================================= */
 
@@ -261,7 +263,7 @@ function colorDistance(
 
 
 /* =========================================================
-   SOURCE COLOR -> CLOrad LEVEL
+   SOURCE COLOR -> CLOrad
 ========================================================= */
 
 function sourceColorToLevel(
@@ -271,38 +273,30 @@ function sourceColorToLevel(
 ) {
 
   const max =
-    Math.max(r, g, b);
+    Math.max(r,g,b);
 
   const min =
-    Math.min(r, g, b);
+    Math.min(r,g,b);
 
   const chroma =
     max - min;
 
 
-  if (max < 70) {
+  if (max < 70)
     return -1;
-  }
 
-
-  if (chroma < 28) {
+  if (chroma < 28)
     return -1;
-  }
-
 
   if (
     max > 235 &&
     chroma < 45
-  ) {
+  )
     return -1;
-  }
 
 
-  let best =
-    -1;
-
-  let bestDist =
-    Infinity;
+  let best = -1;
+  let bestDist = Infinity;
 
 
   for (
@@ -320,15 +314,10 @@ function sourceColorToLevel(
       );
 
 
-    if (
-      d < bestDist
-    ) {
+    if (d < bestDist) {
 
-      bestDist =
-        d;
-
-      best =
-        i;
+      bestDist = d;
+      best = i;
     }
   }
 
@@ -336,9 +325,8 @@ function sourceColorToLevel(
   if (
     best < 0 ||
     bestDist > 15000
-  ) {
+  )
     return -1;
-  }
 
 
   return best;
@@ -356,43 +344,36 @@ function isRadarPixel(
 ) {
 
   const max =
-    Math.max(r, g, b);
+    Math.max(r,g,b);
 
   const min =
-    Math.min(r, g, b);
+    Math.min(r,g,b);
 
   const chroma =
     max - min;
 
 
-  if (max < 70) {
+  if (max < 70)
     return false;
-  }
 
-
-  if (chroma < 30) {
+  if (chroma < 30)
     return false;
-  }
 
 
   const saturation =
     chroma /
-    Math.max(max, 1);
+    Math.max(max,1);
 
 
-  if (
-    saturation < 0.15
-  ) {
+  if (saturation < 0.15)
     return false;
-  }
 
 
   if (
     max > 238 &&
     saturation < 0.20
-  ) {
+  )
     return false;
-  }
 
 
   return true;
@@ -400,7 +381,7 @@ function isRadarPixel(
 
 
 /* =========================================================
-   SERVICE AREAS
+   SERVICE GRAPHICS
 ========================================================= */
 
 function isServiceArea(
@@ -410,69 +391,56 @@ function isServiceArea(
   height
 ) {
 
+  /*
+   * Координаты служебных элементов
+   * тоже были определены на 1122×1136.
+   */
+
   const sx =
-    x * 1122 / width;
+    x *
+    CALIBRATION_WIDTH /
+    width;
 
   const sy =
-    y * 1136 / height;
+    y *
+    CALIBRATION_HEIGHT /
+    height;
 
-
-  /* Левая легенда */
 
   if (
     sx <= 145 &&
     sy <= 365
-  ) {
+  )
     return true;
-  }
 
 
-  /* Верхняя служебная область */
-
-  if (
-    sy <= 58
-  ) {
+  if (sy <= 58)
     return true;
-  }
 
-
-  /* Нижний логотип */
 
   if (
     sx <= 160 &&
     sy >= 965
-  ) {
+  )
     return true;
-  }
 
 
-  /* Нижняя строка */
-
-  if (
-    sy >= 1105
-  ) {
+  if (sy >= 1105)
     return true;
-  }
 
-
-  /* Нижний правый timestamp */
 
   if (
     sx >= 760 &&
     sy >= 1060
-  ) {
+  )
     return true;
-  }
 
-
-  /* Верхний правый timestamp */
 
   if (
     sx >= 735 &&
     sy <= 65
-  ) {
+  )
     return true;
-  }
 
 
   return false;
@@ -525,16 +493,16 @@ async function getGIF() {
   }
 
 
-  const arrayBuffer =
-    await response.arrayBuffer();
-
   const buffer =
-    Buffer.from(arrayBuffer);
+    Buffer.from(
+      await response.arrayBuffer()
+    );
 
 
   /*
-   * Новый GIF:
-   * удаляем старые обработанные PNG.
+   * Новый GIF =
+   * старые обработанные кадры больше
+   * не нужны.
    */
 
   if (
@@ -585,19 +553,13 @@ async function getMetadata(
       metadata.height || 1200,
 
     delays:
-      metadata.delay || [],
-
-    outputWidth:
-      OUTPUT_WIDTH,
-
-    outputHeight:
-      OUTPUT_HEIGHT
+      metadata.delay || []
   };
 }
 
 
 /* =========================================================
-   SMALL HOLE FILL
+   SMALL RADAR HOLES
 ========================================================= */
 
 function fillSmallRadarHoles(
@@ -618,16 +580,11 @@ function fillSmallRadarHoles(
     i++
   ) {
 
-    const p =
-      i * 4;
-
-
     if (
-      pixels[p + 3] > 0
+      pixels[i * 4 + 3] > 0
     ) {
 
-      mask[i] =
-        1;
+      mask[i] = 1;
     }
   }
 
@@ -658,11 +615,8 @@ function fillSmallRadarHoles(
           y * width + x;
 
 
-        if (
-          mask[idx]
-        ) {
+        if (mask[idx])
           continue;
-        }
 
 
         const positions = [
@@ -677,26 +631,22 @@ function fillSmallRadarHoles(
         ];
 
 
-        const neighbors =
-          [];
+        const colors = [];
 
 
         for (
           const n of positions
         ) {
 
-          if (
-            !mask[n]
-          ) {
+          if (!mask[n])
             continue;
-          }
 
 
           const p =
             n * 4;
 
 
-          neighbors.push([
+          colors.push([
             result[p],
             result[p + 1],
             result[p + 2]
@@ -705,10 +655,9 @@ function fillSmallRadarHoles(
 
 
         if (
-          neighbors.length < 6
-        ) {
+          colors.length < 6
+        )
           continue;
-        }
 
 
         const counts =
@@ -716,7 +665,7 @@ function fillSmallRadarHoles(
 
 
         for (
-          const c of neighbors
+          const c of colors
         ) {
 
           const key =
@@ -730,30 +679,21 @@ function fillSmallRadarHoles(
         }
 
 
-        let bestKey =
-          null;
-
-        let bestCount =
-          0;
+        let bestKey = null;
+        let bestCount = 0;
 
 
         for (
-          const [
-            key,
-            count
-          ] of counts
+          const [key,count]
+          of counts
         ) {
 
           if (
-            count >
-            bestCount
+            count > bestCount
           ) {
 
-            bestCount =
-              count;
-
-            bestKey =
-              key;
+            bestCount = count;
+            bestKey = key;
           }
         }
 
@@ -761,9 +701,8 @@ function fillSmallRadarHoles(
         if (
           !bestKey ||
           bestCount < 4
-        ) {
+        )
           continue;
-        }
 
 
         const rgb =
@@ -789,8 +728,7 @@ function fillSmallRadarHoles(
           255;
 
 
-        mask[idx] =
-          1;
+        mask[idx] = 1;
       }
     }
   }
@@ -809,26 +747,17 @@ async function renderFrame(
   frame
 ) {
 
-  const cacheKey =
+  const key =
     String(frame);
 
 
   if (
-    processedFrames.has(
-      cacheKey
-    )
+    processedFrames.has(key)
   ) {
 
-    return processedFrames.get(
-      cacheKey
-    );
+    return processedFrames.get(key);
   }
 
-
-  /*
-   * Получаем исходный кадр
-   * 1200×1200.
-   */
 
   const source =
     await sharp(
@@ -857,18 +786,15 @@ async function renderFrame(
 
 
   /*
-   * Новый растр уже находится
-   * в Web Mercator.
+   * ВЫХОД ВСЕГДА 1200×1200.
    *
-   * Размер не квадратный:
-   * 1200 × ~1181.
+   * Это принципиально:
+   * gif-radar.js уже знает именно
+   * эти bounds и этот формат.
    */
 
-  const width =
-    OUTPUT_WIDTH;
-
-  const height =
-    OUTPUT_HEIGHT;
+  const width = 1200;
+  const height = 1200;
 
 
   const output =
@@ -880,12 +806,11 @@ async function renderFrame(
 
 
   /*
-   * Перепроекция:
+   * Leaflet bounds задают географический
+   * прямоугольник.
    *
-   * выходной пиксель
-   * -> Web Mercator
-   * -> longitude/latitude
-   * -> исходный GIF pixel
+   * Для каждого выходного пикселя
+   * получаем lon/lat.
    */
 
   for (
@@ -894,26 +819,15 @@ async function renderFrame(
     y++
   ) {
 
-    /*
-     * Web Mercator Y
-     *
-     * ВАЖНО:
-     * не интерполируем latitude
-     * напрямую.
-     */
-
-    const mercY =
-      MERC_NORTH -
+    const lat =
+      GIF_BOUNDS.north -
       (
         y /
         (height - 1)
       ) *
-      MERC_HEIGHT;
-
-
-    const lat =
-      inverseMercatorY(
-        mercY
+      (
+        GIF_BOUNDS.north -
+        GIF_BOUNDS.south
       );
 
 
@@ -924,14 +838,14 @@ async function renderFrame(
     ) {
 
       const lon =
-        GEO.west +
+        GIF_BOUNDS.west +
         (
           x /
           (width - 1)
         ) *
         (
-          GEO.east -
-          GEO.west
+          GIF_BOUNDS.east -
+          GIF_BOUNDS.west
         );
 
 
@@ -939,29 +853,21 @@ async function renderFrame(
         sx,
         sy
       ] =
-        geoToSource(
+        geoToSourcePixel(
           lon,
           lat
         );
 
 
-      /*
-       * Вне исходного изображения.
-       */
-
       if (
         sx < 0 ||
         sy < 0 ||
-        sx >= srcWidth - 1 ||
-        sy >= srcHeight - 1
+        sx >= srcWidth ||
+        sy >= srcHeight
       ) {
         continue;
       }
 
-
-      /*
-       * Ближайший исходный пиксель.
-       */
 
       const ix =
         Math.round(sx);
@@ -1013,11 +919,8 @@ async function renderFrame(
         src[sp + 3];
 
 
-      if (
-        a < 30
-      ) {
+      if (a < 30)
         continue;
-      }
 
 
       if (
@@ -1026,9 +929,8 @@ async function renderFrame(
           g,
           b
         )
-      ) {
+      )
         continue;
-      }
 
 
       const level =
@@ -1043,15 +945,12 @@ async function renderFrame(
         level < 0 ||
         level >=
           CLORAD_PALETTE.length
-      ) {
+      )
         continue;
-      }
 
 
       const color =
-        CLORAD_PALETTE[
-          level
-        ];
+        CLORAD_PALETTE[level];
 
 
       const op =
@@ -1077,11 +976,6 @@ async function renderFrame(
   }
 
 
-  /*
-   * Убираем мелкие прозрачные дырки
-   * внутри радарных областей.
-   */
-
   const filled =
     fillSmallRadarHoles(
       output,
@@ -1089,10 +983,6 @@ async function renderFrame(
       height
     );
 
-
-  /*
-   * Кодируем Web Mercator PNG.
-   */
 
   const png =
     await sharp(
@@ -1113,7 +1003,7 @@ async function renderFrame(
 
 
   processedFrames.set(
-    cacheKey,
+    key,
     png
   );
 
@@ -1141,7 +1031,7 @@ async function renderFrame(
 
 
 /* =========================================================
-   VERCEL HANDLER
+   API
 ========================================================= */
 
 export default async function handler(
@@ -1155,18 +1045,14 @@ export default async function handler(
       await getGIF();
 
 
-    /* =====================================
-       META
-    ===================================== */
+    /* ---------- META ---------- */
 
     if (
       req.query.mode === "meta"
     ) {
 
       const metadata =
-        await getMetadata(
-          gif
-        );
+        await getMetadata(gif);
 
 
       res.setHeader(
@@ -1181,9 +1067,7 @@ export default async function handler(
     }
 
 
-    /* =====================================
-       FRAME
-    ===================================== */
+    /* ---------- FRAME ---------- */
 
     let frame =
       Number(
@@ -1195,15 +1079,12 @@ export default async function handler(
       !Number.isFinite(frame)
     ) {
 
-      frame =
-        0;
+      frame = 0;
     }
 
 
     const metadata =
-      await getMetadata(
-        gif
-      );
+      await getMetadata(gif);
 
 
     frame =
