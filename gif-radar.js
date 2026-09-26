@@ -1,5 +1,7 @@
 /* =========================================================
    CLOrad — Meteoinfo GIF Radar
+   ДМРЛ композит
+   Разрешение ДМРЛ + сетка данных ДМРЛ
    ========================================================= */
 (() => {
   "use strict";
@@ -7,9 +9,34 @@
      CONFIG
      ======================================================= */
   const API = "/api/radar-gif";
+  /*
+     Географическая область ДМРЛ.
+     Это та же область, которая используется
+     текущим GIF-слоем CLOrad.
+  */
   const GIF_BOUNDS = [
     [38.2155955810, 14.9892981264],
     [69.6543707199, 72.9237642948]
+  ];
+  /*
+     Область отображения сетки.
+     Западная часть России + Беларусь.
+     Сетка не идёт по всей огромной области GIF.
+  */
+  const DMRL_GRID_BOUNDS = [
+    [44.0, 20.0],
+    [62.5, 56.5]
+  ];
+  /*
+     Разрешения:
+       1 = 1×1
+       2 = 2×2
+       4 = 4×4
+  */
+  const ALLOWED_RESOLUTIONS = [
+    1,
+    2,
+    4
   ];
   /* =======================================================
      STATE
@@ -25,13 +52,21 @@
   let gifPlayTimer = null;
   let gifLayer = null;
   /*
-     Разрешение ДМРЛ.
-     1×1 — максимальное качество
-     2×2
-     4×4
-     По умолчанию 1×1.
+     Текущее разрешение ДМРЛ.
   */
   let gifResolution = 1;
+  /*
+     Состояние сетки.
+  */
+  let dmrlGridEnabled = false;
+  /*
+     Canvas сетки.
+  */
+  let dmrlGridCanvas = null;
+  /*
+     Leaflet-слой сетки.
+  */
+  let dmrlGridLayer = null;
   /* =======================================================
      HELPER
      ======================================================= */
@@ -48,18 +83,174 @@
     );
   }
   /* =======================================================
-     ДМРЛ — НАСТРОЙКИ
+     SETTINGS — ОБЩИЙ СТИЛЬ
+     ======================================================= */
+  function installDMRLSettingsStyle() {
+    if (
+      document.getElementById(
+        "clorad-dmrl-settings-style"
+      )
+    ) {
+      return;
+    }
+    const style =
+      document.createElement(
+        "style"
+      );
+    style.id =
+      "clorad-dmrl-settings-style";
+    style.textContent = `
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-options {
+        display: flex;
+        width: 100%;
+        gap: 7px;
+      }
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-option {
+        flex: 1;
+        height: 38px;
+        padding: 0;
+        border: 1px solid
+          rgba(255,255,255,.10);
+        border-radius: 9px;
+        background:
+          rgba(255,255,255,.055);
+        color:
+          rgba(255,255,255,.72);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        -webkit-tap-highlight-color:
+          transparent;
+        transition:
+          background .15s ease,
+          color .15s ease,
+          border-color .15s ease;
+      }
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-option.active {
+        background:
+          rgba(255,255,255,.13);
+        border-color:
+          rgba(255,255,255,.20);
+        color:
+          #fff;
+      }
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-option:active {
+        transform:
+          scale(.97);
+      }
+      #dmrlGridSetting
+      .clorad-dmrl-grid-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        cursor: pointer;
+      }
+      #dmrlGridSetting
+      .clorad-dmrl-grid-toggle-text {
+        color:
+          rgba(255,255,255,.76);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      #dmrlGridSetting
+      .clorad-dmrl-grid-switch {
+        position: relative;
+        flex: 0 0 auto;
+        width: 42px;
+        height: 24px;
+        border-radius: 999px;
+        background:
+          rgba(255,255,255,.12);
+        border:
+          1px solid rgba(255,255,255,.12);
+        transition:
+          background .15s ease;
+      }
+      #dmrlGridSetting
+      .clorad-dmrl-grid-switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition:
+          transform .15s ease;
+      }
+      #dmrlGridSetting.active
+      .clorad-dmrl-grid-switch {
+        background:
+          rgba(95,190,130,.65);
+      }
+      #dmrlGridSetting.active
+      .clorad-dmrl-grid-switch::after {
+        transform:
+          translateX(18px);
+      }
+      body.light
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-option {
+        background:
+          rgba(0,0,0,.045);
+        border-color:
+          rgba(0,0,0,.10);
+        color:
+          rgba(0,0,0,.62);
+      }
+      body.light
+      #gifResolutionSetting
+      .clorad-dmrl-resolution-option.active {
+        background:
+          rgba(0,0,0,.09);
+        border-color:
+          rgba(0,0,0,.16);
+        color:
+          #111;
+      }
+      body.light
+      #dmrlGridSetting
+      .clorad-dmrl-grid-toggle-text {
+        color:
+          rgba(0,0,0,.68);
+      }
+      body.light
+      #dmrlGridSetting
+      .clorad-dmrl-grid-switch {
+        background:
+          rgba(0,0,0,.10);
+        border-color:
+          rgba(0,0,0,.10);
+      }
+      body.light
+      #dmrlGridSetting.active
+      .clorad-dmrl-grid-switch {
+        background:
+          rgba(70,160,100,.65);
+      }
+    `;
+    document.head.appendChild(
+      style
+    );
+  }
+  /* =======================================================
+     SETTINGS — РАЗРЕШЕНИЕ ДМРЛ
      ======================================================= */
   function installGIFResolutionSetting() {
     const settings =
-      document.getElementById("settings");
+      document.getElementById(
+        "settings"
+      );
     if (!settings) {
       return;
     }
-    /*
-       Если пункт уже существует —
-       второй раз не создаём.
-    */
     if (
       document.getElementById(
         "gifResolutionSetting"
@@ -68,7 +259,9 @@
       return;
     }
     const setting =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
     setting.className =
       "setting";
     setting.id =
@@ -117,10 +310,6 @@
         </div>
       </div>
     `;
-    /*
-       Добавляем после существующего
-       пункта «Кол. кадров».
-    */
     const framesSetting =
       document.getElementById(
         "framesSetting"
@@ -134,98 +323,11 @@
         setting
       );
     }
-    /* =====================================================
-       STYLE
-       ===================================================== */
-    if (
-      !document.getElementById(
-        "clorad-dmrl-resolution-style"
-      )
-    ) {
-      const style =
-        document.createElement("style");
-      style.id =
-        "clorad-dmrl-resolution-style";
-      style.textContent = `
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-options {
-          display: flex;
-          width: 100%;
-          gap: 7px;
-        }
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-option {
-          flex: 1;
-          height: 38px;
-          padding: 0;
-          border: 1px solid
-            rgba(255,255,255,.10);
-          border-radius: 9px;
-          background:
-            rgba(255,255,255,.055);
-          color:
-            rgba(255,255,255,.72);
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          -webkit-tap-highlight-color:
-            transparent;
-          transition:
-            background .15s ease,
-            color .15s ease,
-            border-color .15s ease;
-        }
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-option.active {
-          background:
-            rgba(255,255,255,.13);
-          border-color:
-            rgba(255,255,255,.20);
-          color:
-            #fff;
-        }
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-option:active {
-          transform:
-            scale(.97);
-        }
-        body.light
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-option {
-          background:
-            rgba(0,0,0,.045);
-          border-color:
-            rgba(0,0,0,.10);
-          color:
-            rgba(0,0,0,.62);
-        }
-        body.light
-        #gifResolutionSetting
-        .clorad-dmrl-resolution-option.active {
-          background:
-            rgba(0,0,0,.09);
-          border-color:
-            rgba(0,0,0,.16);
-          color:
-            #111;
-        }
-      `;
-      document.head.appendChild(
-        style
-      );
-    }
-    /* =====================================================
-       HEAD
-       ===================================================== */
     const head =
       document.getElementById(
         "gifResolutionHead"
       );
-    const body =
-      document.getElementById(
-        "gifResolutionBody"
-      );
-    if (head && body) {
+    if (head) {
       head.addEventListener(
         "click",
         event => {
@@ -234,10 +336,6 @@
             setting.classList.contains(
               "open"
             );
-          /*
-             Закрываем остальные
-             настройки.
-          */
           document
             .querySelectorAll(
               ".setting.open"
@@ -260,9 +358,6 @@
         }
       );
     }
-    /* =====================================================
-       OPTIONS
-       ===================================================== */
     setting
       .querySelectorAll(
         ".clorad-dmrl-resolution-option"
@@ -278,9 +373,9 @@
                   option.dataset.resolution
                 );
               if (
-                value !== 1 &&
-                value !== 2 &&
-                value !== 4
+                !ALLOWED_RESOLUTIONS.includes(
+                  value
+                )
               ) {
                 return;
               }
@@ -291,9 +386,6 @@
           );
         }
       );
-    /*
-       Применяем текущее значение.
-    */
     updateGIFResolutionButtons();
   }
   function updateGIFResolutionButtons() {
@@ -313,15 +405,168 @@
       );
   }
   /* =======================================================
+     SETTINGS — СЕТКА ДМРЛ
+     ======================================================= */
+  function installDMRLGridSetting() {
+    const settings =
+      document.getElementById(
+        "settings"
+      );
+    if (!settings) {
+      return;
+    }
+    if (
+      document.getElementById(
+        "dmrlGridSetting"
+      )
+    ) {
+      return;
+    }
+    const setting =
+      document.createElement(
+        "div"
+      );
+    setting.className =
+      "setting";
+    setting.id =
+      "dmrlGridSetting";
+    setting.innerHTML = `
+      <button
+        class="settingHead"
+        id="dmrlGridHead"
+        type="button"
+      >
+        <span>
+          Сетка данных ДМРЛ
+        </span>
+        <span class="settingArrow">
+          ›
+        </span>
+      </button>
+      <div
+        class="settingBody"
+        id="dmrlGridBody"
+      >
+        <div
+          class="clorad-dmrl-grid-toggle"
+          id="dmrlGridToggle"
+          role="button"
+          tabindex="0"
+        >
+          <span
+            class="clorad-dmrl-grid-toggle-text"
+          >
+            Показывать сетку данных
+          </span>
+          <span
+            class="clorad-dmrl-grid-switch"
+          ></span>
+        </div>
+      </div>
+    `;
+    const resolutionSetting =
+      document.getElementById(
+        "gifResolutionSetting"
+      );
+    if (resolutionSetting) {
+      resolutionSetting.after(
+        setting
+      );
+    } else {
+      settings.appendChild(
+        setting
+      );
+    }
+    const head =
+      document.getElementById(
+        "dmrlGridHead"
+      );
+    if (head) {
+      head.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+          const isOpen =
+            setting.classList.contains(
+              "open"
+            );
+          document
+            .querySelectorAll(
+              ".setting.open"
+            )
+            .forEach(
+              other => {
+                if (
+                  other !== setting
+                ) {
+                  other.classList.remove(
+                    "open"
+                  );
+                }
+              }
+            );
+          setting.classList.toggle(
+            "open",
+            !isOpen
+          );
+        }
+      );
+    }
+    const toggle =
+      document.getElementById(
+        "dmrlGridToggle"
+      );
+    if (toggle) {
+      toggle.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+          setDMRLGridEnabled(
+            !dmrlGridEnabled
+          );
+        }
+      );
+      toggle.addEventListener(
+        "keydown",
+        event => {
+          if (
+            event.key === "Enter" ||
+            event.key === " "
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            setDMRLGridEnabled(
+              !dmrlGridEnabled
+            );
+          }
+        }
+      );
+    }
+    updateDMRLGridButton();
+  }
+  function updateDMRLGridButton() {
+    const setting =
+      document.getElementById(
+        "dmrlGridSetting"
+      );
+    if (!setting) {
+      return;
+    }
+    setting.classList.toggle(
+      "active",
+      dmrlGridEnabled
+    );
+  }
+  /* =======================================================
      RESOLUTION
      ======================================================= */
   function setGIFResolution(
     value
   ) {
     if (
-      value !== 1 &&
-      value !== 2 &&
-      value !== 4
+      !ALLOWED_RESOLUTIONS.includes(
+        value
+      )
     ) {
       value = 1;
     }
@@ -329,9 +574,17 @@
       value;
     updateGIFResolutionButtons();
     /*
-       Если GIF уже открыт —
-       запрашиваем текущий кадр
-       в новом разрешении.
+       Меняем сетку сразу.
+    */
+    if (
+      dmrlGridEnabled
+    ) {
+      drawDMRLGrid();
+    }
+    /*
+       Если GIF уже открыт,
+       запрашиваем кадр с новым
+       параметром resolution.
     */
     if (
       gifActive &&
@@ -349,7 +602,525 @@
     }
   }
   /* =======================================================
-     STYLE
+     GRID — MERCATOR
+     ======================================================= */
+  function mercatorProject(
+    lat,
+    lon
+  ) {
+    const R =
+      6378137;
+    const x =
+      R *
+      lon *
+      Math.PI /
+      180;
+    const latRad =
+      Math.max(
+        -85.05112878,
+        Math.min(
+          85.05112878,
+          lat
+        )
+      ) *
+      Math.PI /
+      180;
+    const y =
+      R *
+      Math.log(
+        Math.tan(
+          Math.PI / 4 +
+          latRad / 2
+        )
+      );
+    return {
+      x,
+      y
+    };
+  }
+  function getDMRLGridBounds() {
+    const south =
+      DMRL_GRID_BOUNDS[0][0];
+    const west =
+      DMRL_GRID_BOUNDS[0][1];
+    const north =
+      DMRL_GRID_BOUNDS[1][0];
+    const east =
+      DMRL_GRID_BOUNDS[1][1];
+    const sw =
+      mercatorProject(
+        south,
+        west
+      );
+    const ne =
+      mercatorProject(
+        north,
+        east
+      );
+    return {
+      south,
+      west,
+      north,
+      east,
+      minX: sw.x,
+      maxX: ne.x,
+      minY: sw.y,
+      maxY: ne.y
+    };
+  }
+  /* =======================================================
+     GRID — CANVAS LAYER
+     ======================================================= */
+  function createDMRLGridLayer() {
+    if (
+      dmrlGridLayer ||
+      !window.map
+    ) {
+      return;
+    }
+    const GridLayer =
+      L.Layer.extend({
+        onAdd(map) {
+          this._map =
+            map;
+          this._canvas =
+            document.createElement(
+              "canvas"
+            );
+          this._canvas.className =
+            "clorad-dmrl-grid-canvas";
+          this._canvas.style.position =
+            "absolute";
+          this._canvas.style.pointerEvents =
+            "none";
+          this._canvas.style.zIndex =
+            "5";
+          this._canvas.style.display =
+            "block";
+          map.getPanes()
+            .overlayPane
+            .appendChild(
+              this._canvas
+            );
+          dmrlGridCanvas =
+            this._canvas;
+          map.on(
+            "move zoom resize viewreset",
+            this._reset,
+            this
+          );
+          this._reset();
+        },
+        onRemove(map) {
+          map.off(
+            "move zoom resize viewreset",
+            this._reset,
+            this
+          );
+          if (
+            this._canvas &&
+            this._canvas.parentNode
+          ) {
+            this._canvas.parentNode
+              .removeChild(
+                this._canvas
+              );
+          }
+          dmrlGridCanvas =
+            null;
+          this._canvas =
+            null;
+          this._map =
+            null;
+        },
+        _reset() {
+          if (
+            !this._map ||
+            !this._canvas
+          ) {
+            return;
+          }
+          if (
+            !dmrlGridEnabled
+          ) {
+            this._canvas.style.display =
+              "none";
+            return;
+          }
+          this._canvas.style.display =
+            "block";
+          drawDMRLGrid();
+        }
+      });
+    dmrlGridLayer =
+      new GridLayer();
+    if (
+      dmrlGridEnabled
+    ) {
+      dmrlGridLayer.addTo(
+        window.map
+      );
+    }
+  }
+  /* =======================================================
+     GRID — DRAW
+     ======================================================= */
+  function drawDMRLGrid() {
+    if (
+      !dmrlGridCanvas ||
+      !window.map
+    ) {
+      return;
+    }
+    if (
+      !dmrlGridEnabled
+    ) {
+      dmrlGridCanvas.style.display =
+        "none";
+      return;
+    }
+    dmrlGridCanvas.style.display =
+      "block";
+    const map =
+      window.map;
+    const canvas =
+      dmrlGridCanvas;
+    const size =
+      map.getSize();
+    const dpr =
+      Math.min(
+        window.devicePixelRatio || 1,
+        2
+      );
+    canvas.width =
+      Math.max(
+        1,
+        Math.round(
+          size.x * dpr
+        )
+      );
+    canvas.height =
+      Math.max(
+        1,
+        Math.round(
+          size.y * dpr
+        )
+      );
+    canvas.style.width =
+      size.x + "px";
+    canvas.style.height =
+      size.y + "px";
+    const topLeft =
+      map.containerPointToLayerPoint(
+        [0, 0]
+      );
+    L.DomUtil.setPosition(
+      canvas,
+      topLeft
+    );
+    const ctx =
+      canvas.getContext(
+        "2d"
+      );
+    if (!ctx) {
+      return;
+    }
+    ctx.setTransform(
+      dpr,
+      0,
+      0,
+      dpr,
+      0,
+      0
+    );
+    ctx.clearRect(
+      0,
+      0,
+      size.x,
+      size.y
+    );
+    /*
+       Область сетки.
+    */
+    const bounds =
+      getDMRLGridBounds();
+    const northWest =
+      map.latLngToContainerPoint(
+        [
+          bounds.north,
+          bounds.west
+        ]
+      );
+    const southEast =
+      map.latLngToContainerPoint(
+        [
+          bounds.south,
+          bounds.east
+        ]
+      );
+    /*
+       Клетка в метрах.
+    */
+    const cellSize =
+      gifResolution * 1000;
+    /*
+       Web-Mercator метрический
+       масштаб в текущей точке.
+    */
+    const centerLat =
+      (
+        bounds.north +
+        bounds.south
+      ) / 2;
+    const centerPoint =
+      map.latLngToContainerPoint(
+        [
+          centerLat,
+          bounds.west
+        ]
+      );
+    const oneKmPoint =
+      map.latLngToContainerPoint(
+        [
+          centerLat,
+          bounds.west +
+            (
+              1000 /
+              (
+                6378137 *
+                Math.cos(
+                  centerLat *
+                  Math.PI /
+                  180
+                )
+              )
+            ) *
+            180 /
+            Math.PI
+        ]
+      );
+    let pixelsPerKm =
+      Math.abs(
+        oneKmPoint.x -
+        centerPoint.x
+      );
+    /*
+       Защита от странных значений.
+    */
+    if (
+      !Number.isFinite(
+        pixelsPerKm
+      ) ||
+      pixelsPerKm <= 0
+    ) {
+      return;
+    }
+    const cellPixels =
+      pixelsPerKm *
+      gifResolution;
+    /*
+       Если клетка стала меньше
+       половины пикселя — не рисуем
+       миллионы линий.
+    */
+    if (
+      cellPixels < 0.5
+    ) {
+      return;
+    }
+    /*
+       Границы Canvas.
+    */
+    const left =
+      Math.min(
+        northWest.x,
+        southEast.x
+      );
+    const right =
+      Math.max(
+        northWest.x,
+        southEast.x
+      );
+    const top =
+      Math.min(
+        northWest.y,
+        southEast.y
+      );
+    const bottom =
+      Math.max(
+        northWest.y,
+        southEast.y
+      );
+    /*
+       Ограничиваем сетку
+       текущим экраном.
+    */
+    const startX =
+      Math.max(
+        0,
+        Math.floor(
+          left /
+          cellPixels
+        ) *
+        cellPixels
+      );
+    const startY =
+      Math.max(
+        0,
+        Math.floor(
+          top /
+          cellPixels
+        ) *
+        cellPixels
+      );
+    const endX =
+      Math.min(
+        size.x,
+        right
+      );
+    const endY =
+      Math.min(
+        size.y,
+        bottom
+      );
+    /*
+       Сетка должна быть тонкой.
+    */
+    ctx.lineWidth =
+      1;
+    ctx.strokeStyle =
+      "rgba(255,255,255,0.24)";
+    ctx.beginPath();
+    /*
+       Вертикальные линии.
+    */
+    for (
+      let x = startX;
+      x <= endX;
+      x += cellPixels
+    ) {
+      if (
+        x < left ||
+        x > right
+      ) {
+        continue;
+      }
+      ctx.moveTo(
+        Math.round(x) + 0.5,
+        top
+      );
+      ctx.lineTo(
+        Math.round(x) + 0.5,
+        bottom
+      );
+    }
+    /*
+       Горизонтальные линии.
+    */
+    for (
+      let y = startY;
+      y <= endY;
+      y += cellPixels
+    ) {
+      if (
+        y < top ||
+        y > bottom
+      ) {
+        continue;
+      }
+      ctx.moveTo(
+        left,
+        Math.round(y) + 0.5
+      );
+      ctx.lineTo(
+        right,
+        Math.round(y) + 0.5
+      );
+    }
+    ctx.stroke();
+    /*
+       Рамка рабочей области.
+    */
+    ctx.strokeStyle =
+      "rgba(255,255,255,0.38)";
+    ctx.lineWidth =
+      1;
+    ctx.strokeRect(
+      left + 0.5,
+      top + 0.5,
+      right - left,
+      bottom - top
+    );
+  }
+  /* =======================================================
+     GRID — ENABLE / DISABLE
+     ======================================================= */
+  function setDMRLGridEnabled(
+    enabled
+  ) {
+    dmrlGridEnabled =
+      Boolean(
+        enabled
+      );
+    updateDMRLGridButton();
+    if (
+      !window.map
+    ) {
+      return;
+    }
+    if (
+      dmrlGridEnabled
+    ) {
+      createDMRLGridLayer();
+      if (
+        dmrlGridLayer &&
+        !window.map.hasLayer(
+          dmrlGridLayer
+        )
+      ) {
+        dmrlGridLayer.addTo(
+          window.map
+        );
+      }
+      drawDMRLGrid();
+    } else {
+      if (
+        dmrlGridCanvas
+      ) {
+        const ctx =
+          dmrlGridCanvas.getContext(
+            "2d"
+          );
+        if (ctx) {
+          ctx.clearRect(
+            0,
+            0,
+            dmrlGridCanvas.width,
+            dmrlGridCanvas.height
+          );
+        }
+        dmrlGridCanvas.style.display =
+          "none";
+      }
+    }
+  }
+  /* =======================================================
+     GRID — RESIZE
+     ======================================================= */
+  window.addEventListener(
+    "resize",
+    () => {
+      if (
+        dmrlGridEnabled
+      ) {
+        requestAnimationFrame(
+          drawDMRLGrid
+        );
+      }
+    }
+  );
+  /* =======================================================
+     GIF STYLE
      ======================================================= */
   function installGIFStyle() {
     if (
@@ -380,6 +1151,12 @@
         max-width:
           none !important;
         max-height:
+          none !important;
+      }
+      .clorad-dmrl-grid-canvas {
+        pointer-events:
+          none !important;
+        user-select:
           none !important;
       }
     `;
@@ -530,7 +1307,9 @@
           delays?.[i]
         );
       result.push(
-        Number.isFinite(value) &&
+        Number.isFinite(
+          value
+        ) &&
         value > 0
           ? value
           : 700
@@ -655,24 +1434,24 @@
       index + 1,
       index + 2
     ]
-    .filter(
-      i =>
-        i >= 0 &&
-        i < gifFrames.length
-    )
-    .forEach(
-      i => {
-        loadImage(
-          gifFrames[i]
-        )
-        .catch(
-          () => {}
-        );
-      }
-    );
+      .filter(
+        i =>
+          i >= 0 &&
+          i < gifFrames.length
+      )
+      .forEach(
+        i => {
+          loadImage(
+            gifFrames[i]
+          )
+            .catch(
+              () => {}
+            );
+        }
+      );
   }
   /* =======================================================
-     CREATE OVERLAY
+     CREATE GIF OVERLAY
      ======================================================= */
   function createGIFLayer(
     url
@@ -754,6 +1533,16 @@
       preloadGIFNeighbors(
         index
       );
+      /*
+         Сетка должна оставаться
+         поверх/рядом с радаром.
+      */
+      if (
+        dmrlGridEnabled &&
+        dmrlGridLayer
+      ) {
+        dmrlGridLayer.bringToFront();
+      }
     } catch (error) {
       console.error(
         "CLOrad GIF frame:",
@@ -763,10 +1552,15 @@
         requestId ===
         gifFrameRequest
       ) {
-        msg(
-          error?.message ||
-          "Ошибка ДМРЛ-кадра"
-        );
+        if (
+          typeof msg ===
+          "function"
+        ) {
+          msg(
+            error?.message ||
+            "Ошибка ДМРЛ-кадра"
+          );
+        }
       }
     } finally {
       if (
@@ -865,10 +1659,15 @@
       $("framesInfo").textContent =
         error?.message ||
         "Не удалось загрузить ДМРЛ";
-      msg(
-        error?.message ||
-        "Ошибка ДМРЛ композита"
-      );
+      if (
+        typeof msg ===
+        "function"
+      ) {
+        msg(
+          error?.message ||
+          "Ошибка ДМРЛ композита"
+        );
+      }
     } finally {
       hideLoading();
     }
@@ -903,6 +1702,22 @@
     gifMeta =
       null;
     gifImageCache.clear();
+    /*
+       Сетка тоже скрывается,
+       потому что она относится
+       к ДМРЛ-композиту.
+    */
+    if (
+      dmrlGridLayer &&
+      window.map &&
+      window.map.hasLayer(
+        dmrlGridLayer
+      )
+    ) {
+      window.map.removeLayer(
+        dmrlGridLayer
+      );
+    }
     if (
       $("range")
     ) {
@@ -984,7 +1799,8 @@
         const delay =
           Number(
             gifFrameDelays[index]
-          ) || 700;
+          ) ||
+          700;
         showGIFFrame(
           index
         );
@@ -1000,8 +1816,11 @@
       );
     const firstDelay =
       Number(
-        gifFrameDelays[currentIndex]
-      ) || 700;
+        gifFrameDelays[
+          currentIndex
+        ]
+      ) ||
+      700;
     gifPlayTimer =
       setTimeout(
         playNext,
@@ -1030,7 +1849,7 @@
     }
   }
   /* =======================================================
-     EXISTING GIF BUTTON
+     GIF BUTTON
      ======================================================= */
   let gifButton =
     document.getElementById(
@@ -1038,7 +1857,7 @@
     );
   /*
      Если кнопки ещё нет —
-     создаём её автоматически.
+     создаём её.
   */
   if (
     !gifButton
@@ -1060,7 +1879,9 @@
           height="16"
           rx="2"
         />
-        <path d="M9 8v8l6-4z"/>
+        <path
+          d="M9 8v8l6-4z"
+        />
       </svg>
       ДМРЛ композит
     `;
@@ -1083,22 +1904,23 @@
     }
   } else {
     /*
-       Гарантируем правильное
-       название обычной кнопки.
+       Гарантируем название.
     */
-    const textNodes = [];
-    gifButton.childNodes.forEach(
-      node => {
-        if (
-          node.nodeType ===
-          Node.TEXT_NODE
-        ) {
-          textNodes.push(
-            node
-          );
+    const textNodes =
+      [];
+    gifButton.childNodes
+      .forEach(
+        node => {
+          if (
+            node.nodeType ===
+            Node.TEXT_NODE
+          ) {
+            textNodes.push(
+              node
+            );
+          }
         }
-      }
-    );
+      );
     textNodes.forEach(
       node => {
         node.textContent =
@@ -1224,45 +2046,63 @@
     showGIFFrame;
   window.CLOradPlayGIF =
     playGIF;
+  window.CLOradSetDMRLGrid =
+    setDMRLGridEnabled;
+  window.CLOradDMRLGridActive =
+    () =>
+      dmrlGridEnabled;
   /* =======================================================
      INIT
      ======================================================= */
   installGIFStyle();
+  installDMRLSettingsStyle();
   /*
-     Устанавливаем пункт
-     «Разрешение ДМРЛ»
-     в Настройки.
-     Если settings появляется
-     немного позже — наблюдаем
-     за DOM.
+     Настройки могут создаваться
+     другим скриптом позже.
   */
   installGIFResolutionSetting();
+  installDMRLGridSetting();
+  /*
+     Если settings ещё нет —
+     ждём появления DOM.
+  */
   if (
     !document.getElementById(
       "gifResolutionSetting"
+    ) ||
+    !document.getElementById(
+      "dmrlGridSetting"
     )
   ) {
     const observer =
       new MutationObserver(
         () => {
           installGIFResolutionSetting();
+          installDMRLGridSetting();
           if (
             document.getElementById(
               "gifResolutionSetting"
+            ) &&
+            document.getElementById(
+              "dmrlGridSetting"
             )
           ) {
             observer.disconnect();
           }
         }
       );
-    observer.observe(
-      document.body,
-      {
-        childList:
-          true,
-        subtree:
-          true
-      }
-    );
+    if (
+      document.body
+    ) {
+      observer.observe(
+        document.body,
+        {
+          childList:
+            true,
+          subtree:
+            true
+        }
+      );
+    }
   }
 })();
