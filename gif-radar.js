@@ -1982,9 +1982,7 @@
       if (
         dmrlGridEnabled &&
         dmrlGridLayer
-      ) {
-        dmrlGridLayer.bringToFront();
-      }
+      ) 
 
     } catch (error) {
       console.error(
