@@ -4,55 +4,44 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
-
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   crossorigin=""
 >
-
 <link
   rel="stylesheet"
   href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css"
 >
-
 <style>
 *{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent
 }
-
 html,body,#map{
   margin:0;
   width:100%;
   height:100%;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
 }
-
 body{
   overflow:hidden;
   background:#edf0f2;
   color:#eef1f3
 }
-
 button{
   font:inherit;
   cursor:pointer
 }
-
 #map{
   position:fixed;
   inset:0;
   z-index:0
 }
-
 .leaflet-control-attribution{
   font-size:9px!important;
   background:#ffffffaa!important
 }
-
-/* HEADER */
-
 .header{
   position:fixed;
   z-index:20;
@@ -65,20 +54,17 @@ button{
   align-items:center;
   padding:0 20px
 }
-
 .brand{
   display:flex;
   align-items:center;
   gap:10px
 }
-
 .name{
   font-size:34px;
   font-weight:800;
   letter-spacing:-2px;
   color:#f5f6f7
 }
-
 .radarLogo{
   width:49px;
   height:49px;
@@ -92,7 +78,6 @@ button{
   place-items:center;
   box-shadow:0 0 10px #51e29a22
 }
-
 .radarLogo svg{
   width:43px;
   height:43px;
@@ -102,18 +87,15 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .radarLogo .radarDot{
   fill:#51e29a;
   stroke:none
 }
-
 .head{
   margin-left:auto;
   display:flex;
   gap:5px
 }
-
 .h{
   width:51px;
   height:51px;
@@ -125,12 +107,10 @@ button{
   place-items:center;
   position:relative
 }
-
 .h.active{
   background:#222b34;
   border:1px solid #35404a
 }
-
 .h svg{
   width:29px;
   height:29px;
@@ -140,14 +120,10 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .settingsIcon{
   width:29px;
   height:29px
 }
-
-/* NAV */
-
 .nav{
   position:fixed;
   z-index:19;
@@ -166,17 +142,14 @@ button{
   -webkit-overflow-scrolling:touch;
   transition:transform .25s ease,opacity .2s ease
 }
-
 .nav::-webkit-scrollbar{
   display:none
 }
-
 .nav.closed{
   transform:translateY(-100%);
   opacity:0;
   pointer-events:none
 }
-
 .n{
   min-width:88px;
   height:85px;
@@ -197,7 +170,6 @@ button{
   touch-action:pan-x;
   padding:0 7px
 }
-
 .n svg{
   width:30px;
   height:30px;
@@ -208,11 +180,9 @@ button{
   stroke-linejoin:round;
   flex:none
 }
-
 .n.active{
   color:#53e39b
 }
-
 .n.active:after{
   content:"";
   position:absolute;
@@ -222,37 +192,27 @@ button{
   left:8px;
   right:8px
 }
-
 .n:nth-child(1){
   min-width:88px
 }
-
 .n:nth-child(2){
   min-width:125px
 }
-
 .n:nth-child(3){
   min-width:170px
 }
-
 .n:nth-child(4){
   min-width:105px
 }
-
 .n:nth-child(5){
   min-width:125px
 }
-
 .n:nth-child(6){
   min-width:125px
 }
-
 .n:nth-child(7){
   min-width:88px
 }
-
-/* MAP TOOLS */
-
 .tools{
   position:fixed;
   z-index:8;
@@ -262,7 +222,6 @@ button{
   flex-direction:column;
   gap:7px
 }
-
 .tool{
   width:56px;
   height:56px;
@@ -274,7 +233,6 @@ button{
   place-items:center;
   box-shadow:0 3px 9px #0002
 }
-
 .tool svg{
   width:30px;
   height:30px;
@@ -284,181 +242,115 @@ button{
   stroke-linecap:round;
   stroke-linejoin:round
 }
-
 .geoTool svg{
   width:35px;
   height:35px;
   fill:currentColor;
   stroke:none
 }
-
-/* =========================================================
-   LAYERS — ОТДЕЛЬНЫЙ ВЕРХНИЙ UI-СЛОЙ
-========================================================= */
-
 .layers{
   position:fixed !important;
   z-index:2147483647 !important;
-
   left:17px !important;
   top:50% !important;
-
   width:190px !important;
-
   transform:translate3d(0,-50%,0) !important;
-
   background:#182028ef;
-
   border:1px solid #3b4650;
   border-radius:10px;
-
   padding:5px 8px;
-
   box-shadow:0 4px 14px #0003;
-
   transition:
     left .25s,
     opacity .2s;
-
   isolation:isolate;
-
   pointer-events:auto !important;
-
   touch-action:none;
-
   user-select:none;
   -webkit-user-select:none;
 }
-
 .layers.hidden{
   left:-210px !important;
   opacity:0;
-
   pointer-events:none !important;
 }
-
 .layers *{
   pointer-events:auto !important;
 }
-
 .layer{
   height:56px;
-
   display:grid;
-
   grid-template-columns:
     27px
     minmax(0,1fr)
     46px;
-
   align-items:center;
-
   gap:7px;
-
   pointer-events:auto !important;
 }
-
 .layer svg{
   width:27px;
   height:27px;
-
   fill:none;
-
   stroke:#50df98;
-
   stroke-width:2;
-
   stroke-linecap:round;
   stroke-linejoin:round;
-
   flex:none;
-
   pointer-events:none !important;
 }
-
 .layer:nth-child(2) svg{
   stroke:#50aaff
 }
-
 .layer:nth-child(3) svg{
   stroke:#ff777e
 }
-
 .layer span{
   font-size:13px;
   line-height:15px;
-
   min-width:0;
-
   overflow-wrap:break-word;
   word-break:normal;
-
   pointer-events:none !important;
 }
-
 .switch{
   appearance:none;
   -webkit-appearance:none;
-
   width:46px;
   height:26px;
-
   border:0;
   border-radius:18px;
-
   background:#626a70;
-
   position:relative;
-
   padding:0;
   margin:0;
-
   flex:none;
-
   z-index:2147483647 !important;
-
   pointer-events:auto !important;
-
   cursor:pointer;
-
   touch-action:none;
-
   user-select:none;
   -webkit-user-select:none;
-
   outline:none;
-
   display:block;
 }
-
 .switch i{
   position:absolute;
-
   width:20px;
   height:20px;
-
   left:3px;
   top:3px;
-
   border-radius:50%;
-
   background:#f6f7f7;
-
   transition:.2s;
-
   pointer-events:none !important;
 }
-
 .switch.on{
   background:#43d58d
 }
-
 .switch.on i{
   left:23px
 }
-
-/* LEGEND */
-
 .legendTab{
   position:fixed;
   z-index:13;
@@ -479,11 +371,9 @@ button{
   justify-content:center;
   box-shadow:0 3px 12px #0003
 }
-
 .legendTab.hidden{
   display:none
 }
-
 .legend{
   position:fixed;
   z-index:12;
@@ -500,17 +390,14 @@ button{
   overflow:auto;
   box-shadow:0 5px 18px #0004
 }
-
 .legend.open{
   right:0
 }
-
 .legendTitle{
   font-size:16px;
   font-weight:700;
   margin:0 28px 7px 2px
 }
-
 .legendClose{
   position:absolute;
   right:9px;
@@ -523,7 +410,6 @@ button{
   font-size:23px;
   line-height:28px
 }
-
 .li{
   height:23px;
   display:flex;
@@ -532,14 +418,12 @@ button{
   font-size:12px;
   color:#e4e7e9
 }
-
 .box{
   width:21px;
   height:18px;
   border-radius:2px;
   flex:none
 }
-
 .l1{background:#b9c1c7}
 .l2{background:#a9c7f4}
 .l3{background:#63eda5}
@@ -559,9 +443,6 @@ button{
 .l17{background:#e85ae7}
 .l18{background:#ca3cc7}
 .l19{background:#777c91}
-
-/* DATA */
-
 .data{
   position:fixed;
   z-index:7;
@@ -577,7 +458,6 @@ button{
   grid-template-columns:1.25fr 1fr 1fr;
   box-shadow:0 4px 14px #0003
 }
-
 .cell{
   padding:9px 15px;
   border-right:1px solid #303a43;
@@ -585,25 +465,19 @@ button{
   flex-direction:column;
   justify-content:center
 }
-
 .cell:last-child{
   border:0
 }
-
 .lab{
   font-size:10px;
   color:#858e95;
   letter-spacing:.5px
 }
-
 .val{
   font-size:16px;
   font-weight:700;
   margin-top:4px
 }
-
-/* TIMELINE */
-
 .timeline{
   position:fixed;
   z-index:12;
@@ -617,21 +491,18 @@ button{
   padding:8px 14px;
   box-shadow:0 5px 18px #0004
 }
-
 .thead{
   text-align:center;
   font-size:14px;
   height:27px;
   line-height:24px
 }
-
 .trow{
   height:61px;
   display:flex;
   align-items:center;
   gap:12px
 }
-
 .play{
   width:44px;
   height:44px;
@@ -645,18 +516,15 @@ button{
   box-shadow:0 2px 5px #0002;
   transform:translateY(-4px)
 }
-
 .play svg{
   width:25px;
   height:25px;
   fill:currentColor
 }
-
 .slider{
   flex:1;
   min-width:0
 }
-
 .slider input{
   width:100%;
   display:block;
@@ -666,7 +534,6 @@ button{
   border-radius:8px;
   margin:0
 }
-
 .slider input::-webkit-slider-thumb{
   appearance:none;
   width:30px;
@@ -675,7 +542,6 @@ button{
   background:#fff;
   box-shadow:0 1px 5px #0004
 }
-
 .times{
   display:flex;
   justify-content:space-between;
@@ -683,9 +549,6 @@ button{
   font-size:10px;
   margin-top:8px
 }
-
-/* SEARCH */
-
 .popup{
   position:fixed;
   z-index:30;
@@ -695,18 +558,15 @@ button{
   border-radius:9px;
   box-shadow:0 10px 30px #0008
 }
-
 .popup.open{
   display:block
 }
-
 .search{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
-
 .search input{
   width:100%;
   height:42px;
@@ -718,29 +578,23 @@ button{
   font-size:16px;
   outline:none
 }
-
-/* SETTINGS */
-
 .settings{
   right:12px;
   top:88px;
   width:300px;
   padding:8px
 }
-
 .settingsTitle{
   font-size:17px;
   font-weight:700;
   padding:7px 7px 10px
 }
-
 .setting{
   border:1px solid #3d4851;
   border-radius:8px;
   overflow:hidden;
   background:#202930
 }
-
 .settingHead{
   width:100%;
   height:48px;
@@ -751,284 +605,270 @@ button{
   align-items:center;
   justify-content:space-between;
   padding:0 12px;
-  font-size:15px;
   text-align:left
 }
-
 .settingArrow{
-  font-size:21px;
+  font-size:18px;
   transition:transform .2s
 }
-
 .setting.open .settingArrow{
-  transform:rotate(90deg)
+  transform:rotate(180deg)
 }
-
 .settingBody{
   display:none;
   padding:0 12px 12px
 }
-
 .setting.open .settingBody{
   display:block
 }
-
 .framesInfo{
-  font-size:11px;
-  color:#8f999f;
-  margin-bottom:8px
+  font-size:12px;
+  color:#aeb6bc;
+  line-height:16px;
+  margin-bottom:10px
 }
-
 .frameControls{
-  display:flex;
-  align-items:center;
+  display:grid;
+  grid-template-columns:1fr 1fr;
   gap:7px
 }
-
 .frameBtn{
-  width:42px;
-  height:38px;
-  border:1px solid #414d55;
+  height:36px;
+  border:1px solid #47525b;
   border-radius:7px;
-  background:#151c21;
-  color:#e9edef;
-  font-size:21px;
-  display:grid;
-  place-items:center
+  background:#29333b;
+  color:#e9edef
 }
-
 .frameInput{
-  flex:1;
-  min-width:0;
   width:100%;
-  height:38px;
-  border:1px solid #414d55;
+  height:36px;
+  border:1px solid #47525b;
   border-radius:7px;
-  background:#151c21;
-  color:#fff;
-  text-align:center;
-  font-size:15px;
-  outline:none
+  background:#29333b;
+  color:#e9edef;
+  padding:0 8px
 }
-
 .loadingFrames{
-  margin-top:9px;
-  height:3px;
-  border-radius:3px;
-  background:#334047;
-  overflow:hidden;
-  display:none
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:#182028dd;
+  border-radius:8px;
+  font-size:13px;
+  color:#cbd2d6
 }
-
 .loadingFrames.show{
-  display:block
+  display:flex
 }
-
-.loadingFrames i{
-  display:block;
-  width:35%;
-  height:100%;
-  background:#51e29a;
-  animation:loadingMove 1s infinite ease-in-out
+body.light{
+  background:#edf0f2;
+  color:#1c252b
 }
-
-@keyframes loadingMove{
-  0%{transform:translateX(-120%)}
-  100%{transform:translateX(350%) }
-}
-
-/* LIGHT */
-
 body.light .header{
-  background:#f5f6f7
+  background:#f4f6f7
 }
-
 body.light .name{
-  color:#171b1e
+  color:#172027
 }
-
+body.light .radarLogo{
+  background:#e8eeeb
+}
 body.light .h{
-  color:#4f575d
+  color:#48535b
 }
-
 body.light .h.active{
-  background:#e1e5e8
+  background:#dfe5e8;
+  border-color:#c7d0d5
 }
-
 body.light .nav{
-  background:#f5f6f7;
-  border-color:#d4d9dd
+  background:#e3e7e9;
+  border-color:#c9d0d4
 }
-
 body.light .n{
-  color:#687177
+  color:#5f6970
 }
-
+body.light .n.active{
+  color:#17975c
+}
+body.light .tools .tool{
+  background:#f7f9faee;
+  border-color:#cbd2d6;
+  color:#263139
+}
 body.light .layers,
-body.light .tool,
 body.light .legend,
-body.light .legendTab{
-  background:#f6f8f9ee;
-  color:#252b2f;
-  border-color:#c9d0d5
-}
-
-body.light .layer span{
-  color:#252b2f
-}
-
-body.light .tool{
-  color:#30383d
-}
-
+body.light .legendTab,
 body.light .data,
-body.light .timeline{
-  background:#f5f7f8ee;
-  color:#22292d;
-  border-color:#cbd2d6
+body.light .timeline,
+body.light .popup{
+  background:#f7f9faf7;
+  border-color:#cbd2d6;
+  color:#20292f
 }
-
+body.light .layer span,
+body.light .legendTitle,
+body.light .li,
+body.light .val,
+body.light .thead{
+  color:#20292f
+}
 body.light .lab,
-body.light .times{
-  color:#70797f
+body.light .times,
+body.light .framesInfo{
+  color:#657078
 }
-
-body.light .timeline input{
-  background:#a2a9ad
-}
-
-body.light .settings{
-  background:#f6f8f9;
-  color:#20272b;
-  border-color:#c9d0d5
-}
-
-body.light .setting{
-  background:#edf1f3;
-  border-color:#c9d0d5
-}
-
-body.light .settingHead{
-  color:#20272b
-}
-
+body.light .search input,
+body.light .setting,
 body.light .frameBtn,
 body.light .frameInput{
-  background:#fff;
-  color:#20272b;
-  border-color:#c5cdd2
+  background:#e9edef;
+  color:#20292f;
+  border-color:#c7d0d5
 }
-
-/* MOBILE */
-
-@media(max-width:600px){
-
+@media(max-width:700px){
   .header{
-    height:80px;
-    padding:0 17px
+    height:72px;
+    padding:0 12px
   }
-
-  .name{
-    font-size:29px
-  }
-
-  .head{
-    gap:0
-  }
-
-  .h{
-    width:46px
-  }
-
   .nav{
-    top:80px;
+    top:72px;
     height:85px
   }
-
-  .n{
-    min-width:88px;
-  }
-
   .tools{
-    left:17px;
-    top:177px
+    top:170px
   }
-
-  .layers{
-    left:17px !important;
-    width:190px !important
+  .name{
+    font-size:30px
   }
-
+  .radarLogo{
+    width:47px;
+    height:47px
+  }
+  .h{
+    width:46px;
+    height:46px
+  }
+  .h svg{
+    width:27px;
+    height:27px
+  }
+  .n{
+    min-width:88px
+  }
   .data{
     bottom:120px
   }
-
   .timeline{
     bottom:8px
   }
 }
-
+@media(max-width:500px){
+  .header{
+    padding:0 10px
+  }
+  .head{
+    gap:2px
+  }
+  .h{
+    width:43px;
+    height:43px
+  }
+  .name{
+    font-size:28px
+  }
+  .tools{
+    left:12px;
+    top:165px
+  }
+  .tool{
+    width:52px;
+    height:52px
+  }
+  .layers{
+    left:12px !important;
+  }
+  .data{
+    width:calc(100% - 24px);
+    height:68px
+  }
+  .cell{
+    padding:8px 10px
+  }
+  .val{
+    font-size:14px
+  }
+  .timeline{
+    left:6px;
+    right:6px
+  }
+}
+@media(min-width:701px){
+  .n{
+    min-width:88px
+  }
+  .tools{
+    left:17px;
+    top:177px
+  }
+  .layers{
+    left:17px !important;
+    width:190px !important
+  }
+  .data{
+    bottom:120px
+  }
+  .timeline{
+    bottom:8px
+  }
+}
 @media(max-width:430px){
-
   .name{
     font-size:27px
   }
-
   .radarLogo{
     width:46px;
     height:46px
   }
-
   .h:nth-child(2){
     display:grid
   }
-
   .layers{
     width:190px !important
   }
-
   .data{
     width:calc(100% - 34px)
   }
-
   .legend{
     width:220px
   }
-
   .settings{
     right:8px;
     width:calc(100% - 16px)
   }
-
   .n{
     font-size:14px;
     line-height:16px;
   }
-
   .n:nth-child(2){
     min-width:120px
   }
-
   .n:nth-child(3){
     min-width:160px
   }
-
   .n:nth-child(4){
     min-width:105px
   }
-
   .n:nth-child(5){
     min-width:120px
   }
-
   .n:nth-child(6){
     min-width:120px
   }
-
   .n:nth-child(7){
     min-width:88px
   }
-
   .switch{
     z-index:2147483647 !important;
     pointer-events:auto !important
@@ -1036,530 +876,297 @@ body.light .frameInput{
 }
 </style>
 </head>
-
 <body>
-
 <div id="map"></div>
-
 <header class="header">
-
   <div class="brand">
-
     <div class="radarLogo" aria-hidden="true">
-
       <svg viewBox="0 0 48 48">
-
         <circle cx="24" cy="24" r="20"/>
         <circle cx="24" cy="24" r="13"/>
         <circle cx="24" cy="24" r="6"/>
-
         <path d="M24 4v40"/>
         <path d="M4 24h40"/>
-
         <circle
           class="radarDot"
           cx="31.5"
           cy="15.5"
           r="2.3"
         />
-
         <circle
           class="radarDot"
           cx="16"
           cy="31"
           r="1.8"
         />
-
       </svg>
-
     </div>
-
     <div class="name">
       CLOrad
     </div>
-
   </div>
-
   <div class="head">
-
     <button class="h active" id="searchBtn" aria-label="Поиск">
-
       <svg viewBox="0 0 24 24">
         <circle cx="10.5" cy="10.5" r="6.5"/>
         <path d="M16 16l5 5"/>
       </svg>
-
     </button>
-
     <button class="h" id="themeBtn" aria-label="Тема">
-
       <svg viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4"/>
-        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
       </svg>
-
     </button>
-
     <button class="h" id="settingsBtn" aria-label="Настройки">
-
       <svg class="settingsIcon" viewBox="0 0 24 24">
-
-        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
-
-        <path d="M19.4 15.1a1.8 1.8 0 0 0 .35 1.98l.05.05a1.8 1.8 0 1 1-2.55 2.55l-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V21a1.8 1.8 0 1 1-3.6 0v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05A1.8 1.8 0 1 1 4.84 17.1l.05-.05a1.8 1.8 0 0 0 .35-1.98A1.8 1.8 0 0 0 3.6 14H3.5a1.8 1.8 0 1 1 0-3.6h.1a1.8 1.8 0 0 0 1.64-1.1 1.8 1.8 0 0 0-.35-1.98l-.05-.05a1.8 1.8 0 1 1 2.55-2.55l.05.05a1.8 1.8 0 0 0 1.98.35A1.8 1.8 0 0 0 10.5 3.5V3.4a1.8 1.8 0 1 1 3.6 0v.1a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 1.98-.35l.05-.05a1.8 1.8 0 1 1 2.55 2.55l-.05.05a1.8 1.8 0 0 0-.35 1.98A1.8 1.8 0 0 0 21 10.4h.1a1.8 1.8 0 1 1 0 3.6H21a1.8 1.8 0 0 0-1.6 1.1Z"/>
-
+        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 1.7-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.02 1.56V20h-2.4v-.2a1.7 1.7 0 0 0-1.02-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-1.7-1.7.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.56-1.02H6.6v-2.4h.24A1.7 1.7 0 0 0 8.4 10a1.7 1.7 0 0 0-.34-1.88L8 8.06l1.7-1.7.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.66 5.2V5h2.4v.2a1.7 1.7 0 0 0 1.02 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.7 1.7-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1.02h.24v2.4h-.24A1.7 1.7 0 0 0 19.4 15z"/>
       </svg>
-
     </button>
-
-    <button class="h" id="menuBtn" aria-label="Меню">
-
-      <svg viewBox="0 0 24 24">
-        <path d="M4 6h16M4 12h16M4 18h16"/>
-      </svg>
-
-    </button>
-
   </div>
-
 </header>
-
-<div class="popup search" id="search">
-
-  <input
-    id="searchInput"
-    placeholder="Поиск города..."
-  >
-
-</div>
-
-<div class="popup settings" id="settings">
-
-  <div class="settingsTitle">
-    Настройки
-  </div>
-
-  <div class="setting" id="framesSetting">
-
-    <button class="settingHead" id="framesHead">
-
-      <span>
-        Кол. кадров
-      </span>
-
-      <span class="settingArrow">
-        ›
-      </span>
-
-    </button>
-
-    <div class="settingBody">
-
-      <div class="framesInfo" id="framesInfo">
-        Радар пока не подключён
-      </div>
-
-      <div class="frameControls">
-
-        <button class="frameBtn" id="frameMinus">
-          −
-        </button>
-
-        <input
-          class="frameInput"
-          id="frameInput"
-          type="number"
-          min="1"
-          value="24"
-          inputmode="numeric"
-        >
-
-        <button class="frameBtn" id="framePlus">
-          +
-        </button>
-
-      </div>
-
-      <div class="loadingFrames" id="loadingFrames">
-        <i></i>
-      </div>
-
-    </div>
-
-  </div>
-
-</div>
-
 <nav class="nav" id="nav">
-
   <button class="n active">
-
     <svg viewBox="0 0 24 24">
-      <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
+      <path d="M3 12l9-8 9 8"/>
+      <path d="M5 10v10h14V10"/>
+      <path d="M9 20v-6h6v6"/>
     </svg>
-
     Карта
-
   </button>
-
   <button class="n">
-
-    <svg viewBox="0 0 70 45">
-      <path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/>
+    <svg viewBox="0 0 24 24">
+      <path d="M7 18h10"/>
+      <path d="M9 15h6"/>
+      <path d="M10 12h4"/>
+      <path d="M12 3v2"/>
+      <path d="M5 8l1.5 1.5"/>
+      <path d="M19 8l-1.5 1.5"/>
+      <path d="M4 13h2"/>
+      <path d="M20 13h-2"/>
     </svg>
-
     Дым/пепел
-
   </button>
-
   <button class="n">
-
-    <svg viewBox="0 0 36 30">
-      <rect x="13" y="9" width="9" height="9" rx="1.8"/>
-      <path d="M17.5 9V5"/>
-      <path d="M15.5 5h4"/>
-      <path d="M13 11H5v7h8"/>
-      <path d="M9 11v7"/>
-      <path d="M22 11h8v7h-8"/>
-      <path d="M26 11v7"/>
-      <path d="M15 18v5"/>
-      <path d="M20 18v5"/>
-      <path d="M9 6c1.5-1.3 3-2 4.5-2"/>
-      <path d="M26 6c-1.5-1.3-3-2-4.5-2"/>
-      <path d="M28 21.5c0 2.1-1.35 3.5-3 3.5s-3-1.4-3-3.5c0-1.7 1.6-3.7 3-5.5 1.4 1.8 3 3.8 3 5.5Z"/>
+    <svg viewBox="0 0 24 24">
+      <path d="M4 17l4-5 4 3 4-7 4 5"/>
+      <circle cx="8" cy="12" r="1"/>
+      <circle cx="12" cy="15" r="1"/>
+      <circle cx="16" cy="8" r="1"/>
     </svg>
-
     Спутниковые осадки
-
   </button>
-
   <button class="n">
-
     <svg viewBox="0 0 24 24">
-      <path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/>
+      <path d="M12 3l9 18H3L12 3z"/>
+      <path d="M12 9v5"/>
+      <circle cx="12" cy="17" r="1"/>
     </svg>
-
     Предупр.
-
   </button>
-
   <button class="n">
-
-    <svg viewBox="0 0 32 30">
-      <path d="M8 22h16.5a5.5 5.5 0 0 0 .4-11 8 8 0 0 0-15.3-1.9 A6.3 6.3 0 0 0 8 22Z"/>
-      <path d="M16 20V12"/>
-      <path d="M12.8 15.2 16 12l3.2 3.2"/>
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8"/>
+      <path d="M8 9h8M8 12h8M8 15h5"/>
     </svg>
-
     Фаза облака
-
   </button>
-
   <button class="n" id="rainProduct">
-
     <svg viewBox="0 0 24 24">
-      <path d="M5 20V11M12 20V6M19 20V3"/>
+      <path d="M7 4h10"/>
+      <path d="M9 4v5l-4 7a4 4 0 0 0 3.5 4h7a4 4 0 0 0 3.5-4l-4-7V4"/>
+      <path d="M8 14h8"/>
     </svg>
-
     Осадки-мм/ч
-
   </button>
-
   <button class="n active" id="layersNav">
-
     <svg viewBox="0 0 24 24">
-      <path d="M4 7h16M4 12h16M4 17h16"/>
+      <path d="M12 3l9 5-9 5-9-5 9-5z"/>
+      <path d="M3 12l9 5 9-5"/>
+      <path d="M3 16l9 5 9-5"/>
     </svg>
-
     Слои
-
   </button>
-
 </nav>
-
 <div class="tools">
-
-  <button class="tool" id="plus" aria-label="Увеличить">
-
+  <button class="tool" id="plus" aria-label="Приблизить">
     <svg viewBox="0 0 24 24">
       <path d="M12 5v14M5 12h14"/>
     </svg>
-
   </button>
-
-  <button class="tool" id="minus" aria-label="Уменьшить">
-
+  <button class="tool" id="minus" aria-label="Отдалить">
     <svg viewBox="0 0 24 24">
       <path d="M5 12h14"/>
     </svg>
-
   </button>
-
   <button class="tool geoTool" id="geo" aria-label="Моё местоположение">
-
     <svg viewBox="0 0 24 24">
-      <path d="M20.2 3.8 4.1 10.7c-.72.31-.67 1.35.08 1.57l6.05 1.76 1.76 6.05c.22.75 1.26.8 1.57.08l6.91-16.1c.29-.67-.27-1.23-.94-.94Z"/>
+      <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 4a6 6 0 1 1-6 6 6 6 0 0 1 6-6z"/>
+      <circle cx="12" cy="12" r="2.5"/>
     </svg>
-
   </button>
-
 </div>
-
-<!-- =====================================================
-     LAYERS
-===================================================== -->
-
-<div class="layers" id="layers">
-
+<div class="layers hidden" id="layers">
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 2v3"/>
+      <path d="M12 3v18M3 12h18"/>
+      <path d="M7 7l10 10M17 7L7 17"/>
     </svg>
-
-    <span>
-      Опасные явления
-    </span>
-
-    <button
-      class="switch on"
-      id="oyaSwitch"
-      type="button"
-    >
+    <span>Опасные явления</span>
+    <button class="switch" id="oyaSwitch">
       <i></i>
     </button>
-
   </div>
-
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/>
-      <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/>
+      <path d="M4 18h16"/>
+      <path d="M6 15l3-6 3 4 3-8 3 10"/>
     </svg>
-
-    <span>
-      Отражаемость
-    </span>
-
-    <button
-      class="switch"
-      id="reflectivitySwitch"
-      type="button"
-    >
+    <span>Отражаемость</span>
+    <button class="switch" id="reflectivitySwitch">
       <i></i>
     </button>
-
   </div>
-
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
+      <path d="M12 2v20"/>
+      <path d="M2 12h20"/>
+      <path d="M5 5l14 14"/>
+      <path d="M19 5L5 19"/>
     </svg>
-
-    <span>
-      Молнии
-    </span>
-
-    <button
-      class="switch on"
-      id="lightningSwitch"
-      type="button"
-    >
+    <span>Молнии</span>
+    <button class="switch" id="lightningSwitch">
       <i></i>
     </button>
-
   </div>
-
 </div>
-
-<button class="legendTab" id="legendTab">
+<div class="legendTab" id="legendTab">
   Легенда
-</button>
-
+</div>
 <div class="legend" id="legend">
-
-  <button class="legendClose" id="legendClose">
-    ×
-  </button>
-
-  <div class="legendTitle">
-    Условные обозначения
-  </div>
-
-  <div class="li"><i class="box l1"></i>обл. сред. яруса</div>
-  <div class="li"><i class="box l2"></i>сл. образования</div>
-  <div class="li"><i class="box l3"></i>осадки слабые</div>
-  <div class="li"><i class="box l4"></i>осадки умеренные</div>
-  <div class="li"><i class="box l5"></i>осадки сильные</div>
-  <div class="li"><i class="box l6"></i>кучевая обл</div>
-  <div class="li"><i class="box l7"></i>ливень слабый</div>
-  <div class="li"><i class="box l8"></i>ливень умеренный</div>
-  <div class="li"><i class="box l9"></i>ливень сильный</div>
-  <div class="li"><i class="box l10"></i>гроза (R)</div>
-  <div class="li"><i class="box l11"></i>гроза R)</div>
-  <div class="li"><i class="box l12"></i>гроза R</div>
-  <div class="li"><i class="box l13"></i>град слабый</div>
-  <div class="li"><i class="box l14"></i>град умеренный</div>
-  <div class="li"><i class="box l15"></i>град сильный</div>
-  <div class="li"><i class="box l16"></i>шквал слабый</div>
-  <div class="li"><i class="box l17"></i>шквал умеренный</div>
-  <div class="li"><i class="box l18"></i>шквал сильный</div>
-  <div class="li"><i class="box l19"></i>смерч</div>
-
+  <button class="legendClose" id="legendClose">×</button>
+  <div class="legendTitle">Отражаемость</div>
+  <div class="li"><span class="box l1"></span><span>&lt; 0 dBZ</span></div>
+  <div class="li"><span class="box l2"></span><span>0–5 dBZ</span></div>
+  <div class="li"><span class="box l3"></span><span>5–10 dBZ</span></div>
+  <div class="li"><span class="box l4"></span><span>10–15 dBZ</span></div>
+  <div class="li"><span class="box l5"></span><span>15–20 dBZ</span></div>
+  <div class="li"><span class="box l6"></span><span>20–25 dBZ</span></div>
+  <div class="li"><span class="box l7"></span><span>25–30 dBZ</span></div>
+  <div class="li"><span class="box l8"></span><span>30–35 dBZ</span></div>
+  <div class="li"><span class="box l9"></span><span>35–40 dBZ</span></div>
+  <div class="li"><span class="box l10"></span><span>40–45 dBZ</span></div>
+  <div class="li"><span class="box l11"></span><span>45–50 dBZ</span></div>
+  <div class="li"><span class="box l12"></span><span>50–55 dBZ</span></div>
+  <div class="li"><span class="box l13"></span><span>55–60 dBZ</span></div>
+  <div class="li"><span class="box l14"></span><span>60–65 dBZ</span></div>
+  <div class="li"><span class="box l15"></span><span>65–70 dBZ</span></div>
+  <div class="li"><span class="box l16"></span><span>70–75 dBZ</span></div>
+  <div class="li"><span class="box l17"></span><span>75–80 dBZ</span></div>
+  <div class="li"><span class="box l18"></span><span>80–85 dBZ</span></div>
+  <div class="li"><span class="box l19"></span><span>&gt; 85 dBZ</span></div>
 </div>
-
 <div class="data">
-
   <div class="cell">
-
-    <div class="lab">
-      ИНТЕНСИВНОСТЬ:
-    </div>
-
-    <div class="val" id="intensityValue">
-      Нет данных
-    </div>
-
+    <div class="lab">ВРЕМЯ</div>
+    <div class="val" id="timeLabel">Радар не подключён</div>
   </div>
-
   <div class="cell">
-
-    <div class="lab">
-      ГРОЗА
-    </div>
-
-    <div class="val">
-      —
-    </div>
-
+    <div class="lab">ИНТЕНСИВНОСТЬ</div>
+    <div class="val" id="intensityValue">Нет данных</div>
   </div>
-
   <div class="cell">
-
-    <div class="lab">
-      СКОРОСТЬ:
-    </div>
-
-    <div class="val">
-      —
-    </div>
-
+    <div class="lab">КАДРЫ</div>
+    <div class="val" id="framesInfo">Радар пока не подключён</div>
   </div>
-
 </div>
-
 <div class="timeline">
-
-  <div class="thead" id="timeLabel">
-    Радар не подключён
-  </div>
-
+  <div class="thead" id="timelineTitle">Временная шкала</div>
   <div class="trow">
-
-    <button class="play" id="play">
-
+    <button class="play" id="play" aria-label="Воспроизвести">
       <svg viewBox="0 0 24 24">
         <path d="M7 4l13 8-13 8z"/>
       </svg>
-
     </button>
-
     <div class="slider">
-
-      <input
-        id="range"
-        type="range"
-        min="0"
-        max="0"
-        step="1"
-        value="0"
-      >
-
+      <input id="range" type="range" min="0" max="0" value="0">
       <div class="times" id="times"></div>
-
     </div>
-
   </div>
-
 </div>
-
+<div class="popup search" id="searchPopup">
+  <input id="searchInput" placeholder="Поиск..." autocomplete="off">
+</div>
+<div class="popup settings" id="settingsPopup">
+  <div class="settingsTitle">Настройки</div>
+  <div class="setting" id="framesSetting">
+    <button class="settingHead" type="button">
+      <span>Кадры</span>
+      <span class="settingArrow">⌄</span>
+    </button>
+    <div class="settingBody">
+      <div class="framesInfo">
+        Количество кадров временной шкалы
+      </div>
+      <div class="frameControls">
+        <button class="frameBtn" id="frameMinus">−</button>
+        <button class="frameBtn" id="framePlus">+</button>
+        <input class="frameInput" id="frameInput" type="number" min="1" max="200" value="24">
+      </div>
+    </div>
+  </div>
+  <div class="setting" id="themeSetting">
+    <button class="settingHead" type="button">
+      <span>Тема</span>
+      <span class="settingArrow">⌄</span>
+    </button>
+    <div class="settingBody">
+      <div class="framesInfo">
+        Светлая или тёмная тема интерфейса
+      </div>
+    </div>
+  </div>
+</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
-
 <script>
 window.maplibregl = maplibregl;
 </script>
-
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
-
 <script>
-
-/* =========================================================
-   MAP
-========================================================= */
-
 const map =
   L.map(
     "map",
     {
       zoomControl:false,
       attributionControl:true,
-      preferCanvas:false,
-      zoomAnimation:true,
-      fadeAnimation:false,
-      markerZoomAnimation:false,
-      worldCopyJump:false,
       minZoom:2,
-      maxZoom:14
+      maxZoom:18
     }
   ).setView(
     [55.75,37.62],
-    5
+    4
   );
-
 window.map = map;
-
-/* =========================================================
-   CLOrad — OPENFREEMAP DARK
-========================================================= */
-
 const cloradBaseMap =
   L.maplibreGL({
     style:
       "https://tiles.openfreemap.org/styles/dark",
-
     interactive:false,
-
     attribution:
       "© OpenFreeMap · © OpenStreetMap contributors"
   }).addTo(map);
-
 window.CLOradBaseMap =
   cloradBaseMap;
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
 const $ =
   id =>
     document.getElementById(id);
-
 function msg(text){
-
   const x =
     document.createElement("div");
-
   x.textContent =
     text;
-
   x.style =
     "position:fixed;" +
     "z-index:2147483646;" +
@@ -1575,38 +1182,23 @@ function msg(text){
     "max-width:calc(100% - 30px);" +
     "overflow:hidden;" +
     "text-overflow:ellipsis;";
-
   document.body.appendChild(x);
-
   setTimeout(
     () => x.remove(),
     1800
   );
 }
-
-/* =========================================================
-   MAP CONTROLS
-========================================================= */
-
 $("plus").onclick =
   () => map.zoomIn();
-
 $("minus").onclick =
   () => map.zoomOut();
-
 $("geo").onclick = () => {
-
   if(!navigator.geolocation){
-
     msg("Геолокация недоступна");
-
     return;
   }
-
   navigator.geolocation.getCurrentPosition(
-
     position => {
-
       map.setView(
         [
           position.coords.latitude,
@@ -1614,1317 +1206,674 @@ $("geo").onclick = () => {
         ],
         9
       );
-
       msg("Местоположение найдено");
-
     },
-
     () => {
-
       msg("Не удалось определить местоположение");
-
     },
-
     {
       enableHighAccuracy:true,
       timeout:10000,
       maximumAge:60000
     }
-
   );
-
 };
-
-/* =========================================================
-   LAYERS — НАДЁЖНОЕ УПРАВЛЕНИЕ
-========================================================= */
-
 const layers =
   $("layers");
-
 const oyaSwitch =
   $("oyaSwitch");
-
 const reflectivitySwitch =
   $("reflectivitySwitch");
-
 const lightningSwitch =
   $("lightningSwitch");
-
 const layersNav =
   $("layersNav");
-
-/* =========================================================
-   ПЕРЕНОС ПАНЕЛИ НЕПОСРЕДСТВЕННО В BODY
-========================================================= */
-
 if(
   layers &&
   layers.parentElement !== document.body
 ){
-
   document.body.appendChild(
     layers
   );
-
 }
-
-/* =========================================================
-   ОТКРЫТИЕ / ЗАКРЫТИЕ ПАНЕЛИ
-========================================================= */
-
 function toggleLayers(){
-
   if(!layers){
     return;
   }
-
   layers.classList.toggle(
     "hidden"
   );
-
 }
-
-/* =========================================================
-   ЗАЩИТА КНОПКИ "СЛОИ"
-   ОТ NAV / LEAFLET / MAPLIBRE
-========================================================= */
-
 document.addEventListener(
   "pointerdown",
   event => {
-
     const target =
       event.target;
-
     if(
       target &&
       target.closest &&
       target.closest("#layersNav")
     ){
-
       event.preventDefault();
       event.stopPropagation();
-
     }
-
   },
   true
 );
-
 document.addEventListener(
   "click",
   event => {
-
     const target =
       event.target;
-
-    if(
-      !target ||
-      !target.closest
-    ){
-
+    if(!target || !target.closest){
       return;
-
     }
-
     const layersButton =
-      target.closest(
-        "#layersNav"
-      );
-
-    if(
-      layersButton
-    ){
-
+      target.closest("#layersNav");
+    if(layersButton){
       event.preventDefault();
       event.stopPropagation();
-
       toggleLayers();
-
-      return;
-
     }
-
   },
   true
 );
-
-/* =========================================================
-   ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ
-========================================================= */
-
 function toggleLayerSwitch(
   element,
   onMessage,
   offMessage
 ){
-
   if(!element){
     return;
   }
-
   element.addEventListener(
     "pointerdown",
     event => {
-
       event.preventDefault();
       event.stopPropagation();
-
     },
     true
   );
-
   element.addEventListener(
     "click",
     event => {
-
       event.preventDefault();
       event.stopPropagation();
-
-      element.classList.toggle(
-        "on"
-      );
-
+      element.classList.toggle("on");
       const enabled =
-        element.classList.contains(
-          "on"
-        );
-
+        element.classList.contains("on");
       msg(
         enabled
           ? onMessage
           : offMessage
       );
-
     },
     true
   );
-
 }
-
 toggleLayerSwitch(
   oyaSwitch,
   "Опасные явления",
   "Опасные явления выключены"
 );
-
 toggleLayerSwitch(
   reflectivitySwitch,
   "Отражаемость",
   "Отражаемость выключена"
 );
-
 toggleLayerSwitch(
   lightningSwitch,
   "Молнии",
   "Молнии выключены"
 );
-
-/* =========================================================
-   LEGEND
-========================================================= */
-
-$("legendTab").onclick = () => {
-
-  $("legend").classList.add("open");
-  $("legendTab").classList.add("hidden");
-
-};
-
-$("legendClose").onclick = () => {
-
-  $("legend").classList.remove("open");
-  $("legendTab").classList.remove("hidden");
-
-};
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
 const nav =
   $("nav");
-
 let dragging = false;
 let dragStartX = 0;
 let dragScroll = 0;
-
 nav.addEventListener(
   "pointerdown",
   event => {
-
     if(
       event.target &&
       event.target.closest &&
       event.target.closest("#layersNav")
     ){
-
       return;
-
     }
-
     dragging = true;
-
     dragStartX =
       event.clientX;
-
     dragScroll =
       nav.scrollLeft;
-
     nav.setPointerCapture?.(
       event.pointerId
     );
-
   }
 );
-
 nav.addEventListener(
   "pointermove",
   event => {
-
     if(!dragging){
       return;
     }
-
     nav.scrollLeft =
       dragScroll -
       (
         event.clientX -
         dragStartX
       );
-
   }
 );
-
 nav.addEventListener(
   "pointerup",
   () => {
     dragging = false;
   }
 );
-
 nav.addEventListener(
   "pointercancel",
   () => {
     dragging = false;
   }
 );
-
-/* =========================================================
-   SEARCH
-========================================================= */
-
-const cities = {
-
-  "москва":[55.75,37.62],
-  "уфа":[54.74,55.97],
-  "казань":[55.79,49.12],
-  "самара":[53.20,50.10],
-  "нижний новгород":[56.33,44.01],
-  "санкт-петербург":[59.93,30.31],
-  "екатеринбург":[56.84,60.61],
-  "омск":[54.99,73.37],
-  "новосибирск":[55.03,82.92],
-  "челябинск":[55.16,61.40],
-  "пермь":[58.01,56.25],
-  "воронеж":[51.67,39.18],
-  "ростов":[47.23,39.70]
-
-};
-
-$("searchBtn").onclick = () => {
-
-  $("search").classList.toggle("open");
-
-  $("settings").classList.remove("open");
-
-  if(
-    $("search").classList.contains("open")
-  ){
-
-    setTimeout(
-      () => $("searchInput").focus(),
-      50
-    );
-
-  }
-
-};
-
-$("searchInput").onkeydown =
+const searchBtn =
+  $("searchBtn");
+const themeBtn =
+  $("themeBtn");
+const settingsBtn =
+  $("settingsBtn");
+const searchPopup =
+  $("searchPopup");
+const settingsPopup =
+  $("settingsPopup");
+searchBtn.onclick =
   event => {
-
-    if(event.key !== "Enter"){
-      return;
+    event.stopPropagation();
+    searchPopup.classList.toggle("open");
+    settingsPopup.classList.remove("open");
+    if(searchPopup.classList.contains("open")){
+      $("searchInput").focus();
     }
-
-    const query =
-      event.target.value
-        .toLowerCase()
-        .trim();
-
-    const city =
-      Object.keys(cities)
-        .find(
-          name =>
-            name.includes(query)
-        );
-
-    if(!city){
-
-      msg("Город не найден");
-
-      return;
-
-    }
-
-    map.setView(
-      cities[city],
-      9
-    );
-
-    $("search").classList.remove("open");
-
-    msg(
-      city.charAt(0).toUpperCase() +
-      city.slice(1)
-    );
-
   };
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-$("settingsBtn").onclick = () => {
-
-  $("settings").classList.toggle("open");
-
-  $("search").classList.remove("open");
-
-};
-
-$("framesHead").onclick = () => {
-
-  $("framesSetting").classList.toggle("open");
-
-};
-
-let frameCount = 24;
-
-$("frameMinus").onclick = () => {
-
-  frameCount =
-    Math.max(
-      1,
-      frameCount - 1
+themeBtn.onclick =
+  event => {
+    event.stopPropagation();
+    document.body.classList.toggle("light");
+    msg(
+      document.body.classList.contains("light")
+        ? "Светлая тема"
+        : "Тёмная тема"
     );
-
-  $("frameInput").value =
-    frameCount;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-$("framePlus").onclick = () => {
-
-  frameCount++;
-
-  $("frameInput").value =
-    frameCount;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-$("frameInput").onchange = () => {
-
-  let value =
-    parseInt(
-      $("frameInput").value,
-      10
-    );
-
-  if(
-    !Number.isFinite(value) ||
-    value < 1
-  ){
-    value = 1;
-  }
-
-  frameCount = value;
-
-  $("frameInput").value = value;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-/* =========================================================
-   MENU
-========================================================= */
-
-$("menuBtn").onclick = () => {
-
-  nav.classList.toggle("closed");
-
-  $("search").classList.remove("open");
-  $("settings").classList.remove("open");
-
-};
-
-/* =========================================================
-   THEME
-========================================================= */
-
-let darkMode = true;
-
-$("themeBtn").onclick = () => {
-
-  darkMode = !darkMode;
-
-  document.body.classList.toggle(
-    "light",
-    !darkMode
-  );
-
-  msg(
-    darkMode
-      ? "Тёмная тема"
-      : "Светлая тема"
-  );
-
-};
-
-/* =========================================================
-   CLOSE POPUPS
-========================================================= */
-
+  };
+settingsBtn.onclick =
+  event => {
+    event.stopPropagation();
+    settingsPopup.classList.toggle("open");
+    searchPopup.classList.remove("open");
+  };
 document.addEventListener(
   "click",
   event => {
-
     if(
-      !event.target.closest(".search") &&
-      !event.target.closest("#searchBtn")
+      !event.target.closest(".popup") &&
+      !event.target.closest(".h")
     ){
-
-      $("search").classList.remove("open");
-
+      searchPopup.classList.remove("open");
+      settingsPopup.classList.remove("open");
     }
-
-    if(
-      !event.target.closest(".settings") &&
-      !event.target.closest("#settingsBtn")
-    ){
-
-      $("settings").classList.remove("open");
-
-    }
-
   }
 );
-
-/* =========================================================
-   IDARKMETEO
-========================================================= */
-
-const IDARK_PROXY =
-  "/api/idarkmeteo?path=";
-
-let activeProduct = null;
-let activeFrames = [];
-let activeLayer = null;
-let activeMetadata = null;
-
-let activeRequest = 0;
-let activeFrameRequest = 0;
-
-/* =========================================================
-   PRODUCT CONFIG
-========================================================= */
-
+document.querySelectorAll(
+  ".settingHead"
+).forEach(
+  button => {
+    button.addEventListener(
+      "click",
+      () => {
+        button.parentElement.classList.toggle(
+          "open"
+        );
+      }
+    );
+  }
+);
+let frameCount = 24;
+const frameInput =
+  $("frameInput");
+const frameMinus =
+  $("frameMinus");
+const framePlus =
+  $("framePlus");
+function setFrameCount(value){
+  frameCount =
+    Math.max(
+      1,
+      Math.min(
+        200,
+        Number(value) || 1
+      )
+    );
+  frameInput.value =
+    frameCount;
+  if(
+    typeof window.CLOradReloadRadarFrames ===
+    "function"
+  ){
+    window.CLOradReloadRadarFrames();
+  }
+}
+frameMinus.onclick =
+  () => setFrameCount(
+    frameCount - 1
+  );
+framePlus.onclick =
+  () => setFrameCount(
+    frameCount + 1
+  );
+frameInput.onchange =
+  () => setFrameCount(
+    frameInput.value
+  );
+const legendTab =
+  $("legendTab");
+const legend =
+  $("legend");
+const legendClose =
+  $("legendClose");
+legendTab.onclick =
+  () => {
+    legend.classList.toggle("open");
+  };
+legendClose.onclick =
+  () => {
+    legend.classList.remove("open");
+  };
+document.addEventListener(
+  "click",
+  event => {
+    if(
+      !event.target.closest("#legend") &&
+      !event.target.closest("#legendTab")
+    ){
+      legend.classList.remove("open");
+    }
+  }
+);
+const proxyUrl =
+  path =>
+    path.startsWith("http")
+      ? path
+      : path;
+function fetchWithTimeout(
+  url,
+  options = {},
+  timeout = 30000
+){
+  const controller =
+    new AbortController();
+  const timer =
+    setTimeout(
+      () => controller.abort(),
+      timeout
+    );
+  return fetch(
+    url,
+    {
+      ...options,
+      signal:
+        controller.signal
+    }
+  ).finally(
+    () => clearTimeout(timer)
+  );
+}
+function formatFrameTime(value){
+  if(!value){
+    return "—";
+  }
+  const date =
+    new Date(value);
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+    return String(value);
+  }
+  return date.toLocaleString(
+    "ru-RU",
+    {
+      day:"2-digit",
+      month:"2-digit",
+      hour:"2-digit",
+      minute:"2-digit"
+    }
+  );
+}
+function makeBounds(box){
+  if(
+    !Array.isArray(box) ||
+    box.length < 4
+  ){
+    return null;
+  }
+  const minLon =
+    Number(box[0]);
+  const minLat =
+    Number(box[1]);
+  const maxLon =
+    Number(box[2]);
+  const maxLat =
+    Number(box[3]);
+  if(
+    !Number.isFinite(minLon) ||
+    !Number.isFinite(minLat) ||
+    !Number.isFinite(maxLon) ||
+    !Number.isFinite(maxLat)
+  ){
+    return null;
+  }
+  return [
+    [minLat,minLon],
+    [maxLat,maxLon]
+  ];
+}
+async function inflateDeflate(
+  buffer
+){
+  if(
+    typeof DecompressionStream !==
+    "undefined"
+  ){
+    try{
+      const stream =
+        new Blob(
+          [buffer]
+        ).stream().pipeThrough(
+          new DecompressionStream(
+            "deflate"
+          )
+        );
+      return await new Response(
+        stream
+      ).arrayBuffer();
+    }catch{}
+  }
+  throw new Error(
+    "Браузер не поддерживает распаковку RDR"
+  );
+}
+function readUint16(
+  view,
+  offset,
+  little = true
+){
+  return view.getUint16(
+    offset,
+    little
+  );
+}
+function readUint32(
+  view,
+  offset,
+  little = true
+){
+  return view.getUint32(
+    offset,
+    little
+  );
+}
+function decodeRDR(
+  buffer
+){
+  const bytes =
+    new Uint8Array(buffer);
+  const text =
+    new TextDecoder(
+      "utf-8",
+      {
+        fatal:false
+      }
+    ).decode(bytes);
+  let json = null;
+  try{
+    json =
+      JSON.parse(text);
+  }catch{}
+  if(
+    json &&
+    typeof json === "object"
+  ){
+    return json;
+  }
+  const view =
+    new DataView(buffer);
+  if(
+    view.byteLength < 16
+  ){
+    throw new Error(
+      "RDR слишком короткий"
+    );
+  }
+  const magic =
+    new TextDecoder()
+      .decode(
+        bytes.slice(
+          0,
+          4
+        )
+      );
+  if(
+    magic !== "RDR1" &&
+    magic !== "RDR2"
+  ){
+    throw new Error(
+      "Неизвестный формат RDR"
+    );
+  }
+  const width =
+    readUint16(
+      view,
+      4
+    );
+  const height =
+    readUint16(
+      view,
+      6
+    );
+  const minLon =
+    view.getFloat32(
+      8,
+      true
+    );
+  const minLat =
+    view.getFloat32(
+      12,
+      true
+    );
+  const maxLon =
+    view.getFloat32(
+      16,
+      true
+    );
+  const maxLat =
+    view.getFloat32(
+      20,
+      true
+    );
+  return {
+    width,
+    height,
+    box:[
+      minLon,
+      minLat,
+      maxLon,
+      maxLat
+    ],
+    bytes
+  };
+}
+function rgbaToDataURL(
+  rgba,
+  width,
+  height
+){
+  const canvas =
+    document.createElement("canvas");
+  canvas.width =
+    width;
+  canvas.height =
+    height;
+  const context =
+    canvas.getContext(
+      "2d"
+    );
+  const imageData =
+    context.createImageData(
+      width,
+      height
+    );
+  imageData.data.set(
+    rgba
+  );
+  context.putImageData(
+    imageData,
+    0,
+    0
+  );
+  return canvas.toDataURL(
+    "image/png"
+  );
+}
+async function rdrToImageUrl(
+  buffer
+){
+  const decoded =
+    decodeRDR(buffer);
+  if(
+    decoded &&
+    decoded.image
+  ){
+    return {
+      url:
+        decoded.image,
+      header:
+        decoded
+    };
+  }
+  if(
+    decoded &&
+    decoded.data &&
+    decoded.width &&
+    decoded.height
+  ){
+    const data =
+      decoded.data;
+    let rgba;
+    if(
+      typeof data ===
+      "string"
+    ){
+      const binary =
+        atob(data);
+      const bytes =
+        new Uint8Array(
+          binary.length
+        );
+      for(
+        let i=0;
+        i<binary.length;
+        i++
+      ){
+        bytes[i] =
+          binary.charCodeAt(i);
+      }
+      rgba =
+        bytes;
+    }else{
+      rgba =
+        new Uint8ClampedArray(
+          data
+        );
+    }
+    return {
+      url:
+        rgbaToDataURL(
+          rgba,
+          decoded.width,
+          decoded.height
+        ),
+      header:
+        decoded
+    };
+  }
+  throw new Error(
+    "Не удалось декодировать RDR"
+  );
+}
 const products = {
-
   rain:{
     button:"rainProduct",
     framePath:"frames/rain/wide.json",
     title:"Осадки",
     units:"мм/ч"
   },
-
   smoke:{
     button:null,
     framePath:"frames/smoke/swath.json",
     title:"Дым/пепел",
     units:""
   },
-
   satrain:{
     button:null,
     framePath:"frames/satrain/coarse.json",
     title:"Спутниковые осадки",
     units:"мм/ч"
   },
-
   cloudphase:{
     button:null,
     framePath:"frames/cloudphase/swath.json",
     title:"Фаза облака",
     units:""
   }
-
 };
-
-/* =========================================================
-   PROXY
-========================================================= */
-
-function proxyUrl(path){
-
-  return (
-    IDARK_PROXY +
-    encodeURIComponent(
-      path
-    )
-  );
-
-}
-
-/* =========================================================
-   TIMEOUT FETCH
-========================================================= */
-
-async function fetchWithTimeout(
-  url,
-  options = {},
-  timeout = 30000
-){
-
-  const controller =
-    new AbortController();
-
-  const timer =
-    setTimeout(
-      () => controller.abort(),
-      timeout
-    );
-
-  try{
-
-    return await fetch(
-      url,
-      {
-        ...options,
-        signal:controller.signal
-      }
-    );
-
-  }finally{
-
-    clearTimeout(timer);
-
-  }
-
-}
-
-/* =========================================================
-   FORMAT TIME
-========================================================= */
-
-function formatFrameTime(value){
-
-  if(!value){
-    return "—";
-  }
-
-  const date =
-    new Date(value);
-
-  if(
-    Number.isNaN(
-      date.getTime()
-    )
-  ){
-
-    return String(value);
-
-  }
-
-  return date.toLocaleTimeString(
-    "ru-RU",
-    {
-      hour:"2-digit",
-      minute:"2-digit",
-      timeZone:"Europe/Moscow"
-    }
-  );
-
-}
-
-/* =========================================================
-   EPSG:3857 → LEAFLET BOUNDS
-========================================================= */
-
-function makeBounds(box){
-
-  if(
-    !Array.isArray(box) ||
-    box.length < 4
-  ){
-
-    throw new Error(
-      "Некорректный box"
-    );
-
-  }
-
-  const back =
-    (x,y) =>
-      L.Projection
-        .SphericalMercator
-        .unproject(
-          L.point(
-            x,
-            y
-          )
-        );
-
-  return L.latLngBounds(
-
-    back(
-      Number(box[0]),
-      Number(box[1])
-    ),
-
-    back(
-      Number(box[2]),
-      Number(box[3])
-    )
-
-  );
-
-}
-
-/* =========================================================
-   DEFLATE
-========================================================= */
-
-async function inflateDeflate(
-  bytes
-){
-
-  if(
-    typeof DecompressionStream ===
-    "undefined"
-  ){
-
-    throw new Error(
-      "Браузер не поддерживает DecompressionStream"
-    );
-
-  }
-
-  const stream =
-    new Blob(
-      [bytes]
-    ).stream().pipeThrough(
-      new DecompressionStream(
-        "deflate"
-      )
-    );
-
-  const buffer =
-    await new Response(
-      stream
-    ).arrayBuffer();
-
-  return new Uint8Array(
-    buffer
-  );
-
-}
-
-/* =========================================================
-   RDR PARSE
-========================================================= */
-
-async function decodeRDR(
-  buffer
-){
-
-  const bytes =
-    new Uint8Array(
-      buffer
-    );
-
-  if(
-    bytes.length < 9
-  ){
-
-    throw new Error(
-      "RDR-файл слишком маленький"
-    );
-
-  }
-
-  const signature =
-    String.fromCharCode(
-      bytes[0],
-      bytes[1],
-      bytes[2],
-      bytes[3]
-    );
-
-  if(
-    signature !== "IDMR"
-  ){
-
-    throw new Error(
-      "Неверная подпись RDR"
-    );
-
-  }
-
-  if(
-    bytes[4] !== 1
-  ){
-
-    throw new Error(
-      "Неподдерживаемая версия RDR"
-    );
-
-  }
-
-  const view =
-    new DataView(
-      buffer
-    );
-
-  const headerLength =
-    view.getUint32(
-      5,
-      true
-    );
-
-  const headerStart =
-    9;
-
-  const headerEnd =
-    headerStart +
-    headerLength;
-
-  if(
-    headerEnd > bytes.length
-  ){
-
-    throw new Error(
-      "Повреждена шапка RDR"
-    );
-
-  }
-
-  const headerBytes =
-    bytes.slice(
-      headerStart,
-      headerEnd
-    );
-
-  const headerText =
-    new TextDecoder(
-      "utf-8"
-    ).decode(
-      headerBytes
-    );
-
-  let header;
-
-  try{
-
-    header =
-      JSON.parse(
-        headerText
-      );
-
-  }catch{
-
-    throw new Error(
-      "Не удалось прочитать JSON шапки RDR"
-    );
-
-  }
-
-  const body =
-    bytes.slice(
-      headerEnd
-    );
-
-  const lengths =
-    header?.тело?.длины_потоков;
-
-  if(
-    !Array.isArray(lengths) ||
-    lengths.length < 3
-  ){
-
-    throw new Error(
-      "В RDR отсутствуют длины потоков"
-    );
-
-  }
-
-  const streams = [];
-
-  let offset = 0;
-
-  for(
-    const length of lengths
-  ){
-
-    const end =
-      offset +
-      Number(length);
-
-    if(
-      end > body.length
-    ){
-
-      throw new Error(
-        "Повреждены потоки RDR"
-      );
-
-    }
-
-    streams.push(
-      body.slice(
-        offset,
-        end
-      )
-    );
-
-    offset = end;
-
-  }
-
-  const compression =
-    String(
-      header?.тело?.жатьё ||
-      "deflate"
-    ).toLowerCase();
-
-  if(
-    compression !== "deflate"
-  ){
-
-    throw new Error(
-      "Этот RDR использует " +
-      compression +
-      ". В браузере CLOrad поддерживает deflate."
-    );
-
-  }
-
-  const valuesBytes =
-    await inflateDeflate(
-      streams[0]
-    );
-
-  const values =
-    new Uint8Array(
-      valuesBytes
-    );
-
-  const runBytes =
-    await inflateDeflate(
-      streams[1]
-    );
-
-  const runs = [];
-
-  let number = 0;
-  let shift = 0;
-
-  for(
-    let i = 0;
-    i < runBytes.length;
-    i++
-  ){
-
-    const byte =
-      runBytes[i];
-
-    number |=
-      (
-        byte &
-        127
-      ) <<
-      shift;
-
-    if(
-      byte &
-      128
-    ){
-
-      shift += 7;
-
-    }else{
-
-      runs.push(
-        number
-      );
-
-      number = 0;
-      shift = 0;
-
-    }
-
-  }
-
-  if(
-    shift !== 0
-  ){
-
-    throw new Error(
-      "Повреждён RLE-поток RDR"
-    );
-
-  }
-
-  if(
-    values.length !== runs.length
-  ){
-
-    throw new Error(
-      "Количество значений RDR не совпадает с RLE"
-    );
-
-  }
-
-  const width =
-    Number(
-      header?.ширина
-    );
-
-  const height =
-    Number(
-      header?.высота
-    );
-
-  if(
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width <= 0 ||
-    height <= 0
-  ){
-
-    throw new Error(
-      "Некорректный размер сетки RDR"
-    );
-
-  }
-
-  const pixelCount =
-    width *
-    height;
-
-  const paletteBytes =
-    await inflateDeflate(
-      streams[2]
-    );
-
-  const paletteInfo =
-    Number(
-      header?.тело?.палитра
-    ) || 4;
-
-  if(
-    paletteInfo < 4
-  ){
-
-    throw new Error(
-      "Некорректный размер цвета палитры"
-    );
-
-  }
-
-  if(
-    paletteBytes.length <
-    256 * paletteInfo
-  ){
-
-    throw new Error(
-      "Палитра RDR повреждена"
-    );
-
-  }
-
-  const rgba =
-    new Uint8ClampedArray(
-      pixelCount * 4
-    );
-
-  let pixel =
-    0;
-
-  for(
-    let run = 0;
-    run < values.length;
-    run++
-  ){
-
-    const code =
-      values[run];
-
-    const length =
-      Number(
-        runs[run]
-      );
-
-    if(
-      length <= 0
-    ){
-
-      continue;
-
-    }
-
-    const paletteOffset =
-      code *
-      paletteInfo;
-
-    const r =
-      paletteBytes[
-        paletteOffset
-      ];
-
-    const g =
-      paletteBytes[
-        paletteOffset + 1
-      ];
-
-    const b =
-      paletteBytes[
-        paletteOffset + 2
-      ];
-
-    const a =
-      paletteBytes[
-        paletteOffset + 3
-      ];
-
-    const end =
-      Math.min(
-        pixel +
-        length,
-        pixelCount
-      );
-
-    for(
-      ;
-      pixel < end;
-      pixel++
-    ){
-
-      const p =
-        pixel * 4;
-
-      rgba[p] =
-        r;
-
-      rgba[p + 1] =
-        g;
-
-      rgba[p + 2] =
-        b;
-
-      rgba[p + 3] =
-        a;
-
-    }
-
-  }
-
-  if(
-    pixel !== pixelCount
-  ){
-
-    throw new Error(
-      "RLE RDR не заполнил всю сетку"
-    );
-
-  }
-
-  return {
-    header,
-    width,
-    height,
-    rgba
-  };
-
-}
-
-/* =========================================================
-   RDR → IMAGE URL
-========================================================= */
-
-async function rdrToImageUrl(
-  buffer
-){
-
-  const decoded =
-    await decodeRDR(
-      buffer
-    );
-
-  const canvas =
-    document.createElement(
-      "canvas"
-    );
-
-  canvas.width =
-    decoded.width;
-
-  canvas.height =
-    decoded.height;
-
-  const ctx =
-    canvas.getContext(
-      "2d",
-      {
-        alpha:true,
-        willReadFrequently:false
-      }
-    );
-
-  if(!ctx){
-
-    throw new Error(
-      "Canvas недоступен"
-    );
-
-  }
-
-  const imageData =
-    new ImageData(
-      decoded.rgba,
-      decoded.width,
-      decoded.height
-    );
-
-  ctx.putImageData(
-    imageData,
-    0,
-    0
-  );
-
-  const blob =
-    await new Promise(
-      (resolve,reject) => {
-
-        canvas.toBlob(
-          result => {
-
-            if(result){
-              resolve(result);
-            }else{
-              reject(
-                new Error(
-                  "Не удалось создать изображение"
-                )
-              );
-            }
-
-          },
-          "image/png"
-        );
-
-      }
-    );
-
-  return {
-    url:URL.createObjectURL(blob),
-    header:decoded.header
-  };
-
-}
-
-/* =========================================================
-   REMOVE CURRENT RASTER
-========================================================= */
-
+let activeProduct =
+  null;
+let activeFrames =
+  [];
+let activeLayer =
+  null;
+let activeMetadata =
+  null;
+let activeRequest =
+  0;
+let activeFrameRequest =
+  0;
 function removeActiveLayer(){
-
   if(
-    activeLayer
+    activeLayer &&
+    map.hasLayer(activeLayer)
   ){
-
-    if(
-      map.hasLayer(
-        activeLayer
-      )
-    ){
-
-      map.removeLayer(
-        activeLayer
-      );
-
-    }
-
-    activeLayer =
-      null;
-
+    map.removeLayer(
+      activeLayer
+    );
   }
-
+  activeLayer =
+    null;
 }
-
-/* =========================================================
-   LOAD RAIN FRAME
-========================================================= */
-
 async function loadFrame(
   frame,
   requestId
 ){
-
   const frameRequestId =
     ++activeFrameRequest;
-
-  if(
-    requestId !== activeRequest
-  ){
-
-    return;
-
-  }
-
   if(
     !frame ||
     !frame.path
   ){
-
-    throw new Error(
-      "У кадра отсутствует path"
-    );
-
+    return;
   }
-
   const response =
     await fetchWithTimeout(
       proxyUrl(
@@ -2932,95 +1881,68 @@ async function loadFrame(
       ),
       {
         method:"GET",
-        cache:"force-cache"
+        cache:"no-store"
       },
-      60000
+      30000
     );
-
   if(
     requestId !== activeRequest ||
     frameRequestId !== activeFrameRequest
   ){
-
     return;
-
   }
-
   if(
     !response.ok
   ){
-
     throw new Error(
-      "Кадр: HTTP " +
+      "HTTP " +
       response.status
     );
-
   }
-
   const buffer =
     await response.arrayBuffer();
-
   if(
     requestId !== activeRequest ||
     frameRequestId !== activeFrameRequest
   ){
-
     return;
-
   }
-
   const result =
     await rdrToImageUrl(
       buffer
     );
-
   if(
     requestId !== activeRequest ||
     frameRequestId !== activeFrameRequest
   ){
-
     try{
-
       URL.revokeObjectURL(
         result.url
       );
-
     }catch{}
-
     return;
-
   }
-
   const box =
     activeMetadata?.box ||
     result.header?.box;
-
   if(
     !box
   ){
-
     try{
-
       URL.revokeObjectURL(
         result.url
       );
-
     }catch{}
-
     throw new Error(
       "В RDR отсутствует box"
     );
-
   }
-
   const bounds =
     makeBounds(
       box
     );
-
   const oldLayer =
     activeLayer;
-
   const layer =
     L.imageOverlay(
       result.url,
@@ -3033,113 +1955,76 @@ async function loadFrame(
         className:"clorad-radar-raster"
       }
     );
-
   if(
     requestId !== activeRequest ||
     frameRequestId !== activeFrameRequest
   ){
-
     try{
-
       URL.revokeObjectURL(
         result.url
       );
-
     }catch{}
-
     return;
-
   }
-
   activeLayer =
     layer;
-
   layer.addTo(
     map
   );
-
   if(
     oldLayer &&
     oldLayer !== layer &&
     map.hasLayer(oldLayer)
   ){
-
     map.removeLayer(
       oldLayer
     );
-
   }
-
   $("timeLabel").textContent =
     formatFrameTime(
       frame.t
     );
-
   $("intensityValue").textContent =
     activeProduct === "rain"
       ? "мм/ч"
       : "—";
-
   layer.once(
     "remove",
     () => {
-
       try{
-
         URL.revokeObjectURL(
           result.url
         );
-
       }catch{}
-
     }
   );
-
 }
-
-/* =========================================================
-   LOAD PRODUCT METADATA
-========================================================= */
-
 async function loadProduct(
   productName,
   keepCurrentFrame = false
 ){
-
   const product =
     products[
       productName
     ];
-
   if(!product){
-
     return;
-
   }
-
   const requestId =
     ++activeRequest;
-
   activeFrameRequest++;
-
   activeProduct =
     productName;
-
   activeMetadata =
     null;
-
   $("loadingFrames").classList.add(
     "show"
   );
-
   $("framesInfo").textContent =
     "Подключение к радару…";
-
   $("timeLabel").textContent =
     "Подключение к радару…";
-
   try{
-
     const response =
       await fetchWithTimeout(
         proxyUrl(
@@ -3155,42 +2040,30 @@ async function loadProduct(
         },
         30000
       );
-
     if(
       requestId !== activeRequest
     ){
-
       return;
-
     }
-
     if(
       !response.ok
     ){
-
       let detail = "";
-
       try{
-
         const errorJson =
           await response.json();
-
         detail =
           errorJson.message ||
           errorJson.error ||
           "";
-
       }catch{
-
         detail =
           await response
             .text()
             .catch(
               () => ""
             );
-
       }
-
       throw new Error(
         "HTTP " +
         response.status +
@@ -3200,36 +2073,26 @@ async function loadProduct(
             : ""
         )
       );
-
     }
-
     const metadata =
       await response.json();
-
     if(
       requestId !== activeRequest
     ){
-
       return;
-
     }
-
     if(
       !metadata ||
       !Array.isArray(
         metadata.frames
       )
     ){
-
       throw new Error(
         "Некорректный ответ frames"
       );
-
     }
-
     activeMetadata =
       metadata;
-
     let frames =
       metadata.frames
         .filter(
@@ -3241,35 +2104,26 @@ async function loadProduct(
           0,
           frameCount
         );
-
     frames =
       frames.reverse();
-
     activeFrames =
       frames;
-
     if(
       frames.length === 0
     ){
-
       throw new Error(
         "Кадры отсутствуют"
       );
-
     }
-
     $("range").max =
       Math.max(
         0,
         frames.length - 1
       );
-
     let selectedIndex;
-
     if(
       keepCurrentFrame
     ){
-
       selectedIndex =
         Math.min(
           Number(
@@ -3277,21 +2131,15 @@ async function loadProduct(
           ),
           frames.length - 1
         );
-
     }else{
-
       selectedIndex =
         frames.length - 1;
-
     }
-
     $("range").value =
       selectedIndex;
-
     $("framesInfo").textContent =
       "Загружено кадров: " +
       frames.length;
-
     $("times").innerHTML =
       "<span>" +
       formatFrameTime(
@@ -3305,53 +2153,38 @@ async function loadProduct(
         ].t
       ) +
       "</span>";
-
     const selectedFrame =
       frames[
         selectedIndex
       ];
-
     await loadFrame(
       selectedFrame,
       requestId
     );
-
     if(
       requestId !== activeRequest
     ){
-
       return;
-
     }
-
     $("loadingFrames").classList.remove(
       "show"
     );
-
   }catch(error){
-
     if(
       requestId !== activeRequest
     ){
-
       return;
-
     }
-
     console.error(
       "CLOrad Idarkmeteo:",
       error
     );
-
     $("loadingFrames").classList.remove(
       "show"
     );
-
     removeActiveLayer();
-
     $("timeLabel").textContent =
       "Ошибка подключения";
-
     $("framesInfo").textContent =
       error?.name === "AbortError"
         ? "Таймаут подключения"
@@ -3359,111 +2192,66 @@ async function loadProduct(
             error?.message ||
             "Ошибка загрузки кадра"
           );
-
     $("intensityValue").textContent =
       "Нет данных";
-
     msg(
       error?.message ||
       "Ошибка подключения"
     );
-
   }
-
 }
-
-/* =========================================================
-   STOP RADAR
-========================================================= */
-
 function stopRadar(){
-
   activeRequest++;
-
   activeFrameRequest++;
-
   activeProduct =
     null;
-
   activeFrames =
     [];
-
   activeMetadata =
     null;
-
   if(
     playing
   ){
-
     playing =
       false;
-
     clearInterval(
       playTimer
     );
-
     playTimer =
       null;
-
     $("play").innerHTML =
       '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
-
   }
-
   removeActiveLayer();
-
   $("range").max =
     0;
-
   $("range").value =
     0;
-
   $("times").textContent =
     "";
-
   $("timeLabel").textContent =
     "Радар не подключён";
-
   $("framesInfo").textContent =
     "Радар пока не подключён";
-
   $("loadingFrames").classList.remove(
     "show"
   );
-
   $("intensityValue").textContent =
     "Нет данных";
-
 }
-
 window.CLOradStopRadar =
   stopRadar;
-
-/* =========================================================
-   RAIN BUTTON
-========================================================= */
-
 $("rainProduct").onclick =
   event => {
-
     event.stopPropagation();
-
     setActiveNav(
       $("rainProduct")
     );
-
     loadProduct(
       "rain"
     );
-
   };
-
-/* =========================================================
-   ACTIVE NAV
-========================================================= */
-
 function setActiveNav(button){
-
   document
     .querySelectorAll(".n")
     .forEach(
@@ -3472,328 +2260,214 @@ function setActiveNav(button){
           "active"
         )
     );
-
   button.classList.add(
     "active"
   );
-
 }
-
-/* =========================================================
-   OTHER PRODUCT BUTTONS
-========================================================= */
-
 const navButtons =
   document.querySelectorAll(
     ".n"
   );
-
 navButtons.forEach(
   button => {
-
     if(
       button.id === "layersNav" ||
       button.id === "rainProduct"
     ){
-
       return;
-
     }
-
     button.addEventListener(
       "click",
       () => {
-
         if(
           typeof window.CLOradDeactivateGIF ===
           "function"
         ){
-
           window.CLOradDeactivateGIF();
-
         }
-
         if(
           typeof window.CLOradStopRadar ===
           "function"
         ){
-
           window.CLOradStopRadar();
-
         }
-
         setActiveNav(
           button
         );
-
         msg(
           button.textContent.trim()
         );
-
       }
     );
-
   }
 );
-
-/* =========================================================
-   TIMELINE
-========================================================= */
-
 $("range").oninput =
   async () => {
-
     if(
       typeof window.CLOradGIFActive ===
       "function" &&
       window.CLOradGIFActive()
     ){
-
       return;
-
     }
-
     if(
       !activeProduct ||
       !activeFrames.length ||
       !activeMetadata
     ){
-
       return;
-
     }
-
     const index =
       Number(
         $("range").value
       );
-
     const frame =
       activeFrames[
         index
       ];
-
     if(!frame){
-
       return;
-
     }
-
     $("timeLabel").textContent =
       formatFrameTime(
         frame.t
       );
-
     try{
-
       $("loadingFrames").classList.add(
         "show"
       );
-
       await loadFrame(
         frame,
         activeRequest
       );
-
       $("loadingFrames").classList.remove(
         "show"
       );
-
     }catch(error){
-
       $("loadingFrames").classList.remove(
         "show"
       );
-
       console.error(
         "CLOrad frame:",
         error
       );
-
       msg(
         error?.message ||
         "Ошибка кадра"
       );
-
     }
-
   };
-
-/* =========================================================
-   PLAY
-========================================================= */
-
 let playing = false;
 let playTimer = null;
-
 $("play").onclick =
   () => {
-
     if(
       typeof window.CLOradGIFActive ===
       "function" &&
       window.CLOradGIFActive()
     ){
-
       return;
-
     }
-
     if(
       !activeFrames.length
     ){
-
       msg(
         "Радар пока не подключён"
       );
-
       return;
-
     }
-
     playing =
       !playing;
-
     if(!playing){
-
       clearInterval(
         playTimer
       );
-
       playTimer =
         null;
-
       $("play").innerHTML =
         '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
-
       return;
-
     }
-
     $("play").innerHTML =
       '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
-
     playTimer =
       setInterval(
         () => {
-
           if(
             !activeFrames.length
           ){
-
             playing =
               false;
-
             clearInterval(
               playTimer
             );
-
             playTimer =
               null;
-
             return;
-
           }
-
           let index =
             Number(
               $("range").value
             );
-
           index++;
-
           if(
             index >=
             activeFrames.length
           ){
-
             index = 0;
-
           }
-
           $("range").value =
             index;
-
           $("range").dispatchEvent(
             new Event(
               "input"
             )
           );
-
         },
         700
       );
-
   };
-
-/* =========================================================
-   INITIAL STATE
-========================================================= */
-
 activeProduct =
   null;
-
 activeFrames =
   [];
-
 activeLayer =
   null;
-
 activeMetadata =
   null;
-
 activeRequest =
   0;
-
 activeFrameRequest =
   0;
-
 $("timeLabel").textContent =
   "Радар не подключён";
-
 $("framesInfo").textContent =
   "Радар пока не подключён";
-
 $("range").max =
   0;
-
 $("range").value =
   0;
-
 $("times").textContent =
   "";
-
 $("intensityValue").textContent =
   "Нет данных";
-
-/* =========================================================
-   MAP RESIZE
-========================================================= */
-
 setTimeout(
   () =>
     map.invalidateSize(),
   100
 );
-
 setTimeout(
   () =>
     map.invalidateSize(),
   700
 );
-
 </script>
-
-<!-- CLOrad Lightning -->
 <script src="lightning.js"></script>
-
 <script src="risks.js"></script>
-
 <script src="idarkmeteo-raster.js"></script>
 <script src="idarkmeteo.js"></script>
 <script src="gif-radar.js"></script>
 <script src="radar-palettes.js"></script>
 <script src="layers-fix.js"></script>
-  
 </body>
 </html>
