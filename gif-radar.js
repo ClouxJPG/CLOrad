@@ -99,28 +99,23 @@
   const OY_PALETTES = {
     rgmc: {
       name: "РГМЦ",
-      colors:
-        RGMC_OY_PALETTE
+      colors: RGMC_OY_PALETTE
     },
 
     iram: {
       name: "ИРАМ",
-      colors:
-        IRAM_OY_PALETTE
+      colors: IRAM_OY_PALETTE
     }
   };
 
-  let gifPalette =
-    "rgmc";
+  let gifPalette = "rgmc";
 
-  let gifCustomPalette =
-    null;
+  let gifCustomPalette = null;
 
   let gifCustomPaletteName =
     "Пользовательская";
 
-  let gifPaletteCache =
-    new Map();
+  let gifPaletteCache = new Map();
 
   /* =======================================================
      STATE
@@ -138,49 +133,37 @@
 
   let gifMeta = null;
 
-  let gifImageCache =
-    new Map();
+  let gifImageCache = new Map();
 
   let gifPlaying = false;
 
   let gifPlayTimer = null;
 
-  let gifOriginalLayer =
-    null;
+  let gifOriginalLayer = null;
 
-  let gifPaintedLayer =
-    null;
+  let gifPaintedLayer = null;
 
   let gifResolution = 1;
 
-  let dmrlGridEnabled =
-    false;
+  let dmrlGridEnabled = false;
 
-  let dmrlGridCanvas =
-    null;
+  let dmrlGridCanvas = null;
 
-  let dmrlGridLayer =
-    null;
+  let dmrlGridLayer = null;
 
   /* =======================================================
      HELPER
      ======================================================= */
 
   const $ = id =>
-    document.getElementById(
-      id
-    );
+    document.getElementById(id);
 
   function showLoading() {
-    $("loadingFrames")?.classList.add(
-      "show"
-    );
+    $("loadingFrames")?.classList.add("show");
   }
 
   function hideLoading() {
-    $("loadingFrames")?.classList.remove(
-      "show"
-    );
+    $("loadingFrames")?.classList.remove("show");
   }
 
   /* =======================================================
@@ -197,9 +180,7 @@
     }
 
     const style =
-      document.createElement(
-        "style"
-      );
+      document.createElement("style");
 
     style.id =
       "clorad-dmrl-settings-style";
@@ -424,9 +405,7 @@
       }
     `;
 
-    document.head.appendChild(
-      style
-    );
+    document.head.appendChild(style);
   }
 
   /* =======================================================
@@ -435,9 +414,7 @@
 
   function installGIFResolutionSetting() {
     const settings =
-      document.getElementById(
-        "settings"
-      );
+      document.getElementById("settings");
 
     if (!settings) {
       return;
@@ -452,12 +429,9 @@
     }
 
     const setting =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    setting.className =
-      "setting";
+    setting.className = "setting";
 
     setting.id =
       "gifResolutionSetting";
@@ -517,13 +491,9 @@
       );
 
     if (framesSetting) {
-      framesSetting.after(
-        setting
-      );
+      framesSetting.after(setting);
     } else {
-      settings.appendChild(
-        setting
-      );
+      settings.appendChild(setting);
     }
 
     const head =
@@ -546,17 +516,13 @@
             .querySelectorAll(
               ".setting.open"
             )
-            .forEach(
-              other => {
-                if (
-                  other !== setting
-                ) {
-                  other.classList.remove(
-                    "open"
-                  );
-                }
+            .forEach(other => {
+              if (other !== setting) {
+                other.classList.remove(
+                  "open"
+                );
               }
-            );
+            });
 
           setting.classList.toggle(
             "open",
@@ -570,33 +536,29 @@
       .querySelectorAll(
         ".clorad-dmrl-resolution-option"
       )
-      .forEach(
-        option => {
-          option.addEventListener(
-            "click",
-            event => {
-              event.stopPropagation();
+      .forEach(option => {
+        option.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
 
-              const value =
-                Number(
-                  option.dataset.resolution
-                );
-
-              if (
-                !ALLOWED_RESOLUTIONS.includes(
-                  value
-                )
-              ) {
-                return;
-              }
-
-              setGIFResolution(
-                value
+            const value =
+              Number(
+                option.dataset.resolution
               );
+
+            if (
+              !ALLOWED_RESOLUTIONS.includes(
+                value
+              )
+            ) {
+              return;
             }
-          );
-        }
-      );
+
+            setGIFResolution(value);
+          }
+        );
+      });
 
     updateGIFResolutionButtons();
   }
@@ -606,16 +568,14 @@
       .querySelectorAll(
         ".clorad-dmrl-resolution-option"
       )
-      .forEach(
-        option => {
-          option.classList.toggle(
-            "active",
-            Number(
-              option.dataset.resolution
-            ) === gifResolution
-          );
-        }
-      );
+      .forEach(option => {
+        option.classList.toggle(
+          "active",
+          Number(
+            option.dataset.resolution
+          ) === gifResolution
+        );
+      });
   }
 
   /* =======================================================
@@ -641,12 +601,9 @@
     }
 
     const setting =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    setting.className =
-      "setting";
+    setting.className = "setting";
 
     setting.id =
       "gifPaletteSetting";
@@ -698,13 +655,9 @@
       );
 
     if (resolutionSetting) {
-      resolutionSetting.after(
-        setting
-      );
+      resolutionSetting.after(setting);
     } else {
-      settings.appendChild(
-        setting
-      );
+      settings.appendChild(setting);
     }
 
     const head =
@@ -727,17 +680,13 @@
             .querySelectorAll(
               ".setting.open"
             )
-            .forEach(
-              other => {
-                if (
-                  other !== setting
-                ) {
-                  other.classList.remove(
-                    "open"
-                  );
-                }
+            .forEach(other => {
+              if (other !== setting) {
+                other.classList.remove(
+                  "open"
+                );
               }
-            );
+            });
 
           setting.classList.toggle(
             "open",
@@ -751,20 +700,18 @@
       .querySelectorAll(
         ".clorad-dmrl-palette-option"
       )
-      .forEach(
-        option => {
-          option.addEventListener(
-            "click",
-            event => {
-              event.stopPropagation();
+      .forEach(option => {
+        option.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
 
-              setGIFPalette(
-                option.dataset.palette
-              );
-            }
-          );
-        }
-      );
+            setGIFPalette(
+              option.dataset.palette
+            );
+          }
+        );
+      });
 
     updateGIFPaletteButtons();
   }
@@ -774,27 +721,22 @@
       .querySelectorAll(
         ".clorad-dmrl-palette-option"
       )
-      .forEach(
-        option => {
-          option.classList.toggle(
-            "active",
-            option.dataset.palette ===
-              gifPalette
-          );
-        }
-      );
+      .forEach(option => {
+        option.classList.toggle(
+          "active",
+          option.dataset.palette ===
+            gifPalette
+        );
+      });
   }
 
   /* =======================================================
      PALETTE — HELPERS
      ======================================================= */
 
-  function hexToRGB(
-    hex
-  ) {
+  function hexToRGB(hex) {
     if (
-      typeof hex !==
-      "string"
+      typeof hex !== "string"
     ) {
       return {
         r: 0,
@@ -804,10 +746,7 @@
     }
 
     let value =
-      hex.replace(
-        "#",
-        ""
-      );
+      hex.replace("#", "");
 
     if (
       value.length === 3
@@ -825,37 +764,245 @@
     return {
       r:
         parseInt(
-          value.slice(
-            0,
-            2
-          ),
+          value.slice(0, 2),
           16
         ) || 0,
 
       g:
         parseInt(
-          value.slice(
-            2,
-            4
-          ),
+          value.slice(2, 4),
           16
         ) || 0,
 
       b:
         parseInt(
-          value.slice(
-            4,
-            6
-          ),
+          value.slice(4, 6),
           16
         ) || 0
     };
   }
 
-  const SOURCE_RGB =
-    SOURCE_OY_COLORS.map(
-      hexToRGB
+  function paletteToRGB(colors) {
+    return colors.map(hexToRGB);
+  }
+
+  const SOURCE_PALETTE_RGB =
+    paletteToRGB(
+      SOURCE_OY_COLORS
     );
+
+  const RGMC_PALETTE_RGB =
+    paletteToRGB(
+      RGMC_OY_PALETTE
+    );
+
+  const IRAM_PALETTE_RGB =
+    paletteToRGB(
+      IRAM_OY_PALETTE
+    );
+
+  function colorDistance(
+    r1,
+    g1,
+    b1,
+    r2,
+    g2,
+    b2
+  ) {
+    const dr =
+      r1 - r2;
+
+    const dg =
+      g1 - g2;
+
+    const db =
+      b1 - b2;
+
+    return (
+      dr * dr * 0.30 +
+      dg * dg * 0.59 +
+      db * db * 0.11
+    );
+  }
+
+  function nearestColorIndex(
+    r,
+    g,
+    b,
+    source
+  ) {
+    let bestIndex = 0;
+
+    let bestDistance =
+      Infinity;
+
+    for (
+      let i = 0;
+      i < source.length;
+      i++
+    ) {
+      const color =
+        source[i];
+
+      const distance =
+        colorDistance(
+          r,
+          g,
+          b,
+          color.r,
+          color.g,
+          color.b
+        );
+
+      if (
+        distance <
+        bestDistance
+      ) {
+        bestDistance =
+          distance;
+
+        bestIndex =
+          i;
+      }
+    }
+
+    return bestIndex;
+  }
+
+  /* =======================================================
+     PALETTE — ОПРЕДЕЛЕНИЕ ИСХОДНОЙ ПАЛИТРЫ КАДРА
+     ======================================================= */
+
+  function detectFrameSourcePalette(
+    data
+  ) {
+    const candidates = [
+      SOURCE_PALETTE_RGB,
+      RGMC_PALETTE_RGB,
+      IRAM_PALETTE_RGB
+    ];
+
+    const scores =
+      candidates.map(
+        () => 0
+      );
+
+    const totalPixels =
+      Math.floor(
+        data.length / 4
+      );
+
+    /*
+       Не обрабатываем каждый пиксель
+       при определении исходной палитры.
+       На iPhone достаточно нескольких
+       тысяч образцов.
+    */
+    const sampleStep =
+      Math.max(
+        1,
+        Math.floor(
+          totalPixels / 5000
+        )
+      );
+
+    let samples = 0;
+
+    for (
+      let pixel = 0;
+      pixel < totalPixels;
+      pixel += sampleStep
+    ) {
+      const p =
+        pixel * 4;
+
+      const alpha =
+        data[p + 3];
+
+      if (
+        alpha < 16
+      ) {
+        continue;
+      }
+
+      const r =
+        data[p];
+
+      const g =
+        data[p + 1];
+
+      const b =
+        data[p + 2];
+
+      /*
+         Прозрачный фон не участвует.
+         Почти белый/чёрный фон тоже
+         учитывается как обычный цвет,
+         поскольку чёрный является
+         последним классом палитры.
+      */
+      for (
+        let i = 0;
+        i < candidates.length;
+        i++
+      ) {
+        const source =
+          candidates[i];
+
+        const index =
+          nearestColorIndex(
+            r,
+            g,
+            b,
+            source
+          );
+
+        const ref =
+          source[index];
+
+        scores[i] +=
+          Math.sqrt(
+            colorDistance(
+              r,
+              g,
+              b,
+              ref.r,
+              ref.g,
+              ref.b
+            )
+          );
+      }
+
+      samples++;
+
+      if (
+        samples >= 5000
+      ) {
+        break;
+      }
+    }
+
+    let best = 0;
+
+    for (
+      let i = 1;
+      i < scores.length;
+      i++
+    ) {
+      if (
+        scores[i] <
+        scores[best]
+      ) {
+        best = i;
+      }
+    }
+
+    return candidates[best];
+  }
+
+  /* =======================================================
+     PALETTE — TARGET
+     ======================================================= */
 
   function getPaletteRGB() {
     let colors = null;
@@ -893,95 +1040,20 @@
       }
     }
 
-    return colors.map(
-      hexToRGB
+    return paletteToRGB(
+      colors
     );
-  }
-
-  function colorDistance(
-    r1,
-    g1,
-    b1,
-    r2,
-    g2,
-    b2
-  ) {
-    const dr =
-      r1 - r2;
-
-    const dg =
-      g1 - g2;
-
-    const db =
-      b1 - b2;
-
-    return (
-      dr * dr * 0.30 +
-      dg * dg * 0.59 +
-      db * db * 0.11
-    );
-  }
-
-  function getNearestSourceColor(
-    r,
-    g,
-    b
-  ) {
-    let best =
-      -1;
-
-    let bestDistance =
-      Infinity;
-
-    for (
-      let i = 0;
-      i < SOURCE_RGB.length;
-      i++
-    ) {
-      const color =
-        SOURCE_RGB[i];
-
-      const distance =
-        colorDistance(
-          r,
-          g,
-          b,
-          color.r,
-          color.g,
-          color.b
-        );
-
-      if (
-        distance <
-        bestDistance
-      ) {
-        bestDistance =
-          distance;
-
-        best =
-          i;
-      }
-    }
-
-    return {
-      index:
-        best,
-
-      distance:
-        bestDistance
-    };
   }
 
   /* =======================================================
-     LUT
+     PALETTE — LUT ДЛЯ ИСХОДНОГО КАДРА
      ======================================================= */
 
-  function buildPaletteLUT() {
-    const target =
-      getPaletteRGB();
-
+  function buildSourceLUT(
+    source
+  ) {
     const lut =
-      new Int16Array(
+      new Uint8Array(
         4096
       );
 
@@ -992,26 +1064,43 @@
     ) {
       const r =
         ((key >> 8) & 15) *
-          17;
+        17;
 
       const g =
         ((key >> 4) & 15) *
-          17;
+        17;
 
       const b =
         (key & 15) *
-          17;
-
-      const result =
-        getNearestSourceColor(
-          r,
-          g,
-          b
-        );
+        17;
 
       lut[key] =
-        result.index;
+        nearestColorIndex(
+          r,
+          g,
+          b,
+          source
+        );
     }
+
+    return lut;
+  }
+
+  /* =======================================================
+     PALETTE — LUT TARGET
+     ======================================================= */
+
+  function buildPaletteLUT() {
+    const target =
+      getPaletteRGB();
+
+    const source =
+      SOURCE_PALETTE_RGB;
+
+    const lut =
+      buildSourceLUT(
+        source
+      );
 
     return {
       lut,
@@ -1026,6 +1115,13 @@
   function prepareGIFFrame(
     url
   ) {
+    /*
+       РГМЦ является исходным
+       отображением кадра.
+
+       В этом режиме Canvas вообще
+       не используется.
+    */
     if (
       gifPalette ===
       "rgmc"
@@ -1063,169 +1159,244 @@
     }
 
     const promise =
-      loadImage(
-        url
-      ).then(
-        img => {
-          const width =
-            img.naturalWidth ||
-            img.width;
+      loadImage(url)
+        .then(
+          img => {
+            const width =
+              img.naturalWidth ||
+              img.width;
 
-          const height =
-            img.naturalHeight ||
-            img.height;
+            const height =
+              img.naturalHeight ||
+              img.height;
 
-          if (
-            !width ||
-            !height
-          ) {
-            return url;
-          }
-
-          const canvas =
-            document.createElement(
-              "canvas"
-            );
-
-          canvas.width =
-            width;
-
-          canvas.height =
-            height;
-
-          const ctx =
-            canvas.getContext(
-              "2d",
-              {
-                willReadFrequently:
-                  true
-              }
-            );
-
-          if (!ctx) {
-            return url;
-          }
-
-          ctx.clearRect(
-            0,
-            0,
-            width,
-            height
-          );
-
-          ctx.drawImage(
-            img,
-            0,
-            0,
-            width,
-            height
-          );
-
-          let imageData;
-
-          try {
-            imageData =
-              ctx.getImageData(
-                0,
-                0,
-                width,
-                height
+            if (
+              !width ||
+              !height
+            ) {
+              throw new Error(
+                "Пустой ДМРЛ-кадр"
               );
-          } catch (
-            error
-          ) {
+            }
+
+            const canvas =
+              document.createElement(
+                "canvas"
+              );
+
+            canvas.width =
+              width;
+
+            canvas.height =
+              height;
+
+            const ctx =
+              canvas.getContext(
+                "2d",
+                {
+                  willReadFrequently:
+                    true
+                }
+              );
+
+            if (!ctx) {
+              throw new Error(
+                "Canvas недоступен"
+              );
+            }
+
+            ctx.clearRect(
+              0,
+              0,
+              width,
+              height
+            );
+
+            ctx.drawImage(
+              img,
+              0,
+              0,
+              width,
+              height
+            );
+
+            let imageData;
+
+            try {
+              imageData =
+                ctx.getImageData(
+                  0,
+                  0,
+                  width,
+                  height
+                );
+            } catch (
+              error
+            ) {
+              console.error(
+                "CLOrad palette canvas:",
+                error
+              );
+
+              throw new Error(
+                "Canvas заблокирован для перекраски ДМРЛ-кадра"
+              );
+            }
+
+            const data =
+              imageData.data;
+
+            /*
+               Определяем, какая из известных
+               19-цветных схем ближе всего
+               к фактическим пикселям GIF.
+            */
+            const source =
+              detectFrameSourcePalette(
+                data
+              );
+
+            /*
+               Для каждого возможного
+               12-битного цвета заранее
+               определяем ближайший класс.
+            */
+            const sourceLUT =
+              buildSourceLUT(
+                source
+              );
+
+            const target =
+              getPaletteRGB();
+
+            /*
+               Если target отсутствует
+               или имеет неправильную длину,
+               кадр нельзя корректно
+               перекрасить.
+            */
+            if (
+              !Array.isArray(
+                target
+              ) ||
+              target.length !==
+                SOURCE_OY_COLORS.length
+            ) {
+              throw new Error(
+                "Некорректная палитра ДМРЛ"
+              );
+            }
+
+            /*
+               Основная перекраска.
+
+               Каждый пиксель:
+               1. переводится в 12-битный ключ;
+               2. через LUT получает индекс
+                  исходного класса;
+               3. получает цвет из выбранной
+                  палитры.
+            */
+            for (
+              let p = 0;
+              p < data.length;
+              p += 4
+            ) {
+              const alpha =
+                data[p + 3];
+
+              /*
+                 Полностью прозрачный
+                 фон оставляем прозрачным.
+              */
+              if (
+                alpha === 0
+              ) {
+                continue;
+              }
+
+              const r =
+                data[p];
+
+              const g =
+                data[p + 1];
+
+              const b =
+                data[p + 2];
+
+              const key =
+                ((r >> 4) << 8) |
+                ((g >> 4) << 4) |
+                (b >> 4);
+
+              const index =
+                sourceLUT[key];
+
+              const color =
+                target[index];
+
+              if (
+                !color
+              ) {
+                continue;
+              }
+
+              data[p] =
+                color.r;
+
+              data[p + 1] =
+                color.g;
+
+              data[p + 2] =
+                color.b;
+            }
+
+            ctx.putImageData(
+              imageData,
+              0,
+              0
+            );
+
+            const result =
+              canvas.toDataURL(
+                "image/png"
+              );
+
+            if (
+              !result ||
+              result ===
+                "data:,"
+            ) {
+              throw new Error(
+                "Не удалось создать перекрашенный кадр"
+              );
+            }
+
+            return result;
+          }
+        )
+        .catch(
+          error => {
             console.error(
-              "CLOrad palette canvas:",
+              "CLOrad palette frame:",
               error
             );
 
-            return url;
+            /*
+               ВАЖНО:
+               здесь больше НЕ возвращаем
+               исходный URL.
+
+               Если перекраска не удалась,
+               ошибка должна быть видна,
+               а не создавать видимость,
+               будто выбранная палитра
+               работает, хотя цвета остались
+               прежними.
+            */
+            throw error;
           }
-
-          const data =
-            imageData.data;
-
-          const palette =
-            buildPaletteLUT();
-
-          const lut =
-            palette.lut;
-
-          const target =
-            palette.target;
-
-          for (
-            let p = 0;
-            p < data.length;
-            p += 4
-          ) {
-            const alpha =
-              data[p + 3];
-
-            if (
-              alpha === 0
-            ) {
-              continue;
-            }
-
-            const r =
-              data[p];
-
-            const g =
-              data[p + 1];
-
-            const b =
-              data[p + 2];
-
-            const key =
-              ((r >> 4) << 8) |
-              ((g >> 4) << 4) |
-              (b >> 4);
-
-            const index =
-              lut[key];
-
-            if (
-              index < 0 ||
-              !target[index]
-            ) {
-              continue;
-            }
-
-            const color =
-              target[index];
-
-            data[p] =
-              color.r;
-
-            data[p + 1] =
-              color.g;
-
-            data[p + 2] =
-              color.b;
-          }
-
-          ctx.putImageData(
-            imageData,
-            0,
-            0
-          );
-
-          return canvas.toDataURL(
-            "image/png"
-          );
-        }
-      )
-      .catch(
-        error => {
-          console.error(
-            "CLOrad palette frame:",
-            error
-          );
-
-          return url;
-        }
-      );
+        );
 
     gifPaletteCache.set(
       cacheKey,
@@ -1275,9 +1446,7 @@
         const element =
           document.querySelector(
             ".l" +
-              (
-                index + 1
-              )
+              (index + 1)
           );
 
         if (
@@ -1351,12 +1520,9 @@
         url,
         GIF_BOUNDS,
         {
-          opacity:
-            1,
-          interactive:
-            false,
-          zIndex:
-            6,
+          opacity: 1,
+          interactive: false,
+          zIndex: 6,
           className:
             "clorad-gif-radar-image"
         }
@@ -1390,12 +1556,9 @@
         url,
         GIF_BOUNDS,
         {
-          opacity:
-            1,
-          interactive:
-            false,
-          zIndex:
-            6,
+          opacity: 1,
+          interactive: false,
+          zIndex: 6,
           className:
             "clorad-gif-radar-image"
         }
@@ -1617,7 +1780,7 @@
       const index =
         Number(
           $("range")?.value ||
-            0
+          0
         );
 
       showGIFFrame(
@@ -1699,7 +1862,7 @@
         const index =
           Number(
             $("range")?.value ||
-              0
+            0
           );
 
         showGIFFrame(
@@ -1974,7 +2137,7 @@
       const index =
         Number(
           $("range")?.value ||
-            0
+          0
         );
 
       gifImageCache.clear();
@@ -2020,7 +2183,6 @@
 
     const GridLayer =
       L.Layer.extend({
-
         onAdd(map) {
           this._map =
             map;
@@ -2602,7 +2764,6 @@
       ) {
         dmrlGridLayer.bringToFront();
       }
-
     } else {
       if (
         dmrlGridCanvas
@@ -3021,23 +3182,6 @@
   function preloadGIFNeighbors(
     index
   ) {
-    /*
-       Предзагрузка соседних кадров
-       ОТКЛЮЧЕНА.
-
-       Раньше здесь выполнялось до
-       четырёх дополнительных запросов
-       к /api/radar-gif.
-
-       Из-за этого при запуске/перемотке
-       сервер получал несколько запросов
-       одновременно и загрузка могла
-       выглядеть бесконечной.
-
-       Активный кадр теперь загружается
-       только тогда, когда он реально
-       нужен.
-    */
     return;
   }
 
@@ -3086,24 +3230,6 @@
       gifFrames[index];
 
     try {
-      /*
-         ==================================================
-         РГМЦ
-         ==================================================
-
-         ВАЖНО:
-
-         Здесь больше НЕТ:
-
-             await loadImage(url);
-
-         Leaflet сам загружает URL
-         через imageOverlay.
-
-         Это убирает дополнительный
-         запрос/загрузку перед показом
-         оригинального кадра.
-      */
       if (
         gifPalette ===
         "rgmc"
@@ -3138,15 +3264,6 @@
         }
       }
 
-      /*
-         ==================================================
-         ИРАМ / CUSTOM
-         ==================================================
-
-         Здесь загрузка через Image
-         нужна обязательно, потому что
-         изображение проходит через Canvas.
-      */
       else {
         const displayUrl =
           await prepareGIFFrame(
@@ -3193,8 +3310,9 @@
               gifOriginalLayer.bringToFront();
             }
           }
+        }
 
-        } else {
+        else {
           removeOriginalGIFLayer();
 
           if (
@@ -3230,18 +3348,10 @@
         index
       );
 
-      /*
-         Больше никаких запросов
-         соседних кадров здесь нет.
-      */
       preloadGIFNeighbors(
         index
       );
 
-      /*
-         Сетка всегда поверх
-         радарного слоя.
-      */
       if (
         dmrlGridEnabled &&
         dmrlGridLayer
