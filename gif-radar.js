@@ -138,6 +138,13 @@
 
   let gifMeta = null;
 
+  /*
+     Кэш используется ТОЛЬКО для:
+     - текущего изображения при перекраске;
+     - готовых PNG после перекраски.
+
+     Предзагрузка соседних кадров отключена.
+  */
   let gifImageCache =
     new Map();
 
@@ -146,16 +153,16 @@
   let gifPlayTimer = null;
 
   /*
-     ВАЖНО:
-
-     Теперь оригинальный и перекрашенный
-     кадры имеют РАЗНЫЕ Leaflet layers.
+     ДВА ФИЗИЧЕСКИ РАЗНЫХ СЛОЯ:
 
      gifOriginalLayer
        = оригинальный кадр Meteoinfo
 
      gifPaintedLayer
        = кадр после применения палитры
+
+     Одновременно на карте находится
+     только один из них.
   */
   let gifOriginalLayer =
     null;
@@ -1038,12 +1045,6 @@
   function prepareGIFFrame(
     url
   ) {
-    /*
-       РГМЦ:
-
-       Оригинальный GIF Meteoinfo
-       вообще не перекрашиваем.
-    */
     if (
       gifPalette ===
       "rgmc"
@@ -1361,7 +1362,6 @@
     }
 
     removePaintedGIFLayer();
-
     removeOriginalGIFLayer();
 
     const layer =
@@ -1400,7 +1400,6 @@
     }
 
     removeOriginalGIFLayer();
-
     removePaintedGIFLayer();
 
     const layer =
@@ -1429,15 +1428,6 @@
     return layer;
   }
 
-  /*
-     Внешняя функция переключения.
-
-     РГМЦ:
-       оригинальный слой
-
-     ИРАМ/custom:
-       перекрашенный слой
-  */
   function switchGIFDisplayLayer(
     displayUrl,
     originalUrl
@@ -1446,11 +1436,7 @@
       gifPalette ===
       "rgmc"
     ) {
-      if (
-        gifPaintedLayer
-      ) {
-        removePaintedGIFLayer();
-      }
+      removePaintedGIFLayer();
 
       if (
         !gifOriginalLayer
@@ -1469,11 +1455,7 @@
       return gifOriginalLayer;
     }
 
-    if (
-      gifOriginalLayer
-    ) {
-      removeOriginalGIFLayer();
-    }
+    removeOriginalGIFLayer();
 
     if (
       !gifPaintedLayer
@@ -1521,14 +1503,6 @@
 
     gifPaletteCache.clear();
 
-    /*
-       При смене палитры старый слой
-       удаляется СРАЗУ.
-
-       Это важно: оригинальный GIF
-       не может остаться под
-       перекрашенным.
-    */
     removeAllGIFDisplayLayers();
 
     if (
@@ -1639,10 +1613,6 @@
 
     gifPaletteCache.clear();
 
-    /*
-       Физически убираем предыдущий
-       слой до начала создания нового.
-    */
     removeAllGIFDisplayLayers();
 
     if (
@@ -1652,7 +1622,7 @@
       const index =
         Number(
           $("range")?.value ||
-            0
+          0
         );
 
       showGIFFrame(
@@ -1721,10 +1691,6 @@
 
       gifPaletteCache.clear();
 
-      /*
-         Обязательно удаляем оба
-         существующих визуальных слоя.
-      */
       removeAllGIFDisplayLayers();
 
       if (
@@ -1734,7 +1700,7 @@
         const index =
           Number(
             $("range")?.value ||
-              0
+            0
           );
 
         showGIFFrame(
@@ -2016,10 +1982,6 @@
 
       rebuildFrameUrls();
 
-      /*
-         При изменении разрешения
-         старый overlay больше не нужен.
-      */
       removeAllGIFDisplayLayers();
 
       showGIFFrame(
@@ -2734,7 +2696,7 @@
   }
 
   /* =======================================================
-     IMAGE PRELOAD
+     IMAGE LOAD
      ======================================================= */
 
   function loadImage(
@@ -3052,49 +3014,12 @@
   }
 
   /* =======================================================
-     PRELOAD
-     ======================================================= */
-
-  function preloadGIFNeighbors(
-    index
-  ) {
-    [
-      index - 2,
-      index - 1,
-      index + 1,
-      index + 2
-    ]
-      .filter(
-        i =>
-          i >= 0 &&
-          i < gifFrames.length
-      )
-      .forEach(
-        i => {
-          loadImage(
-            gifFrames[i]
-          )
-            .catch(
-              () => {}
-            );
-        }
-      );
-  }
-
-  /* =======================================================
      CREATE GIF OVERLAY
      ======================================================= */
 
   function createGIFLayer(
     url
   ) {
-    /*
-       Совместимость с прежней
-       внутренней функцией.
-
-       Теперь она создаёт именно
-       оригинальный слой.
-    */
     return createOriginalGIFLayer(
       url
     );
@@ -3134,37 +3059,30 @@
 
     try {
       /*
-         Сначала загружаем именно
-         исходный кадр.
-
-         Он нужен как для РГМЦ,
-         так и для создания
-         перекрашенного PNG.
-      */
-      await loadImage(
-        url
-      );
-
-      if (
-        !gifActive ||
-        requestId !==
-          gifFrameRequest
-      ) {
-        return;
-      }
-
-      /*
          ==================================================
          РГМЦ
          ==================================================
 
-         Физически используем
-         только оригинальный слой.
+         КРИТИЧНО:
+
+         Никакого loadImage() здесь нет.
+
+         Leaflet сам получает URL кадра.
+         Поэтому один кадр = один запрос
+         браузера к API.
       */
       if (
         gifPalette ===
         "rgmc"
       ) {
+        if (
+          requestId !==
+          gifFrameRequest ||
+          !gifActive
+        ) {
+          return;
+        }
+
         removePaintedGIFLayer();
 
         if (
@@ -3191,8 +3109,10 @@
          ИРАМ / CUSTOM
          ==================================================
 
-         Физически используем
-         только перекрашенный слой.
+         Здесь действительно требуется
+         получить пиксели изображения,
+         поэтому loadImage() используется
+         только для текущего кадра.
       */
       else {
         const displayUrl =
@@ -3209,9 +3129,10 @@
         }
 
         /*
-           На случай, если палитра
-           была переключена во время
-           генерации PNG.
+           Если палитра изменилась,
+           пока canvas обрабатывался,
+           результат старой палитры
+           больше не используется.
         */
         if (
           gifPalette ===
@@ -3264,13 +3185,9 @@
         index
       );
 
-      preloadGIFNeighbors(
-        index
-      );
-
       /*
          Сетка всегда поверх
-         радарного слоя.
+         активного радарного слоя.
       */
       if (
         dmrlGridEnabled &&
@@ -3330,10 +3247,6 @@
       window.CLOradStopRadar();
     }
 
-    /*
-       Перед запуском гарантированно
-       удаляем оба старых слоя.
-    */
     removeAllGIFDisplayLayers();
 
     gifActive =
@@ -3448,10 +3361,6 @@
 
     stopGIFPlayback();
 
-    /*
-       Удаляем ОБА возможных
-       визуальных слоя.
-    */
     removeAllGIFDisplayLayers();
 
     gifFrames =
