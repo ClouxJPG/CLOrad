@@ -5,16 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
 
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  crossorigin=""
->
-
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css"
->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css">
 
 <style>
 *{
@@ -154,884 +146,602 @@ button{
   top:80px;
   left:0;
   right:0;
-  height:85px;
-  background:#273038;
+  height:55px;
   display:flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 17px;
   overflow-x:auto;
   overflow-y:hidden;
-  border-bottom:1px solid #424b52;
-  touch-action:pan-x;
-  overscroll-behavior-x:contain;
-  overscroll-behavior-y:none;
-  -webkit-overflow-scrolling:touch;
-  transition:transform .25s ease,opacity .2s ease
+  scrollbar-width:none;
+  background:#12181d
 }
 
 .nav::-webkit-scrollbar{
   display:none
 }
 
-.nav.closed{
-  transform:translateY(-100%);
+.n{
+  flex:none;
+  height:41px;
+  padding:0 17px;
+  border:1px solid #303a42;
+  border-radius:9px;
+  background:#1b232a;
+  color:#bfc6ca;
+  font-size:14px;
+  white-space:nowrap;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:.15s
+}
+
+.n:hover{
+  background:#252f37
+}
+
+.n.active{
+  background:#29343d;
+  color:#fff;
+  border-color:#46535e
+}
+
+/* LAYERS */
+
+.layers{
+  position:fixed;
+  z-index:1000;
+  left:17px;
+  top:50%;
+  transform:translateY(-50%);
+  width:190px;
+  background:#182028ef;
+  border:1px solid #3b4650;
+  border-radius:10px;
+  padding:5px 8px;
+  box-shadow:0 4px 14px #0003;
+  transition:left .25s,opacity .2s;
+  pointer-events:auto
+}
+
+.layers.hidden{
+  left:-210px;
   opacity:0;
   pointer-events:none
 }
 
-.n{
-  min-width:88px;
-  height:85px;
-  border:0;
-  background:none;
-  color:#adb5bb;
-  display:flex;
-  flex-direction:column;
+.layer{
+  height:56px;
+  display:grid;
+  grid-template-columns:27px minmax(0,1fr) 46px;
   align-items:center;
-  justify-content:center;
-  gap:5px;
-  font-size:15px;
-  line-height:17px;
-  text-align:center;
-  position:relative;
-  white-space:normal;
-  flex:0 0 auto;
-  touch-action:pan-x;
-  padding:0 7px
-}
-
-.n svg{
-  width:30px;
-  height:30px;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:2;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-  flex:none
-}
-
-.n.active{
-  color:#53e39b
-}
-
-.n.active:after{
-  content:"";
-  position:absolute;
-  height:3px;
-  background:#53e39b;
-  bottom:0;
-  left:8px;
-  right:8px
-}
-
-.n:nth-child(1){
-  min-width:88px
-}
-
-.n:nth-child(2){
-  min-width:125px
-}
-
-.n:nth-child(3){
-  min-width:170px
-}
-
-.n:nth-child(4){
-  min-width:105px
-}
-
-.n:nth-child(5){
-  min-width:125px
-}
-
-.n:nth-child(6){
-  min-width:125px
-}
-
-.n:nth-child(7){
-  min-width:88px
-}
-
-/* MAP TOOLS */
-
-.tools{
-  position:fixed;
-  z-index:8;
-  left:17px;
-  top:177px;
-  display:flex;
-  flex-direction:column;
   gap:7px
 }
 
-.tool{
-  width:56px;
-  height:56px;
-  border-radius:11px;
-  border:1px solid #3c4650;
-  background:#192129ee;
-  color:#e4e8eb;
-  display:grid;
-  place-items:center;
-  box-shadow:0 3px 9px #0002
-}
-
-.tool svg{
-  width:30px;
-  height:30px;
+.layer svg{
+  width:22px;
+  height:22px;
   fill:none;
-  stroke:currentColor;
-  stroke-width:2;
+  stroke:#cdd3d7;
+  stroke-width:1.8;
   stroke-linecap:round;
   stroke-linejoin:round
 }
 
-.geoTool svg{
-  width:35px;
-  height:35px;
-  fill:currentColor;
-  stroke:none
-}
-
-/* =========================================================
-   LAYERS — ОТДЕЛЬНЫЙ ВЕРХНИЙ UI-СЛОЙ
-========================================================= */
-
-.layers{
-  position:fixed !important;
-  z-index:2147483647 !important;
-
-  left:17px !important;
-  top:50% !important;
-
-  width:190px !important;
-
-  transform:translate3d(0,-50%,0) !important;
-
-  background:#182028ef;
-
-  border:1px solid #3b4650;
-  border-radius:10px;
-
-  padding:5px 8px;
-
-  box-shadow:0 4px 14px #0003;
-
-  transition:
-    left .25s,
-    opacity .2s;
-
-  isolation:isolate;
-
-  pointer-events:auto !important;
-
-  touch-action:none;
-
-  user-select:none;
-  -webkit-user-select:none;
-}
-
-.layers.hidden{
-  left:-210px !important;
-  opacity:0;
-
-  pointer-events:none !important;
-}
-
-.layers *{
-  pointer-events:auto !important;
-}
-
-.layer{
-  height:56px;
-
-  display:grid;
-
-  grid-template-columns:
-    27px
-    minmax(0,1fr)
-    46px;
-
-  align-items:center;
-
-  gap:7px;
-
-  pointer-events:auto !important;
-}
-
-.layer svg{
-  width:27px;
-  height:27px;
-
-  fill:none;
-
-  stroke:#50df98;
-
-  stroke-width:2;
-
-  stroke-linecap:round;
-  stroke-linejoin:round;
-
-  flex:none;
-
-  pointer-events:none !important;
-}
-
-.layer:nth-child(2) svg{
-  stroke:#50aaff
-}
-
-.layer:nth-child(3) svg{
-  stroke:#ff777e
-}
-
-.layer span{
-  font-size:13px;
-  line-height:15px;
-
+.layer-name{
   min-width:0;
-
-  overflow-wrap:break-word;
-  word-break:normal;
-
-  pointer-events:none !important;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e2e6e8;
+  font-size:12px
 }
 
 .switch{
-  appearance:none;
-  -webkit-appearance:none;
-
   width:46px;
   height:26px;
-
   border:0;
   border-radius:18px;
-
   background:#626a70;
-
   position:relative;
-
   padding:0;
-  margin:0;
-
   flex:none;
-
-  z-index:2147483647 !important;
-
-  pointer-events:auto !important;
-
-  cursor:pointer;
-
-  touch-action:none;
-
-  user-select:none;
-  -webkit-user-select:none;
-
-  outline:none;
-
-  display:block;
+  z-index:1001;
+  pointer-events:auto
 }
 
 .switch i{
   position:absolute;
-
   width:20px;
   height:20px;
-
   left:3px;
   top:3px;
-
   border-radius:50%;
-
-  background:#f6f7f7;
-
-  transition:.2s;
-
-  pointer-events:none !important;
+  background:#fff;
+  transition:.18s;
+  pointer-events:none
 }
 
 .switch.on{
-  background:#43d58d
+  background:#45c989
 }
 
 .switch.on i{
   left:23px
 }
 
+/* TOOLS */
+
+.tools{
+  position:fixed;
+  z-index:1000;
+  left:17px;
+  top:155px;
+  display:flex;
+  flex-direction:column;
+  gap:6px
+}
+
+.tool{
+  width:43px;
+  height:43px;
+  border:1px solid #3b4650;
+  border-radius:9px;
+  background:#182028e8;
+  color:#d5dade;
+  display:grid;
+  place-items:center
+}
+
+.tool svg{
+  width:23px;
+  height:23px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round
+}
+
 /* LEGEND */
 
-.legendTab{
+.legend-tab{
   position:fixed;
-  z-index:13;
+  z-index:1000;
   right:0;
   top:50%;
   transform:translateY(-50%);
-  width:36px;
-  height:78px;
-  background:#172027f7;
-  border:1px solid #414b53;
+  width:31px;
+  height:120px;
+  border:1px solid #3b4650;
   border-right:0;
-  border-radius:9px 0 0 9px;
-  color:#cbd1d5;
-  font-size:12px;
+  border-radius:10px 0 0 10px;
+  background:#182028ee;
+  color:#dce1e4;
   writing-mode:vertical-rl;
+  text-orientation:mixed;
   display:flex;
   align-items:center;
   justify-content:center;
-  box-shadow:0 3px 12px #0003
-}
-
-.legendTab.hidden{
-  display:none
+  font-size:11px
 }
 
 .legend{
   position:fixed;
-  z-index:12;
+  z-index:999;
   right:-230px;
   top:50%;
   transform:translateY(-50%);
-  width:225px;
-  max-height:455px;
-  background:#182028f7;
-  border:1px solid #3d4851;
-  border-radius:10px 0 0 10px;
-  padding:11px;
-  transition:right .28s;
+  width:230px;
+  max-height:70vh;
   overflow:auto;
-  box-shadow:0 5px 18px #0004
+  padding:12px;
+  border:1px solid #3b4650;
+  border-radius:10px 0 0 10px;
+  background:#182028f2;
+  transition:right .25s
 }
 
 .legend.open{
   right:0
 }
 
-.legendTitle{
-  font-size:16px;
+.legend-title{
+  font-size:13px;
   font-weight:700;
-  margin:0 28px 7px 2px
+  margin-bottom:9px
 }
 
-.legendClose{
-  position:absolute;
-  right:9px;
-  top:7px;
-  width:28px;
-  height:28px;
-  border:0;
-  background:none;
-  color:#cdd3d7;
-  font-size:23px;
-  line-height:28px
-}
-
-.li{
-  height:23px;
+.legend-row{
   display:flex;
   align-items:center;
   gap:8px;
-  font-size:12px;
-  color:#e4e7e9
+  margin:4px 0;
+  font-size:11px;
+  color:#d4d9dc
 }
 
-.box{
-  width:21px;
-  height:18px;
-  border-radius:2px;
-  flex:none
+.legend-color{
+  width:25px;
+  height:13px;
+  border-radius:3px
 }
 
-.l1{background:#b9c1c7}
-.l2{background:#a9c7f4}
-.l3{background:#63eda5}
-.l4{background:#43cf89}
-.l5{background:#4db84e}
-.l6{background:#fff89c}
-.l7{background:#75a6ef}
-.l8{background:#5279ed}
-.l9{background:#504a9b}
-.l10{background:#ffc0a8}
-.l11{background:#fa82a0}
-.l12{background:#ff4d4d}
-.l13{background:#db9248}
-.l14{background:#ad7544}
-.l15{background:#924b48}
-.l16{background:#f2aaf0}
-.l17{background:#e85ae7}
-.l18{background:#ca3cc7}
-.l19{background:#777c91}
+.l1{background:#b9c1c7}.l2{background:#a9a9a9}.l3{background:#00ff00}
+.l4{background:#00cc00}.l5{background:#009900}.l6{background:#00ffff}
+.l7{background:#4da6ff}.l8{background:#3366ff}.l9{background:#0000cc}
+.l10{background:#ff66cc}.l11{background:#ff00ff}.l12{background:#cc0099}
+.l13{background:#ffff00}.l14{background:#ff9900}.l15{background:#ff0000}
+.l16{background:#cc99ff}.l17{background:#cc33ff}.l18{background:#9900cc}
+.l19{background:#000000}
 
 /* DATA */
 
 .data{
   position:fixed;
-  z-index:7;
-  left:50%;
-  transform:translateX(-50%);
-  bottom:119px;
-  width:min(555px,calc(100% - 34px));
-  height:72px;
-  background:#151b21ee;
-  border:1px solid #303a43;
-  border-radius:10px;
-  display:grid;
-  grid-template-columns:1.25fr 1fr 1fr;
-  box-shadow:0 4px 14px #0003
-}
-
-.cell{
-  padding:9px 15px;
-  border-right:1px solid #303a43;
-  display:flex;
-  flex-direction:column;
-  justify-content:center
-}
-
-.cell:last-child{
-  border:0
-}
-
-.lab{
-  font-size:10px;
-  color:#858e95;
-  letter-spacing:.5px
-}
-
-.val{
-  font-size:16px;
-  font-weight:700;
-  margin-top:4px
+  z-index:1000;
+  left:17px;
+  bottom:83px;
+  min-width:220px;
+  max-width:calc(100vw - 34px);
+  padding:9px 12px;
+  border:1px solid #3b4650;
+  border-radius:9px;
+  background:#182028e8;
+  color:#dfe4e7;
+  font-size:11px
 }
 
 /* TIMELINE */
 
 .timeline{
   position:fixed;
-  z-index:12;
-  left:9px;
-  right:9px;
-  bottom:8px;
-  height:108px;
-  background:#151b21f5;
-  border:1px solid #303a43;
-  border-radius:12px;
-  padding:8px 14px;
-  box-shadow:0 5px 18px #0004
-}
-
-.thead{
-  text-align:center;
-  font-size:14px;
-  height:27px;
-  line-height:24px
-}
-
-.trow{
-  height:61px;
+  z-index:1000;
+  left:17px;
+  right:17px;
+  bottom:17px;
+  height:52px;
+  border:1px solid #3b4650;
+  border-radius:10px;
+  background:#182028ed;
   display:flex;
   align-items:center;
-  gap:12px
+  gap:9px;
+  padding:7px 10px
 }
 
-.play{
-  width:44px;
-  height:44px;
+.timeline button{
   border:0;
-  border-radius:50%;
-  background:#f1f3f4;
-  color:#182027;
-  display:grid;
-  place-items:center;
-  flex:none;
-  box-shadow:0 2px 5px #0002;
-  transform:translateY(-4px)
+  color:#dce2e5;
+  background:#26313a;
+  border-radius:7px
 }
 
-.play svg{
-  width:25px;
-  height:25px;
+#play{
+  width:38px;
+  height:34px;
+  flex:none;
+  display:grid;
+  place-items:center
+}
+
+#play svg{
+  width:18px;
+  height:18px;
   fill:currentColor
 }
 
-.slider{
+#range{
   flex:1;
   min-width:0
 }
 
-.slider input{
-  width:100%;
-  display:block;
-  appearance:none;
-  height:7px;
-  background:#70787d;
-  border-radius:8px;
-  margin:0
+#timeLabel{
+  min-width:130px;
+  text-align:right;
+  color:#dce2e5;
+  font-size:11px
 }
 
-.slider input::-webkit-slider-thumb{
-  appearance:none;
-  width:30px;
-  height:30px;
-  border-radius:50%;
-  background:#fff;
-  box-shadow:0 1px 5px #0004
-}
-
-.times{
-  display:flex;
-  justify-content:space-between;
-  color:#9da5aa;
-  font-size:10px;
-  margin-top:8px
-}
-
-/* SEARCH */
-
-.popup{
+#framesInfo{
   position:fixed;
-  z-index:30;
-  display:none;
-  background:#182028f7;
-  border:1px solid #3d4851;
-  border-radius:9px;
-  box-shadow:0 10px 30px #0008
-}
-
-.popup.open{
-  display:block
-}
-
-.search{
-  right:12px;
-  top:88px;
-  width:300px;
-  padding:8px
-}
-
-.search input{
-  width:100%;
-  height:42px;
-  border:0;
-  border-radius:7px;
-  background:#252e36;
-  color:#fff;
-  padding:0 12px;
-  font-size:16px;
-  outline:none
+  left:17px;
+  bottom:78px
 }
 
 /* SETTINGS */
 
 .settings{
-  right:12px;
-  top:88px;
-  width:300px;
-  padding:8px
-}
-
-.settingsTitle{
-  font-size:17px;
-  font-weight:700;
-  padding:7px 7px 10px
-}
-
-.setting{
-  border:1px solid #3d4851;
-  border-radius:8px;
-  overflow:hidden;
-  background:#202930
-}
-
-.settingHead{
-  width:100%;
-  height:48px;
-  border:0;
-  background:none;
-  color:#e7ebed;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 12px;
-  font-size:15px;
-  text-align:left
-}
-
-.settingArrow{
-  font-size:21px;
-  transition:transform .2s
-}
-
-.setting.open .settingArrow{
-  transform:rotate(90deg)
-}
-
-.settingBody{
-  display:none;
-  padding:0 12px 12px
-}
-
-.setting.open .settingBody{
-  display:block
-}
-
-.framesInfo{
-  font-size:11px;
-  color:#8f999f;
-  margin-bottom:8px
-}
-
-.frameControls{
-  display:flex;
-  align-items:center;
-  gap:7px
-}
-
-.frameBtn{
-  width:42px;
-  height:38px;
-  border:1px solid #414d55;
-  border-radius:7px;
-  background:#151c21;
-  color:#e9edef;
-  font-size:21px;
-  display:grid;
-  place-items:center
-}
-
-.frameInput{
-  flex:1;
-  min-width:0;
-  width:100%;
-  height:38px;
-  border:1px solid #414d55;
-  border-radius:7px;
-  background:#151c21;
-  color:#fff;
-  text-align:center;
-  font-size:15px;
-  outline:none
-}
-
-.loadingFrames{
-  margin-top:9px;
-  height:3px;
-  border-radius:3px;
-  background:#334047;
-  overflow:hidden;
+  position:fixed;
+  z-index:1100;
+  right:17px;
+  top:145px;
+  width:270px;
+  max-height:calc(100vh - 165px);
+  overflow:auto;
+  padding:10px;
+  border:1px solid #3b4650;
+  border-radius:10px;
+  background:#182028f5;
   display:none
 }
 
-.loadingFrames.show{
+.settings.open{
   display:block
 }
 
-.loadingFrames i{
-  display:block;
-  width:35%;
-  height:100%;
-  background:#51e29a;
-  animation:loadingMove 1s infinite ease-in-out
+.settings-section{
+  margin-bottom:7px
 }
 
-@keyframes loadingMove{
-  0%{transform:translateX(-120%)}
-  100%{transform:translateX(350%) }
+.settings-section button{
+  width:100%;
+  min-height:39px;
+  border:1px solid #3b4650;
+  border-radius:8px;
+  background:#202a32;
+  color:#e1e5e7;
+  text-align:left;
+  padding:8px 10px
 }
 
-/* LIGHT */
-
-body.light .header{
-  background:#f5f6f7
+.settings-content{
+  display:none;
+  padding:8px 4px
 }
 
-body.light .name{
-  color:#171b1e
+.settings-content.open{
+  display:block
 }
 
-body.light .h{
-  color:#4f575d
+.setting-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:7px 0;
+  color:#d7dcdf;
+  font-size:12px
 }
 
-body.light .h.active{
-  background:#e1e5e8
+.setting-row input[type=range]{
+  width:120px
 }
 
-body.light .nav{
-  background:#f5f6f7;
-  border-color:#d4d9dd
+.theme-btn,
+.map-theme-btn,
+.map-action-btn,
+.frame-count-arrow{
+  border:1px solid #3b4650;
+  background:#202a32;
+  color:#dce2e5;
+  border-radius:7px;
+  padding:6px 9px
 }
 
-body.light .n{
-  color:#687177
+.frame-count{
+  display:flex;
+  align-items:center;
+  gap:6px
 }
 
-body.light .layers,
-body.light .tool,
-body.light .legend,
-body.light .legendTab{
-  background:#f6f8f9ee;
-  color:#252b2f;
-  border-color:#c9d0d5
+#frameCountInput{
+  width:48px;
+  height:30px;
+  border:1px solid #3b4650;
+  border-radius:7px;
+  background:#202a32;
+  color:#fff;
+  text-align:center
 }
 
-body.light .layer span{
-  color:#252b2f
+/* PALETTE */
+
+.palette-modal{
+  position:fixed;
+  inset:0;
+  z-index:5000;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:#0008;
+  padding:20px
 }
 
-body.light .tool{
-  color:#30383d
+.palette-modal.open{
+  display:flex
 }
 
-body.light .data,
-body.light .timeline{
-  background:#f5f7f8ee;
-  color:#22292d;
-  border-color:#cbd2d6
+.palette-window{
+  width:min(560px,100%);
+  max-height:90vh;
+  overflow:auto;
+  border:1px solid #3b4650;
+  border-radius:12px;
+  background:#182028;
+  color:#e4e8ea;
+  padding:16px
 }
 
-body.light .lab,
-body.light .times{
-  color:#70797f
+.palette-title{
+  font-size:17px;
+  font-weight:700;
+  margin-bottom:12px
 }
 
-body.light .timeline input{
-  background:#a2a9ad
+.palette-tabs{
+  display:flex;
+  gap:6px;
+  margin-bottom:12px
 }
 
-body.light .settings{
-  background:#f6f8f9;
-  color:#20272b;
-  border-color:#c9d0d5
+.palette-tab{
+  border:1px solid #3b4650;
+  background:#202a32;
+  color:#cfd5d8;
+  border-radius:7px;
+  padding:7px 10px
 }
 
-body.light .setting{
-  background:#edf1f3;
-  border-color:#c9d0d5
+.palette-tab.active{
+  background:#31404a;
+  color:#fff
 }
 
-body.light .settingHead{
-  color:#20272b
+.palette-editor{
+  display:none
 }
 
-body.light .frameBtn,
-body.light .frameInput{
-  background:#fff;
-  color:#20272b;
-  border-color:#c5cdd2
+.palette-editor.active{
+  display:block
 }
 
-/* MOBILE */
+.palette-row{
+  display:grid;
+  grid-template-columns:1fr 55px 30px;
+  gap:7px;
+  align-items:center;
+  margin:5px 0
+}
+
+.palette-name{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:11px
+}
+
+.palette-swatch{
+  width:50px;
+  height:26px;
+  border:1px solid #4b5861;
+  border-radius:5px
+}
+
+.palette-actions{
+  display:flex;
+  gap:6px;
+  margin-top:12px
+}
+
+.palette-actions button{
+  border:1px solid #3b4650;
+  border-radius:7px;
+  background:#202a32;
+  color:#e0e5e7;
+  padding:7px 10px
+}
+
+#loadingFrames{
+  position:fixed;
+  z-index:3000;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  display:none;
+  padding:9px 13px;
+  border-radius:9px;
+  background:#151a1eec;
+  color:#fff;
+  font-size:12px;
+  pointer-events:none
+}
+
+#loadingFrames.show{
+  display:block
+}
 
 @media(max-width:600px){
-
   .header{
-    height:80px;
-    padding:0 17px
+    height:65px;
+    padding:0 10px
   }
 
   .name{
-    font-size:29px
-  }
-
-  .head{
-    gap:0
-  }
-
-  .h{
-    width:46px
-  }
-
-  .nav{
-    top:80px;
-    height:85px
-  }
-
-  .n{
-    min-width:88px;
-  }
-
-  .tools{
-    left:17px;
-    top:177px
-  }
-
-  .layers{
-    left:17px !important;
-    width:190px !important
-  }
-
-  .data{
-    bottom:120px
-  }
-
-  .timeline{
-    bottom:8px
-  }
-}
-
-@media(max-width:430px){
-
-  .name{
-    font-size:27px
+    font-size:28px
   }
 
   .radarLogo{
-    width:46px;
-    height:46px
+    width:42px;
+    height:42px
   }
 
-  .h:nth-child(2){
-    display:grid
+  .radarLogo svg{
+    width:37px;
+    height:37px
+  }
+
+  .head{
+    gap:2px
+  }
+
+  .h{
+    width:43px;
+    height:43px
+  }
+
+  .nav{
+    top:65px;
+    height:52px;
+    padding:6px 8px
+  }
+
+  .n{
+    height:40px;
+    padding:0 13px
   }
 
   .layers{
-    width:190px !important
+    left:8px
+  }
+
+  .tools{
+    left:8px;
+    top:125px
+  }
+
+  .timeline{
+    left:8px;
+    right:8px;
+    bottom:8px
+  }
+
+  #timeLabel{
+    min-width:90px;
+    font-size:10px
   }
 
   .data{
-    width:calc(100% - 34px)
-  }
-
-  .legend{
-    width:220px
+    left:8px;
+    bottom:70px
   }
 
   .settings{
     right:8px;
-    width:calc(100% - 16px)
+    top:125px;
+    width:250px
   }
 
-  .n{
-    font-size:14px;
-    line-height:16px;
+  .palette-modal{
+    padding:10px
   }
 
-  .n:nth-child(2){
-    min-width:120px
+  .palette-window{
+    max-height:calc(100vh - 20px);
+    padding:12px
   }
 
-  .n:nth-child(3){
-    min-width:160px
+  .palette-name{
+    font-size:11px
   }
 
-  .n:nth-child(4){
-    min-width:105px
+  .palette-row{
+    grid-template-columns:1fr 43px 28px
   }
 
-  .n:nth-child(5){
-    min-width:120px
-  }
-
-  .n:nth-child(6){
-    min-width:120px
-  }
-
-  .n:nth-child(7){
-    min-width:88px
-  }
-
-  .switch{
-    z-index:2147483647 !important;
-    pointer-events:auto !important
+  .palette-swatch{
+    width:40px
   }
 }
 </style>
@@ -1042,507 +752,251 @@ body.light .frameInput{
 <div id="map"></div>
 
 <header class="header">
-
   <div class="brand">
-
-    <div class="radarLogo" aria-hidden="true">
-
-      <svg viewBox="0 0 48 48">
-
-        <circle cx="24" cy="24" r="20"/>
-        <circle cx="24" cy="24" r="13"/>
-        <circle cx="24" cy="24" r="6"/>
-
-        <path d="M24 4v40"/>
-        <path d="M4 24h40"/>
-
-        <circle
-          class="radarDot"
-          cx="31.5"
-          cy="15.5"
-          r="2.3"
-        />
-
-        <circle
-          class="radarDot"
-          cx="16"
-          cy="31"
-          r="1.8"
-        />
-
+    <div class="radarLogo">
+      <svg viewBox="0 0 50 50">
+        <circle cx="25" cy="25" r="19"></circle>
+        <circle cx="25" cy="25" r="12"></circle>
+        <circle cx="25" cy="25" r="5"></circle>
+        <path d="M25 25L41 12"></path>
+        <circle class="radarDot" cx="25" cy="25" r="2.5"></circle>
       </svg>
-
     </div>
-
-    <div class="name">
-      CLOrad
-    </div>
-
+    <div class="name">CLOrad</div>
   </div>
 
   <div class="head">
-
-    <button class="h active" id="searchBtn" aria-label="Поиск">
-
+    <button class="h active" id="mapBtn" title="Карта">
       <svg viewBox="0 0 24 24">
-        <circle cx="10.5" cy="10.5" r="6.5"/>
-        <path d="M16 16l5 5"/>
+        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path>
+        <path d="M9 3v15M15 6v15"></path>
       </svg>
-
     </button>
 
-    <button class="h" id="themeBtn" aria-label="Тема">
-
-      <svg viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="4"/>
-        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/>
-      </svg>
-
-    </button>
-
-    <button class="h" id="settingsBtn" aria-label="Настройки">
-
+    <button class="h" id="settingsBtn" title="Настройки">
       <svg class="settingsIcon" viewBox="0 0 24 24">
-
-        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
-
-        <path d="M19.4 15.1a1.8 1.8 0 0 0 .35 1.98l.05.05a1.8 1.8 0 1 1-2.55 2.55l-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V21a1.8 1.8 0 1 1-3.6 0v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05A1.8 1.8 0 1 1 4.84 17.1l.05-.05a1.8 1.8 0 0 0 .35-1.98A1.8 1.8 0 0 0 3.6 14H3.5a1.8 1.8 0 1 1 0-3.6h.1a1.8 1.8 0 0 0 1.64-1.1 1.8 1.8 0 0 0-.35-1.98l-.05-.05a1.8 1.8 0 1 1 2.55-2.55l.05.05a1.8 1.8 0 0 0 1.98.35A1.8 1.8 0 0 0 10.5 3.5V3.4a1.8 1.8 0 1 1 3.6 0v.1a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 1.98-.35l.05-.05a1.8 1.8 0 1 1 2.55 2.55l-.05.05a1.8 1.8 0 0 0-.35 1.98A1.8 1.8 0 0 0 21 10.4h.1a1.8 1.8 0 1 1 0 3.6H21a1.8 1.8 0 0 0-1.6 1.1Z"/>
-
+        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"></path>
+        <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-1.41 1.41-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V20h-2v-.32a1.8 1.8 0 0 0-1.08-1.65 1.8 1.8 0 0 0-1.98.36l-.06.06-1.41-1.41.06-.06A1.8 1.8 0 0 0 9.2 15a1.8 1.8 0 0 0-1.65-1.08H7v-2h.55A1.8 1.8 0 0 0 9.2 10.8a1.8 1.8 0 0 0-.36-1.98l-.06-.06 1.41-1.41.06.06a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 13.31 6.1V5h2v1.1a1.8 1.8 0 0 0 1.08 1.67 1.8 1.8 0 0 0 1.98-.36l.06-.06 1.41 1.41-.06.06A1.8 1.8 0 0 0 19.4 10.8a1.8 1.8 0 0 0 1.65 1.08H21v2h-.55A1.8 1.8 0 0 0 19.4 15z"></path>
       </svg>
-
     </button>
-
-    <button class="h" id="menuBtn" aria-label="Меню">
-
-      <svg viewBox="0 0 24 24">
-        <path d="M4 6h16M4 12h16M4 18h16"/>
-      </svg>
-
-    </button>
-
   </div>
-
 </header>
 
-<div class="popup search" id="search">
-
-  <input
-    id="searchInput"
-    placeholder="Поиск города..."
-  >
-
-</div>
-
-<div class="popup settings" id="settings">
-
-  <div class="settingsTitle">
-    Настройки
-  </div>
-
-  <div class="setting" id="framesSetting">
-
-    <button class="settingHead" id="framesHead">
-
-      <span>
-        Кол. кадров
-      </span>
-
-      <span class="settingArrow">
-        ›
-      </span>
-
-    </button>
-
-    <div class="settingBody">
-
-      <div class="framesInfo" id="framesInfo">
-        Радар пока не подключён
-      </div>
-
-      <div class="frameControls">
-
-        <button class="frameBtn" id="frameMinus">
-          −
-        </button>
-
-        <input
-          class="frameInput"
-          id="frameInput"
-          type="number"
-          min="1"
-          value="24"
-          inputmode="numeric"
-        >
-
-        <button class="frameBtn" id="framePlus">
-          +
-        </button>
-
-      </div>
-
-      <div class="loadingFrames" id="loadingFrames">
-        <i></i>
-      </div>
-
-    </div>
-
-  </div>
-
-</div>
-
 <nav class="nav" id="nav">
-
-  <button class="n active">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
-    </svg>
-
-    Карта
-
-  </button>
-
-  <button class="n">
-
-    <svg viewBox="0 0 70 45">
-      <path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/>
-    </svg>
-
-    Дым/пепел
-
-  </button>
-
-  <button class="n">
-
-    <svg viewBox="0 0 36 30">
-      <rect x="13" y="9" width="9" height="9" rx="1.8"/>
-      <path d="M17.5 9V5"/>
-      <path d="M15.5 5h4"/>
-      <path d="M13 11H5v7h8"/>
-      <path d="M9 11v7"/>
-      <path d="M22 11h8v7h-8"/>
-      <path d="M26 11v7"/>
-      <path d="M15 18v5"/>
-      <path d="M20 18v5"/>
-      <path d="M9 6c1.5-1.3 3-2 4.5-2"/>
-      <path d="M26 6c-1.5-1.3-3-2-4.5-2"/>
-      <path d="M28 21.5c0 2.1-1.35 3.5-3 3.5s-3-1.4-3-3.5c0-1.7 1.6-3.7 3-5.5 1.4 1.8 3 3.8 3 5.5Z"/>
-    </svg>
-
-    Спутниковые осадки
-
-  </button>
-
-  <button class="n">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/>
-    </svg>
-
-    Предупр.
-
-  </button>
-
-  <button class="n">
-
-    <svg viewBox="0 0 32 30">
-      <path d="M8 22h16.5a5.5 5.5 0 0 0 .4-11 8 8 0 0 0-15.3-1.9 A6.3 6.3 0 0 0 8 22Z"/>
-      <path d="M16 20V12"/>
-      <path d="M12.8 15.2 16 12l3.2 3.2"/>
-    </svg>
-
-    Фаза облака
-
-  </button>
-
-  <button class="n" id="rainProduct">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M5 20V11M12 20V6M19 20V3"/>
-    </svg>
-
-    Осадки-мм/ч
-
-  </button>
-
-  <button class="n active" id="layersNav">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M4 7h16M4 12h16M4 17h16"/>
-    </svg>
-
-    Слои
-
-  </button>
-
+  <button class="n active" id="oyaNav">осадки мм/ч</button>
+  <button class="n" id="warningsNav">предупр.</button>
+  <button class="n" id="gifRadarNav">ДМРЛ композит</button>
 </nav>
-
-<div class="tools">
-
-  <button class="tool" id="plus" aria-label="Увеличить">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-
-  </button>
-
-  <button class="tool" id="minus" aria-label="Уменьшить">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M5 12h14"/>
-    </svg>
-
-  </button>
-
-  <button class="tool geoTool" id="geo" aria-label="Моё местоположение">
-
-    <svg viewBox="0 0 24 24">
-      <path d="M20.2 3.8 4.1 10.7c-.72.31-.67 1.35.08 1.57l6.05 1.76 1.76 6.05c.22.75 1.26.8 1.57.08l6.91-16.1c.29-.67-.27-1.23-.94-.94Z"/>
-    </svg>
-
-  </button>
-
-</div>
-
-<!-- =====================================================
-     LAYERS
-===================================================== -->
 
 <div class="layers" id="layers">
 
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 2v3"/>
+      <path d="M12 3v18M3 12h18"></path>
+      <circle cx="12" cy="12" r="8"></circle>
     </svg>
-
-    <span>
-      Опасные явления
-    </span>
-
-    <button
-      class="switch on"
-      id="oyaSwitch"
-      type="button"
-    >
-      <i></i>
-    </button>
-
+    <div class="layer-name">Опасные явления</div>
+    <button class="switch on" id="oyaSwitch"><i></i></button>
   </div>
 
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/>
-      <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/>
+      <path d="M4 18l5-5 3 3 7-8"></path>
+      <path d="M4 5h16v14H4z"></path>
     </svg>
-
-    <span>
-      Отражаемость
-    </span>
-
-    <button
-      class="switch"
-      id="reflectivitySwitch"
-      type="button"
-    >
-      <i></i>
-    </button>
-
+    <div class="layer-name">Отражаемость</div>
+    <button class="switch" id="reflectivitySwitch"><i></i></button>
   </div>
 
   <div class="layer">
-
     <svg viewBox="0 0 24 24">
-      <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
+      <path d="M12 3v18M5 12h14"></path>
+      <path d="M7 7l10 10M17 7L7 17"></path>
     </svg>
-
-    <span>
-      Молнии
-    </span>
-
-    <button
-      class="switch on"
-      id="lightningSwitch"
-      type="button"
-    >
-      <i></i>
-    </button>
-
+    <div class="layer-name">Молнии</div>
+    <button class="switch on" id="lightningSwitch"><i></i></button>
   </div>
 
 </div>
 
-<button class="legendTab" id="legendTab">
-  Легенда
-</button>
+<div class="tools">
+
+  <button class="tool" id="layersNav" title="Слои">
+    <svg viewBox="0 0 24 24">
+      <path d="M12 3l9 5-9 5-9-5 9-5z"></path>
+      <path d="M3 12l9 5 9-5"></path>
+      <path d="M3 16l9 5 9-5"></path>
+    </svg>
+  </button>
+
+  <button class="tool" id="locationBtn" title="Моё положение">
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="7"></circle>
+      <circle cx="12" cy="12" r="2"></circle>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+    </svg>
+  </button>
+
+  <button class="tool" id="zoomIn" title="Приблизить">+</button>
+  <button class="tool" id="zoomOut" title="Отдалить">−</button>
+
+</div>
+
+<button class="legend-tab" id="legendTab">легенда</button>
 
 <div class="legend" id="legend">
 
-  <button class="legendClose" id="legendClose">
-    ×
-  </button>
+  <div class="legend-title">Отражаемость</div>
 
-  <div class="legendTitle">
-    Условные обозначения
-  </div>
-
-  <div class="li"><i class="box l1"></i>обл. сред. яруса</div>
-  <div class="li"><i class="box l2"></i>сл. образования</div>
-  <div class="li"><i class="box l3"></i>осадки слабые</div>
-  <div class="li"><i class="box l4"></i>осадки умеренные</div>
-  <div class="li"><i class="box l5"></i>осадки сильные</div>
-  <div class="li"><i class="box l6"></i>кучевая обл</div>
-  <div class="li"><i class="box l7"></i>ливень слабый</div>
-  <div class="li"><i class="box l8"></i>ливень умеренный</div>
-  <div class="li"><i class="box l9"></i>ливень сильный</div>
-  <div class="li"><i class="box l10"></i>гроза (R)</div>
-  <div class="li"><i class="box l11"></i>гроза R)</div>
-  <div class="li"><i class="box l12"></i>гроза R</div>
-  <div class="li"><i class="box l13"></i>град слабый</div>
-  <div class="li"><i class="box l14"></i>град умеренный</div>
-  <div class="li"><i class="box l15"></i>град сильный</div>
-  <div class="li"><i class="box l16"></i>шквал слабый</div>
-  <div class="li"><i class="box l17"></i>шквал умеренный</div>
-  <div class="li"><i class="box l18"></i>шквал сильный</div>
-  <div class="li"><i class="box l19"></i>смерч</div>
+  <div class="legend-row"><span class="legend-color l1"></span><span>Нет данных</span></div>
+  <div class="legend-row"><span class="legend-color l2"></span><span>Очень слабая</span></div>
+  <div class="legend-row"><span class="legend-color l3"></span><span>Слабая</span></div>
+  <div class="legend-row"><span class="legend-color l4"></span><span>Слабая +</span></div>
+  <div class="legend-row"><span class="legend-color l5"></span><span>Умеренная</span></div>
+  <div class="legend-row"><span class="legend-color l6"></span><span>Умеренная +</span></div>
+  <div class="legend-row"><span class="legend-color l7"></span><span>Средняя</span></div>
+  <div class="legend-row"><span class="legend-color l8"></span><span>Средняя +</span></div>
+  <div class="legend-row"><span class="legend-color l9"></span><span>Сильная</span></div>
+  <div class="legend-row"><span class="legend-color l10"></span><span>Сильная +</span></div>
+  <div class="legend-row"><span class="legend-color l11"></span><span>Очень сильная</span></div>
+  <div class="legend-row"><span class="legend-color l12"></span><span>Очень сильная +</span></div>
+  <div class="legend-row"><span class="legend-color l13"></span><span>Опасная</span></div>
+  <div class="legend-row"><span class="legend-color l14"></span><span>Опасная +</span></div>
+  <div class="legend-row"><span class="legend-color l15"></span><span>Очень опасная</span></div>
+  <div class="legend-row"><span class="legend-color l16"></span><span>Экстремальная</span></div>
+  <div class="legend-row"><span class="legend-color l17"></span><span>Экстремальная +</span></div>
+  <div class="legend-row"><span class="legend-color l18"></span><span>Максимальная</span></div>
+  <div class="legend-row"><span class="legend-color l19"></span><span>Нет данных / фон</span></div>
 
 </div>
 
-<div class="data">
-
-  <div class="cell">
-
-    <div class="lab">
-      ИНТЕНСИВНОСТЬ:
-    </div>
-
-    <div class="val" id="intensityValue">
-      Нет данных
-    </div>
-
-  </div>
-
-  <div class="cell">
-
-    <div class="lab">
-      ГРОЗА
-    </div>
-
-    <div class="val">
-      —
-    </div>
-
-  </div>
-
-  <div class="cell">
-
-    <div class="lab">
-      СКОРОСТЬ:
-    </div>
-
-    <div class="val">
-      —
-    </div>
-
-  </div>
-
+<div class="data" id="data">
+  <div id="timeLabel">Радар не подключён</div>
+  <div id="framesInfo">Радар пока не подключён</div>
+  <div id="intensityValue">Нет данных</div>
 </div>
 
 <div class="timeline">
 
-  <div class="thead" id="timeLabel">
-    Радар не подключён
+  <button id="play">
+    <svg viewBox="0 0 24 24">
+      <path d="M7 4l13 8-13 8z"></path>
+    </svg>
+  </button>
+
+  <input
+    id="range"
+    type="range"
+    min="0"
+    max="0"
+    value="0"
+    step="1"
+  >
+
+</div>
+
+<div class="settings" id="settings">
+
+  <div class="settings-section">
+    <button id="appearanceToggle">Внешний вид</button>
+    <div class="settings-content" id="appearanceSection">
+
+      <div class="setting-row">
+        <span>Тема</span>
+        <div>
+          <button class="theme-btn" id="darkThemeBtn">Тёмная</button>
+          <button class="theme-btn" id="lightThemeBtn">Светлая</button>
+        </div>
+      </div>
+
+    </div>
   </div>
 
-  <div class="trow">
+  <div class="settings-section">
+    <button id="mapToggle">Карта</button>
+    <div class="settings-content" id="mapSection">
 
-    <button class="play" id="play">
+      <div class="setting-row">
+        <span>Масштаб</span>
+        <div>
+          <button class="map-action-btn" id="zoomReset">Сброс</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 24 24">
-        <path d="M7 4l13 8-13 8z"/>
-      </svg>
+    </div>
+  </div>
 
-    </button>
+  <div class="settings-section">
+    <button id="opacityToggle">Прозрачность</button>
+    <div class="settings-content" id="opacitySection">
 
-    <div class="slider">
+      <div class="setting-row">
+        <span>Радар</span>
+        <input id="opacityRange" type="range" min="0" max="100" value="100">
+      </div>
 
-      <input
-        id="range"
-        type="range"
-        min="0"
-        max="0"
-        step="1"
-        value="0"
-      >
+    </div>
+  </div>
 
-      <div class="times" id="times"></div>
+  <div class="settings-section">
+    <button id="frameCountToggle">Кадры</button>
+    <div class="settings-content" id="frameCountSection">
 
+      <div class="setting-row">
+        <span>Количество</span>
+        <div class="frame-count">
+          <button class="frame-count-arrow" id="frameCountMinus">−</button>
+          <input id="frameCountInput" value="12">
+          <button class="frame-count-arrow" id="frameCountPlus">+</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<div class="palette-modal" id="paletteModal">
+
+  <div class="palette-window">
+
+    <div class="palette-title">Палитры</div>
+
+    <div class="palette-tabs">
+      <button class="palette-tab active" id="oyaPaletteTab">ОЯ</button>
+      <button class="palette-tab" id="reflectivityPaletteTab">Отражаемость</button>
+    </div>
+
+    <div class="palette-editor active" id="oyaPaletteEditor">
+      <div id="paletteRows"></div>
+    </div>
+
+    <div class="palette-editor" id="reflectivityPaletteEditor">
+      <div id="reflectivityPaletteRows"></div>
+    </div>
+
+    <div class="palette-actions">
+      <button id="paletteClose">Закрыть</button>
     </div>
 
   </div>
 
 </div>
+
+<div id="loadingFrames">Загрузка…</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
 
 <script>
-window.maplibregl = maplibregl;
+window.maplibregl=maplibregl;
 </script>
 
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
 
 <script>
-
-/* =========================================================
-   MAP
-========================================================= */
-
-const map =
-  L.map(
-    "map",
-    {
-      zoomControl:false,
-      attributionControl:true,
-      preferCanvas:false,
-      zoomAnimation:true,
-      fadeAnimation:false,
-      markerZoomAnimation:false,
-      worldCopyJump:false,
-      minZoom:2,
-      maxZoom:14
-    }
-  ).setView(
-    [55.75,37.62],
-    5
-  );
-
-window.map = map;
-
-/* =========================================================
-   CLOrad — OPENFREEMAP DARK
-========================================================= */
-
-const cloradBaseMap =
-  L.maplibreGL({
-    style:
-      "https://tiles.openfreemap.org/styles/dark",
-
-    interactive:false,
-
-    attribution:
-      "© OpenFreeMap · © OpenStreetMap contributors"
-  }).addTo(map);
-
-window.CLOradBaseMap =
-  cloradBaseMap;
+"use strict";
 
 /* =========================================================
    HELPERS
@@ -1554,113 +1008,463 @@ const $ =
 
 function msg(text){
 
-  const x =
-    document.createElement("div");
+  const status =
+    $("data");
 
-  x.textContent =
-    text;
+  if(!status){
+    return;
+  }
 
-  x.style =
-    "position:fixed;" +
-    "z-index:2147483646;" +
-    "left:50%;" +
-    "bottom:125px;" +
-    "transform:translateX(-50%);" +
-    "background:#202930;" +
-    "color:#fff;" +
-    "padding:9px 14px;" +
-    "border-radius:8px;" +
-    "border:1px solid #3d4850;" +
-    "white-space:nowrap;" +
-    "max-width:calc(100% - 30px);" +
-    "overflow:hidden;" +
-    "text-overflow:ellipsis;";
+  const old =
+    status.dataset.original ||
+    status.innerHTML;
 
-  document.body.appendChild(x);
+  status.innerHTML =
+    `<div>${text}</div>`;
 
-  setTimeout(
-    () => x.remove(),
-    1800
+  clearTimeout(
+    status._timer
   );
+
+  status._timer =
+    setTimeout(
+      () => {
+        status.innerHTML =
+          old;
+      },
+      1800
+    );
+
 }
+
+/* =========================================================
+   MAP
+========================================================= */
+
+const map =
+  L.map(
+    "map",
+    {
+      zoomControl:false,
+      attributionControl:true,
+      minZoom:2,
+      maxZoom:12,
+      zoomSnap:.25
+    }
+  ).setView(
+    [56,45],
+    4
+  );
+
+const cloradBaseMap =
+  L.maplibreGL({
+    style:
+      "https://tiles.openfreemap.org/styles/dark",
+    interactive:false,
+    attribution:
+      "© OpenFreeMap · © OpenStreetMap contributors"
+  }).addTo(map);
+
+window.CLOradBaseMap =
+  cloradBaseMap;
 
 /* =========================================================
    MAP CONTROLS
 ========================================================= */
 
-$("plus").onclick =
+$("zoomIn").onclick =
   () => map.zoomIn();
 
-$("minus").onclick =
+$("zoomOut").onclick =
   () => map.zoomOut();
 
-$("geo").onclick = () => {
+$("zoomReset").onclick =
+  () => map.setView(
+    [56,45],
+    4
+  );
 
-  if(!navigator.geolocation){
+$("locationBtn").onclick =
+  () => {
 
-    msg("Геолокация недоступна");
+    if(
+      !navigator.geolocation
+    ){
 
+      msg(
+        "Геолокация недоступна"
+      );
+
+      return;
+
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+
+        map.setView(
+          [
+            position.coords.latitude,
+            position.coords.longitude
+          ],
+          8
+        );
+
+      },
+      () => {
+        msg(
+          "Не удалось получить положение"
+        );
+      }
+    );
+
+  };
+
+/* =========================================================
+   LEGEND
+========================================================= */
+
+$("legendTab").onclick =
+  () => {
+
+    $("legend").classList.toggle(
+      "open"
+    );
+
+  };
+
+/* =========================================================
+   THEME
+========================================================= */
+
+$("darkThemeBtn").onclick =
+  () => {
+
+    document.body.classList.remove(
+      "light"
+    );
+
+  };
+
+$("lightThemeBtn").onclick =
+  () => {
+
+    document.body.classList.add(
+      "light"
+    );
+
+  };
+
+/* =========================================================
+   SETTINGS SECTIONS
+========================================================= */
+
+function setupSection(
+  sectionId,
+  buttonId
+){
+
+  const section =
+    $(sectionId);
+
+  const button =
+    $(buttonId);
+
+  if(
+    !section ||
+    !button
+  ){
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
-
-    position => {
-
-      map.setView(
-        [
-          position.coords.latitude,
-          position.coords.longitude
-        ],
-        9
-      );
-
-      msg("Местоположение найдено");
-
-    },
-
+  button.addEventListener(
+    "click",
     () => {
 
-      msg("Не удалось определить местоположение");
+      section.classList.toggle(
+        "open"
+      );
 
-    },
-
-    {
-      enableHighAccuracy:true,
-      timeout:10000,
-      maximumAge:60000
     }
-
   );
 
-};
+}
+
+setupSection(
+  "appearanceSection",
+  "appearanceToggle"
+);
+
+setupSection(
+  "mapSection",
+  "mapToggle"
+);
+
+setupSection(
+  "opacitySection",
+  "opacityToggle"
+);
+
+setupSection(
+  "frameCountSection",
+  "frameCountToggle"
+);
 
 /* =========================================================
-   LAYERS — НАДЁЖНОЕ УПРАВЛЕНИЕ
+   SETTINGS
+========================================================= */
+
+$("settingsBtn").onclick =
+  () => {
+
+    $("settings").classList.toggle(
+      "open"
+    );
+
+  };
+
+$("opacityRange").oninput =
+  event => {
+
+    const value =
+      Number(
+        event.target.value
+      );
+
+    if(
+      window.CLOradSetRadarOpacity
+    ){
+
+      window.CLOradSetRadarOpacity(
+        value / 100
+      );
+
+    }
+
+  };
+
+$("frameCountMinus").onclick =
+  () => {
+
+    const input =
+      $("frameCountInput");
+
+    let value =
+      Number(input.value) || 12;
+
+    value =
+      Math.max(
+        1,
+        value - 1
+      );
+
+    input.value =
+      value;
+
+    window.CLOradSetFrameCount?.(
+      value
+    );
+
+  };
+
+$("frameCountPlus").onclick =
+  () => {
+
+    const input =
+      $("frameCountInput");
+
+    let value =
+      Number(input.value) || 12;
+
+    value =
+      Math.min(
+        50,
+        value + 1
+      );
+
+    input.value =
+      value;
+
+    window.CLOradSetFrameCount?.(
+      value
+    );
+
+  };
+
+$("frameCountInput").onchange =
+  event => {
+
+    let value =
+      Number(
+        event.target.value
+      ) || 12;
+
+    value =
+      Math.max(
+        1,
+        Math.min(
+          50,
+          value
+        )
+      );
+
+    event.target.value =
+      value;
+
+    window.CLOradSetFrameCount?.(
+      value
+    );
+
+  };
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
+
+const nav =
+  $("nav");
+
+let dragging = false;
+let dragStartX = 0;
+let dragScroll = 0;
+let dragMoved = false;
+
+/*
+ * ВАЖНО:
+ * Кнопки .n не получают pointer capture.
+ * Это позволяет обычному click нормально
+ * доходить до кнопки на ПК и телефоне.
+ */
+
+nav.addEventListener(
+  "pointerdown",
+  event => {
+
+    if(
+      event.target &&
+      event.target.closest &&
+      event.target.closest(".n")
+    ){
+
+      dragging = false;
+      dragMoved = false;
+      dragStartX =
+        event.clientX;
+      dragScroll =
+        nav.scrollLeft;
+
+      return;
+
+    }
+
+    dragging = true;
+    dragMoved = false;
+
+    dragStartX =
+      event.clientX;
+
+    dragScroll =
+      nav.scrollLeft;
+
+  }
+);
+
+nav.addEventListener(
+  "pointermove",
+  event => {
+
+    if(
+      !dragging &&
+      !dragStartX
+    ){
+
+      return;
+
+    }
+
+    const delta =
+      event.clientX -
+      dragStartX;
+
+    if(
+      Math.abs(delta) < 6
+    ){
+
+      return;
+
+    }
+
+    dragging = true;
+    dragMoved = true;
+
+    nav.scrollLeft =
+      dragScroll -
+      delta;
+
+  }
+);
+
+nav.addEventListener(
+  "pointerup",
+  () => {
+
+    dragging = false;
+
+    setTimeout(
+      () => {
+
+        dragMoved = false;
+        dragStartX = 0;
+
+      },
+      0
+    );
+
+  }
+);
+
+nav.addEventListener(
+  "pointercancel",
+  () => {
+
+    dragging = false;
+    dragMoved = false;
+    dragStartX = 0;
+
+  }
+);
+
+nav.addEventListener(
+  "click",
+  event => {
+
+    if(
+      dragMoved
+    ){
+
+      event.preventDefault();
+      event.stopPropagation();
+
+    }
+
+  },
+  true
+);
+
+/* =========================================================
+   LAYER NAVIGATION
 ========================================================= */
 
 const layers =
   $("layers");
 
-const oyaSwitch =
-  $("oyaSwitch");
-
-const reflectivitySwitch =
-  $("reflectivitySwitch");
-
-const lightningSwitch =
-  $("lightningSwitch");
-
 const layersNav =
   $("layersNav");
 
-/* =========================================================
-   ПЕРЕНОС ПАНЕЛИ НЕПОСРЕДСТВЕННО В BODY
-========================================================= */
-
 if(
   layers &&
-  layers.parentElement !== document.body
+  layers.parentElement !==
+    document.body
 ){
 
   document.body.appendChild(
@@ -1668,10 +1472,6 @@ if(
   );
 
 }
-
-/* =========================================================
-   ОТКРЫТИЕ / ЗАКРЫТИЕ ПАНЕЛИ
-========================================================= */
 
 function toggleLayers(){
 
@@ -1685,95 +1485,31 @@ function toggleLayers(){
 
 }
 
-/* =========================================================
-   ЗАЩИТА КНОПКИ "СЛОИ"
-   ОТ NAV / LEAFLET / MAPLIBRE
-========================================================= */
-
-document.addEventListener(
-  "pointerdown",
-  event => {
-
-    const target =
-      event.target;
-
-    if(
-      target &&
-      target.closest &&
-      target.closest("#layersNav")
-    ){
-
-      event.preventDefault();
-      event.stopPropagation();
-
-    }
-
-  },
-  true
-);
-
-document.addEventListener(
+layersNav?.addEventListener(
   "click",
   event => {
 
-    const target =
-      event.target;
+    event.preventDefault();
+    event.stopPropagation();
 
-    if(
-      !target ||
-      !target.closest
-    ){
+    toggleLayers();
 
-      return;
-
-    }
-
-    const layersButton =
-      target.closest(
-        "#layersNav"
-      );
-
-    if(
-      layersButton
-    ){
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      toggleLayers();
-
-      return;
-
-    }
-
-  },
-  true
+  }
 );
 
 /* =========================================================
-   ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ
+   SWITCHES
 ========================================================= */
 
-function toggleLayerSwitch(
+function setupSwitch(
   element,
-  onMessage,
-  offMessage
+  onText,
+  offText
 ){
 
   if(!element){
     return;
   }
-
-  element.addEventListener(
-    "pointerdown",
-    event => {
-
-      event.preventDefault();
-      event.stopPropagation();
-
-    },
-    true
-  );
 
   element.addEventListener(
     "click",
@@ -1793,325 +1529,32 @@ function toggleLayerSwitch(
 
       msg(
         enabled
-          ? onMessage
-          : offMessage
+          ? onText
+          : offText
       );
 
-    },
-    true
+    }
   );
 
 }
 
-toggleLayerSwitch(
-  oyaSwitch,
+setupSwitch(
+  $("oyaSwitch"),
   "Опасные явления",
   "Опасные явления выключены"
 );
 
-toggleLayerSwitch(
-  reflectivitySwitch,
+setupSwitch(
+  $("reflectivitySwitch"),
   "Отражаемость",
   "Отражаемость выключена"
 );
 
-toggleLayerSwitch(
-  lightningSwitch,
+setupSwitch(
+  $("lightningSwitch"),
   "Молнии",
   "Молнии выключены"
 );
-
-/* =========================================================
-   LEGEND
-========================================================= */
-
-$("legendTab").onclick = () => {
-
-  $("legend").classList.add("open");
-  $("legendTab").classList.add("hidden");
-
-};
-
-$("legendClose").onclick = () => {
-
-  $("legend").classList.remove("open");
-  $("legendTab").classList.remove("hidden");
-
-};
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
-const nav =
-  $("nav");
-
-let dragging = false;
-let dragStartX = 0;
-let dragScroll = 0;
-
-nav.addEventListener(
-  "pointerdown",
-  event => {
-
-    if(
-      event.target &&
-      event.target.closest &&
-      event.target.closest("#layersNav")
-    ){
-
-      return;
-
-    }
-
-    dragging = true;
-
-    dragStartX =
-      event.clientX;
-
-    dragScroll =
-      nav.scrollLeft;
-
-    nav.setPointerCapture?.(
-      event.pointerId
-    );
-
-  }
-);
-
-nav.addEventListener(
-  "pointermove",
-  event => {
-
-    if(!dragging){
-      return;
-    }
-
-    nav.scrollLeft =
-      dragScroll -
-      (
-        event.clientX -
-        dragStartX
-      );
-
-  }
-);
-
-nav.addEventListener(
-  "pointerup",
-  () => {
-    dragging = false;
-  }
-);
-
-nav.addEventListener(
-  "pointercancel",
-  () => {
-    dragging = false;
-  }
-);
-
-/* =========================================================
-   SEARCH
-========================================================= */
-
-const cities = {
-
-  "москва":[55.75,37.62],
-  "уфа":[54.74,55.97],
-  "казань":[55.79,49.12],
-  "самара":[53.20,50.10],
-  "нижний новгород":[56.33,44.01],
-  "санкт-петербург":[59.93,30.31],
-  "екатеринбург":[56.84,60.61],
-  "омск":[54.99,73.37],
-  "новосибирск":[55.03,82.92],
-  "челябинск":[55.16,61.40],
-  "пермь":[58.01,56.25],
-  "воронеж":[51.67,39.18],
-  "ростов":[47.23,39.70]
-
-};
-
-$("searchBtn").onclick = () => {
-
-  $("search").classList.toggle("open");
-
-  $("settings").classList.remove("open");
-
-  if(
-    $("search").classList.contains("open")
-  ){
-
-    setTimeout(
-      () => $("searchInput").focus(),
-      50
-    );
-
-  }
-
-};
-
-$("searchInput").onkeydown =
-  event => {
-
-    if(event.key !== "Enter"){
-      return;
-    }
-
-    const query =
-      event.target.value
-        .toLowerCase()
-        .trim();
-
-    const city =
-      Object.keys(cities)
-        .find(
-          name =>
-            name.includes(query)
-        );
-
-    if(!city){
-
-      msg("Город не найден");
-
-      return;
-
-    }
-
-    map.setView(
-      cities[city],
-      9
-    );
-
-    $("search").classList.remove("open");
-
-    msg(
-      city.charAt(0).toUpperCase() +
-      city.slice(1)
-    );
-
-  };
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-$("settingsBtn").onclick = () => {
-
-  $("settings").classList.toggle("open");
-
-  $("search").classList.remove("open");
-
-};
-
-$("framesHead").onclick = () => {
-
-  $("framesSetting").classList.toggle("open");
-
-};
-
-let frameCount = 24;
-
-$("frameMinus").onclick = () => {
-
-  frameCount =
-    Math.max(
-      1,
-      frameCount - 1
-    );
-
-  $("frameInput").value =
-    frameCount;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-$("framePlus").onclick = () => {
-
-  frameCount++;
-
-  $("frameInput").value =
-    frameCount;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-$("frameInput").onchange = () => {
-
-  let value =
-    parseInt(
-      $("frameInput").value,
-      10
-    );
-
-  if(
-    !Number.isFinite(value) ||
-    value < 1
-  ){
-    value = 1;
-  }
-
-  frameCount = value;
-
-  $("frameInput").value = value;
-
-  if(activeProduct){
-    loadProduct(
-      activeProduct,
-      true
-    );
-  }
-
-};
-
-/* =========================================================
-   MENU
-========================================================= */
-
-$("menuBtn").onclick = () => {
-
-  nav.classList.toggle("closed");
-
-  $("search").classList.remove("open");
-  $("settings").classList.remove("open");
-
-};
-
-/* =========================================================
-   THEME
-========================================================= */
-
-let darkMode = true;
-
-$("themeBtn").onclick = () => {
-
-  darkMode = !darkMode;
-
-  document.body.classList.toggle(
-    "light",
-    !darkMode
-  );
-
-  msg(
-    darkMode
-      ? "Тёмная тема"
-      : "Светлая тема"
-  );
-
-};
 
 /* =========================================================
    CLOSE POPUPS
@@ -2122,1416 +1565,36 @@ document.addEventListener(
   event => {
 
     if(
-      !event.target.closest(".search") &&
-      !event.target.closest("#searchBtn")
-    ){
-
-      $("search").classList.remove("open");
-
-    }
-
-    if(
-      !event.target.closest(".settings") &&
-      !event.target.closest("#settingsBtn")
-    ){
-
-      $("settings").classList.remove("open");
-
-    }
-
-  }
-);
-
-/* =========================================================
-   IDARKMETEO
-========================================================= */
-
-const IDARK_PROXY =
-  "/api/idarkmeteo?path=";
-
-let activeProduct = null;
-let activeFrames = [];
-let activeLayer = null;
-let activeMetadata = null;
-
-let activeRequest = 0;
-let activeFrameRequest = 0;
-
-/* =========================================================
-   PRODUCT CONFIG
-========================================================= */
-
-const products = {
-
-  rain:{
-    button:"rainProduct",
-    framePath:"frames/rain/wide.json",
-    title:"Осадки",
-    units:"мм/ч"
-  },
-
-  smoke:{
-    button:null,
-    framePath:"frames/smoke/swath.json",
-    title:"Дым/пепел",
-    units:""
-  },
-
-  satrain:{
-    button:null,
-    framePath:"frames/satrain/coarse.json",
-    title:"Спутниковые осадки",
-    units:"мм/ч"
-  },
-
-  cloudphase:{
-    button:null,
-    framePath:"frames/cloudphase/swath.json",
-    title:"Фаза облака",
-    units:""
-  }
-
-};
-
-/* =========================================================
-   PROXY
-========================================================= */
-
-function proxyUrl(path){
-
-  return (
-    IDARK_PROXY +
-    encodeURIComponent(
-      path
-    )
-  );
-
-}
-
-/* =========================================================
-   TIMEOUT FETCH
-========================================================= */
-
-async function fetchWithTimeout(
-  url,
-  options = {},
-  timeout = 30000
-){
-
-  const controller =
-    new AbortController();
-
-  const timer =
-    setTimeout(
-      () => controller.abort(),
-      timeout
-    );
-
-  try{
-
-    return await fetch(
-      url,
-      {
-        ...options,
-        signal:controller.signal
-      }
-    );
-
-  }finally{
-
-    clearTimeout(timer);
-
-  }
-
-}
-
-/* =========================================================
-   FORMAT TIME
-========================================================= */
-
-function formatFrameTime(value){
-
-  if(!value){
-    return "—";
-  }
-
-  const date =
-    new Date(value);
-
-  if(
-    Number.isNaN(
-      date.getTime()
-    )
-  ){
-
-    return String(value);
-
-  }
-
-  return date.toLocaleTimeString(
-    "ru-RU",
-    {
-      hour:"2-digit",
-      minute:"2-digit",
-      timeZone:"Europe/Moscow"
-    }
-  );
-
-}
-
-/* =========================================================
-   EPSG:3857 → LEAFLET BOUNDS
-========================================================= */
-
-function makeBounds(box){
-
-  if(
-    !Array.isArray(box) ||
-    box.length < 4
-  ){
-
-    throw new Error(
-      "Некорректный box"
-    );
-
-  }
-
-  const back =
-    (x,y) =>
-      L.Projection
-        .SphericalMercator
-        .unproject(
-          L.point(
-            x,
-            y
-          )
-        );
-
-  return L.latLngBounds(
-
-    back(
-      Number(box[0]),
-      Number(box[1])
-    ),
-
-    back(
-      Number(box[2]),
-      Number(box[3])
-    )
-
-  );
-
-}
-
-/* =========================================================
-   DEFLATE
-========================================================= */
-
-async function inflateDeflate(
-  bytes
-){
-
-  if(
-    typeof DecompressionStream ===
-    "undefined"
-  ){
-
-    throw new Error(
-      "Браузер не поддерживает DecompressionStream"
-    );
-
-  }
-
-  const stream =
-    new Blob(
-      [bytes]
-    ).stream().pipeThrough(
-      new DecompressionStream(
-        "deflate"
-      )
-    );
-
-  const buffer =
-    await new Response(
-      stream
-    ).arrayBuffer();
-
-  return new Uint8Array(
-    buffer
-  );
-
-}
-
-/* =========================================================
-   RDR PARSE
-========================================================= */
-
-async function decodeRDR(
-  buffer
-){
-
-  const bytes =
-    new Uint8Array(
-      buffer
-    );
-
-  if(
-    bytes.length < 9
-  ){
-
-    throw new Error(
-      "RDR-файл слишком маленький"
-    );
-
-  }
-
-  const signature =
-    String.fromCharCode(
-      bytes[0],
-      bytes[1],
-      bytes[2],
-      bytes[3]
-    );
-
-  if(
-    signature !== "IDMR"
-  ){
-
-    throw new Error(
-      "Неверная подпись RDR"
-    );
-
-  }
-
-  if(
-    bytes[4] !== 1
-  ){
-
-    throw new Error(
-      "Неподдерживаемая версия RDR"
-    );
-
-  }
-
-  const view =
-    new DataView(
-      buffer
-    );
-
-  const headerLength =
-    view.getUint32(
-      5,
-      true
-    );
-
-  const headerStart =
-    9;
-
-  const headerEnd =
-    headerStart +
-    headerLength;
-
-  if(
-    headerEnd > bytes.length
-  ){
-
-    throw new Error(
-      "Повреждена шапка RDR"
-    );
-
-  }
-
-  const headerBytes =
-    bytes.slice(
-      headerStart,
-      headerEnd
-    );
-
-  const headerText =
-    new TextDecoder(
-      "utf-8"
-    ).decode(
-      headerBytes
-    );
-
-  let header;
-
-  try{
-
-    header =
-      JSON.parse(
-        headerText
-      );
-
-  }catch{
-
-    throw new Error(
-      "Не удалось прочитать JSON шапки RDR"
-    );
-
-  }
-
-  const body =
-    bytes.slice(
-      headerEnd
-    );
-
-  const lengths =
-    header?.тело?.длины_потоков;
-
-  if(
-    !Array.isArray(lengths) ||
-    lengths.length < 3
-  ){
-
-    throw new Error(
-      "В RDR отсутствуют длины потоков"
-    );
-
-  }
-
-  const streams = [];
-
-  let offset = 0;
-
-  for(
-    const length of lengths
-  ){
-
-    const end =
-      offset +
-      Number(length);
-
-    if(
-      end > body.length
-    ){
-
-      throw new Error(
-        "Повреждены потоки RDR"
-      );
-
-    }
-
-    streams.push(
-      body.slice(
-        offset,
-        end
-      )
-    );
-
-    offset = end;
-
-  }
-
-  const compression =
-    String(
-      header?.тело?.жатьё ||
-      "deflate"
-    ).toLowerCase();
-
-  if(
-    compression !== "deflate"
-  ){
-
-    throw new Error(
-      "Этот RDR использует " +
-      compression +
-      ". В браузере CLOrad поддерживает deflate."
-    );
-
-  }
-
-  const valuesBytes =
-    await inflateDeflate(
-      streams[0]
-    );
-
-  const values =
-    new Uint8Array(
-      valuesBytes
-    );
-
-  const runBytes =
-    await inflateDeflate(
-      streams[1]
-    );
-
-  const runs = [];
-
-  let number = 0;
-  let shift = 0;
-
-  for(
-    let i = 0;
-    i < runBytes.length;
-    i++
-  ){
-
-    const byte =
-      runBytes[i];
-
-    number |=
-      (
-        byte &
-        127
-      ) <<
-      shift;
-
-    if(
-      byte &
-      128
-    ){
-
-      shift += 7;
-
-    }else{
-
-      runs.push(
-        number
-      );
-
-      number = 0;
-      shift = 0;
-
-    }
-
-  }
-
-  if(
-    shift !== 0
-  ){
-
-    throw new Error(
-      "Повреждён RLE-поток RDR"
-    );
-
-  }
-
-  if(
-    values.length !== runs.length
-  ){
-
-    throw new Error(
-      "Количество значений RDR не совпадает с RLE"
-    );
-
-  }
-
-  const width =
-    Number(
-      header?.ширина
-    );
-
-  const height =
-    Number(
-      header?.высота
-    );
-
-  if(
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width <= 0 ||
-    height <= 0
-  ){
-
-    throw new Error(
-      "Некорректный размер сетки RDR"
-    );
-
-  }
-
-  const pixelCount =
-    width *
-    height;
-
-  const paletteBytes =
-    await inflateDeflate(
-      streams[2]
-    );
-
-  const paletteInfo =
-    Number(
-      header?.тело?.палитра
-    ) || 4;
-
-  if(
-    paletteInfo < 4
-  ){
-
-    throw new Error(
-      "Некорректный размер цвета палитры"
-    );
-
-  }
-
-  if(
-    paletteBytes.length <
-    256 * paletteInfo
-  ){
-
-    throw new Error(
-      "Палитра RDR повреждена"
-    );
-
-  }
-
-  const rgba =
-    new Uint8ClampedArray(
-      pixelCount * 4
-    );
-
-  let pixel =
-    0;
-
-  for(
-    let run = 0;
-    run < values.length;
-    run++
-  ){
-
-    const code =
-      values[run];
-
-    const length =
-      Number(
-        runs[run]
-      );
-
-    if(
-      length <= 0
-    ){
-
-      continue;
-
-    }
-
-    const paletteOffset =
-      code *
-      paletteInfo;
-
-    const r =
-      paletteBytes[
-        paletteOffset
-      ];
-
-    const g =
-      paletteBytes[
-        paletteOffset + 1
-      ];
-
-    const b =
-      paletteBytes[
-        paletteOffset + 2
-      ];
-
-    const a =
-      paletteBytes[
-        paletteOffset + 3
-      ];
-
-    const end =
-      Math.min(
-        pixel +
-        length,
-        pixelCount
-      );
-
-    for(
-      ;
-      pixel < end;
-      pixel++
-    ){
-
-      const p =
-        pixel * 4;
-
-      rgba[p] =
-        r;
-
-      rgba[p + 1] =
-        g;
-
-      rgba[p + 2] =
-        b;
-
-      rgba[p + 3] =
-        a;
-
-    }
-
-  }
-
-  if(
-    pixel !== pixelCount
-  ){
-
-    throw new Error(
-      "RLE RDR не заполнил всю сетку"
-    );
-
-  }
-
-  return {
-    header,
-    width,
-    height,
-    rgba
-  };
-
-}
-
-/* =========================================================
-   RDR → IMAGE URL
-========================================================= */
-
-async function rdrToImageUrl(
-  buffer
-){
-
-  const decoded =
-    await decodeRDR(
-      buffer
-    );
-
-  const canvas =
-    document.createElement(
-      "canvas"
-    );
-
-  canvas.width =
-    decoded.width;
-
-  canvas.height =
-    decoded.height;
-
-  const ctx =
-    canvas.getContext(
-      "2d",
-      {
-        alpha:true,
-        willReadFrequently:false
-      }
-    );
-
-  if(!ctx){
-
-    throw new Error(
-      "Canvas недоступен"
-    );
-
-  }
-
-  const imageData =
-    new ImageData(
-      decoded.rgba,
-      decoded.width,
-      decoded.height
-    );
-
-  ctx.putImageData(
-    imageData,
-    0,
-    0
-  );
-
-  const blob =
-    await new Promise(
-      (resolve,reject) => {
-
-        canvas.toBlob(
-          result => {
-
-            if(result){
-              resolve(result);
-            }else{
-              reject(
-                new Error(
-                  "Не удалось создать изображение"
-                )
-              );
-            }
-
-          },
-          "image/png"
-        );
-
-      }
-    );
-
-  return {
-    url:URL.createObjectURL(blob),
-    header:decoded.header
-  };
-
-}
-
-/* =========================================================
-   REMOVE CURRENT RASTER
-========================================================= */
-
-function removeActiveLayer(){
-
-  if(
-    activeLayer
-  ){
-
-    if(
-      map.hasLayer(
-        activeLayer
+      !event.target.closest(
+        "#settings"
+      ) &&
+      !event.target.closest(
+        "#settingsBtn"
       )
     ){
 
-      map.removeLayer(
-        activeLayer
-      );
-
-    }
-
-    activeLayer =
-      null;
-
-  }
-
-}
-
-/* =========================================================
-   LOAD RAIN FRAME
-========================================================= */
-
-async function loadFrame(
-  frame,
-  requestId
-){
-
-  const frameRequestId =
-    ++activeFrameRequest;
-
-  if(
-    requestId !== activeRequest
-  ){
-
-    return;
-
-  }
-
-  if(
-    !frame ||
-    !frame.path
-  ){
-
-    throw new Error(
-      "У кадра отсутствует path"
-    );
-
-  }
-
-  const response =
-    await fetchWithTimeout(
-      proxyUrl(
-        frame.path
-      ),
-      {
-        method:"GET",
-        cache:"force-cache"
-      },
-      60000
-    );
-
-  if(
-    requestId !== activeRequest ||
-    frameRequestId !== activeFrameRequest
-  ){
-
-    return;
-
-  }
-
-  if(
-    !response.ok
-  ){
-
-    throw new Error(
-      "Кадр: HTTP " +
-      response.status
-    );
-
-  }
-
-  const buffer =
-    await response.arrayBuffer();
-
-  if(
-    requestId !== activeRequest ||
-    frameRequestId !== activeFrameRequest
-  ){
-
-    return;
-
-  }
-
-  const result =
-    await rdrToImageUrl(
-      buffer
-    );
-
-  if(
-    requestId !== activeRequest ||
-    frameRequestId !== activeFrameRequest
-  ){
-
-    try{
-
-      URL.revokeObjectURL(
-        result.url
-      );
-
-    }catch{}
-
-    return;
-
-  }
-
-  const box =
-    activeMetadata?.box ||
-    result.header?.box;
-
-  if(
-    !box
-  ){
-
-    try{
-
-      URL.revokeObjectURL(
-        result.url
-      );
-
-    }catch{}
-
-    throw new Error(
-      "В RDR отсутствует box"
-    );
-
-  }
-
-  const bounds =
-    makeBounds(
-      box
-    );
-
-  const oldLayer =
-    activeLayer;
-
-  const layer =
-    L.imageOverlay(
-      result.url,
-      bounds,
-      {
-        opacity:1,
-        interactive:false,
-        crossOrigin:true,
-        zIndex:5,
-        className:"clorad-radar-raster"
-      }
-    );
-
-  if(
-    requestId !== activeRequest ||
-    frameRequestId !== activeFrameRequest
-  ){
-
-    try{
-
-      URL.revokeObjectURL(
-        result.url
-      );
-
-    }catch{}
-
-    return;
-
-  }
-
-  activeLayer =
-    layer;
-
-  layer.addTo(
-    map
-  );
-
-  if(
-    oldLayer &&
-    oldLayer !== layer &&
-    map.hasLayer(oldLayer)
-  ){
-
-    map.removeLayer(
-      oldLayer
-    );
-
-  }
-
-  $("timeLabel").textContent =
-    formatFrameTime(
-      frame.t
-    );
-
-  $("intensityValue").textContent =
-    activeProduct === "rain"
-      ? "мм/ч"
-      : "—";
-
-  layer.once(
-    "remove",
-    () => {
-
-      try{
-
-        URL.revokeObjectURL(
-          result.url
+      $("settings")
+        ?.classList.remove(
+          "open"
         );
 
-      }catch{}
-
-    }
-  );
-
-}
-
-/* =========================================================
-   LOAD PRODUCT METADATA
-========================================================= */
-
-async function loadProduct(
-  productName,
-  keepCurrentFrame = false
-){
-
-  const product =
-    products[
-      productName
-    ];
-
-  if(!product){
-
-    return;
-
-  }
-
-  const requestId =
-    ++activeRequest;
-
-  activeFrameRequest++;
-
-  activeProduct =
-    productName;
-
-  activeMetadata =
-    null;
-
-  $("loadingFrames").classList.add(
-    "show"
-  );
-
-  $("framesInfo").textContent =
-    "Подключение к радару…";
-
-  $("timeLabel").textContent =
-    "Подключение к радару…";
-
-  try{
-
-    const response =
-      await fetchWithTimeout(
-        proxyUrl(
-          product.framePath
-        ),
-        {
-          method:"GET",
-          cache:"no-store",
-          headers:{
-            "Accept":
-              "application/json"
-          }
-        },
-        30000
-      );
-
-    if(
-      requestId !== activeRequest
-    ){
-
-      return;
-
     }
 
     if(
-      !response.ok
-    ){
-
-      let detail = "";
-
-      try{
-
-        const errorJson =
-          await response.json();
-
-        detail =
-          errorJson.message ||
-          errorJson.error ||
-          "";
-
-      }catch{
-
-        detail =
-          await response
-            .text()
-            .catch(
-              () => ""
-            );
-
-      }
-
-      throw new Error(
-        "HTTP " +
-        response.status +
-        (
-          detail
-            ? ": " + detail
-            : ""
-        )
-      );
-
-    }
-
-    const metadata =
-      await response.json();
-
-    if(
-      requestId !== activeRequest
-    ){
-
-      return;
-
-    }
-
-    if(
-      !metadata ||
-      !Array.isArray(
-        metadata.frames
+      !event.target.closest(
+        "#legend"
+      ) &&
+      !event.target.closest(
+        "#legendTab"
       )
     ){
 
-      throw new Error(
-        "Некорректный ответ frames"
-      );
-
-    }
-
-    activeMetadata =
-      metadata;
-
-    let frames =
-      metadata.frames
-        .filter(
-          frame =>
-            frame &&
-            frame.path
-        )
-        .slice(
-          0,
-          frameCount
+      $("legend")
+        ?.classList.remove(
+          "open"
         );
 
-    frames =
-      frames.reverse();
-
-    activeFrames =
-      frames;
-
-    if(
-      frames.length === 0
-    ){
-
-      throw new Error(
-        "Кадры отсутствуют"
-      );
-
     }
-
-    $("range").max =
-      Math.max(
-        0,
-        frames.length - 1
-      );
-
-    let selectedIndex;
-
-    if(
-      keepCurrentFrame
-    ){
-
-      selectedIndex =
-        Math.min(
-          Number(
-            $("range").value
-          ),
-          frames.length - 1
-        );
-
-    }else{
-
-      selectedIndex =
-        frames.length - 1;
-
-    }
-
-    $("range").value =
-      selectedIndex;
-
-    $("framesInfo").textContent =
-      "Загружено кадров: " +
-      frames.length;
-
-    $("times").innerHTML =
-      "<span>" +
-      formatFrameTime(
-        frames[0].t
-      ) +
-      "</span>" +
-      "<span>" +
-      formatFrameTime(
-        frames[
-          frames.length - 1
-        ].t
-      ) +
-      "</span>";
-
-    const selectedFrame =
-      frames[
-        selectedIndex
-      ];
-
-    await loadFrame(
-      selectedFrame,
-      requestId
-    );
-
-    if(
-      requestId !== activeRequest
-    ){
-
-      return;
-
-    }
-
-    $("loadingFrames").classList.remove(
-      "show"
-    );
-
-  }catch(error){
-
-    if(
-      requestId !== activeRequest
-    ){
-
-      return;
-
-    }
-
-    console.error(
-      "CLOrad Idarkmeteo:",
-      error
-    );
-
-    $("loadingFrames").classList.remove(
-      "show"
-    );
-
-    removeActiveLayer();
-
-    $("timeLabel").textContent =
-      "Ошибка подключения";
-
-    $("framesInfo").textContent =
-      error?.name === "AbortError"
-        ? "Таймаут подключения"
-        : (
-            error?.message ||
-            "Ошибка загрузки кадра"
-          );
-
-    $("intensityValue").textContent =
-      "Нет данных";
-
-    msg(
-      error?.message ||
-      "Ошибка подключения"
-    );
-
-  }
-
-}
-
-/* =========================================================
-   STOP RADAR
-========================================================= */
-
-function stopRadar(){
-
-  activeRequest++;
-
-  activeFrameRequest++;
-
-  activeProduct =
-    null;
-
-  activeFrames =
-    [];
-
-  activeMetadata =
-    null;
-
-  if(
-    playing
-  ){
-
-    playing =
-      false;
-
-    clearInterval(
-      playTimer
-    );
-
-    playTimer =
-      null;
-
-    $("play").innerHTML =
-      '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
-
-  }
-
-  removeActiveLayer();
-
-  $("range").max =
-    0;
-
-  $("range").value =
-    0;
-
-  $("times").textContent =
-    "";
-
-  $("timeLabel").textContent =
-    "Радар не подключён";
-
-  $("framesInfo").textContent =
-    "Радар пока не подключён";
-
-  $("loadingFrames").classList.remove(
-    "show"
-  );
-
-  $("intensityValue").textContent =
-    "Нет данных";
-
-}
-
-window.CLOradStopRadar =
-  stopRadar;
-
-/* =========================================================
-   RAIN BUTTON
-========================================================= */
-
-$("rainProduct").onclick =
-  event => {
-
-    event.stopPropagation();
-
-    setActiveNav(
-      $("rainProduct")
-    );
-
-    loadProduct(
-      "rain"
-    );
-
-  };
-
-/* =========================================================
-   ACTIVE NAV
-========================================================= */
-
-function setActiveNav(button){
-
-  document
-    .querySelectorAll(".n")
-    .forEach(
-      item =>
-        item.classList.remove(
-          "active"
-        )
-    );
-
-  button.classList.add(
-    "active"
-  );
-
-}
-
-/* =========================================================
-   OTHER PRODUCT BUTTONS
-========================================================= */
-
-const navButtons =
-  document.querySelectorAll(
-    ".n"
-  );
-
-navButtons.forEach(
-  button => {
-
-    if(
-      button.id === "layersNav" ||
-      button.id === "rainProduct"
-    ){
-
-      return;
-
-    }
-
-    button.addEventListener(
-      "click",
-      () => {
-
-        if(
-          typeof window.CLOradDeactivateGIF ===
-          "function"
-        ){
-
-          window.CLOradDeactivateGIF();
-
-        }
-
-        if(
-          typeof window.CLOradStopRadar ===
-          "function"
-        ){
-
-          window.CLOradStopRadar();
-
-        }
-
-        setActiveNav(
-          button
-        );
-
-        msg(
-          button.textContent.trim()
-        );
-
-      }
-    );
 
   }
 );
@@ -3540,91 +1603,111 @@ navButtons.forEach(
    TIMELINE
 ========================================================= */
 
-$("range").oninput =
-  async () => {
+let activeProduct =
+  null;
 
-    if(
-      typeof window.CLOradGIFActive ===
-      "function" &&
-      window.CLOradGIFActive()
-    ){
+let activeFrames =
+  [];
 
-      return;
+let activeLayer =
+  null;
 
+let activeMetadata =
+  null;
+
+let activeRequest =
+  0;
+
+let activeFrameRequest =
+  0;
+
+let playing =
+  false;
+
+let playTimer =
+  null;
+
+function formatFrameTime(
+  value
+){
+
+  if(
+    !value
+  ){
+
+    return "";
+
+  }
+
+  const date =
+    new Date(
+      value
+    );
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+
+    return String(
+      value
+    );
+
+  }
+
+  return date.toLocaleString(
+    "ru-RU",
+    {
+      day:"2-digit",
+      month:"2-digit",
+      hour:"2-digit",
+      minute:"2-digit"
     }
+  );
 
-    if(
-      !activeProduct ||
-      !activeFrames.length ||
-      !activeMetadata
-    ){
+}
 
-      return;
-
-    }
+$("range").addEventListener(
+  "input",
+  () => {
 
     const index =
       Number(
         $("range").value
       );
 
-    const frame =
-      activeFrames[
-        index
-      ];
+    if(
+      typeof window.CLOradGIFShowFrame ===
+      "function" &&
+      window.CLOradGIFActive?.()
+    ){
 
-    if(!frame){
+      window.CLOradGIFShowFrame(
+        index
+      );
 
       return;
 
     }
 
-    $("timeLabel").textContent =
-      formatFrameTime(
-        frame.t
-      );
+    if(
+      activeFrames.length &&
+      window.CLOradShowFrame
+    ){
 
-    try{
-
-      $("loadingFrames").classList.add(
-        "show"
-      );
-
-      await loadFrame(
-        frame,
-        activeRequest
-      );
-
-      $("loadingFrames").classList.remove(
-        "show"
-      );
-
-    }catch(error){
-
-      $("loadingFrames").classList.remove(
-        "show"
-      );
-
-      console.error(
-        "CLOrad frame:",
-        error
-      );
-
-      msg(
-        error?.message ||
-        "Ошибка кадра"
+      window.CLOradShowFrame(
+        index
       );
 
     }
 
-  };
+  }
+);
 
 /* =========================================================
    PLAY
 ========================================================= */
-
-let playing = false;
-let playTimer = null;
 
 $("play").onclick =
   () => {
@@ -3760,9 +1843,6 @@ $("range").max =
 $("range").value =
   0;
 
-$("times").textContent =
-  "";
-
 $("intensityValue").textContent =
   "Нет данных";
 
@@ -3794,6 +1874,6 @@ setTimeout(
 <script src="gif-radar.js"></script>
 <script src="radar-palettes.js"></script>
 <script src="layers-fix.js"></script>
-  
+
 </body>
 </html>
