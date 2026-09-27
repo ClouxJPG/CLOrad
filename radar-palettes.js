@@ -1,6 +1,6 @@
 /* =========================================================
    CLOrad — Radar Palettes Manager
-   Отдельный менеджер цветовых палитр радара
+   =========================================================
 
    Системные палитры:
    - РГМЦ
@@ -30,13 +30,15 @@
      CONFIG
      ======================================================= */
 
-  const STORAGE_KEY = "CLOrad_radar_palettes_v1";
+  const STORAGE_KEY =
+    "CLOrad_radar_palettes_v1";
 
   const COLOR_COUNT = 19;
 
-  /*
-     РГМЦ — исходная палитра данных Meteoinfo.
-  */
+  /* =======================================================
+     СИСТЕМНАЯ ПАЛИТРА РГМЦ
+     ======================================================= */
+
   const RGMC_PALETTE = [
     "#b9c1c7",
     "#a9a9a9",
@@ -59,15 +61,10 @@
     "#000000"
   ];
 
-  /*
-     ИРАМ.
+  /* =======================================================
+     СИСТЕМНАЯ ПАЛИТРА ИРАМ
+     ======================================================= */
 
-     Здесь используется текущая 19-ступенчатая палитра,
-     совместимая с существующей системой CLOrad.
-
-     Это встроенный системный профиль.
-     Он не удаляется из интерфейса.
-  */
   const IRAM_PALETTE = [
     "#b9c1c7",
     "#a9a9a9",
@@ -90,6 +87,10 @@
     "#000000"
   ];
 
+  /* =======================================================
+     СИСТЕМНЫЕ ПАЛИТРЫ
+     ======================================================= */
+
   const SYSTEM_PALETTES = [
     {
       id: "rgmc",
@@ -97,6 +98,7 @@
       locked: true,
       colors: RGMC_PALETTE.slice()
     },
+
     {
       id: "iram",
       name: "ИРАМ",
@@ -110,9 +112,12 @@
      ======================================================= */
 
   let palettes = [];
-  let activePaletteId = "rgmc";
 
-  let editorPaletteId = null;
+  let activePaletteId =
+    "rgmc";
+
+  let editorPaletteId =
+    null;
 
   /* =======================================================
      HELPERS
@@ -124,45 +129,73 @@
       : [];
   }
 
-  function normalizeColor(color, fallback) {
-    if (typeof color !== "string") {
+  function normalizeColor(
+    color,
+    fallback
+  ) {
+    if (
+      typeof color !== "string"
+    ) {
       return fallback;
     }
 
-    let value = color.trim();
+    let value =
+      color.trim();
 
     if (!value) {
       return fallback;
     }
 
-    if (!value.startsWith("#")) {
-      value = "#" + value;
+    if (
+      !value.startsWith("#")
+    ) {
+      value =
+        "#" + value;
     }
 
-    if (/^#[0-9a-fA-F]{6}$/.test(value)) {
+    if (
+      /^#[0-9a-fA-F]{6}$/.test(
+        value
+      )
+    ) {
       return value.toLowerCase();
     }
 
-    if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+    if (
+      /^#[0-9a-fA-F]{3}$/.test(
+        value
+      )
+    ) {
       return (
         "#" +
-        value[1] + value[1] +
-        value[2] + value[2] +
-        value[3] + value[3]
+        value[1] +
+        value[1] +
+        value[2] +
+        value[2] +
+        value[3] +
+        value[3]
       ).toLowerCase();
     }
 
     return fallback;
   }
 
-  function normalizeColors(colors, fallback) {
+  function normalizeColors(
+    colors,
+    fallback
+  ) {
     const result = [];
 
-    for (let i = 0; i < COLOR_COUNT; i++) {
+    for (
+      let i = 0;
+      i < COLOR_COUNT;
+      i++
+    ) {
       result.push(
         normalizeColor(
           colors?.[i],
-          fallback?.[i] || "#000000"
+          fallback?.[i] ||
+            "#000000"
         )
       );
     }
@@ -175,24 +208,34 @@
       "custom-" +
       Date.now().toString(36) +
       "-" +
-      Math.random().toString(36).slice(2, 8)
+      Math.random()
+        .toString(36)
+        .slice(2, 8)
     );
   }
 
   function getSystemPalette(id) {
-    return SYSTEM_PALETTES.find(p => p.id === id) || null;
+    return (
+      SYSTEM_PALETTES.find(
+        palette =>
+          palette.id === id
+      ) || null
+    );
   }
 
   function getPalette(id) {
-    return palettes.find(p => p.id === id) || null;
+    return (
+      palettes.find(
+        palette =>
+          palette.id === id
+      ) || null
+    );
   }
 
   function getActivePalette() {
-    return getPalette(activePaletteId);
-  }
-
-  function isSystemPalette(id) {
-    return !!getSystemPalette(id);
+    return getPalette(
+      activePaletteId
+    );
   }
 
   /* =======================================================
@@ -201,14 +244,21 @@
 
   function saveStorage() {
     try {
-      const custom = palettes
-        .filter(p => !p.locked)
-        .map(p => ({
-          id: p.id,
-          name: p.name,
-          locked: false,
-          colors: cloneColors(p.colors)
-        }));
+      const custom =
+        palettes
+          .filter(
+            palette =>
+              !palette.locked
+          )
+          .map(palette => ({
+            id: palette.id,
+            name: palette.name,
+            locked: false,
+            colors:
+              cloneColors(
+                palette.colors
+              )
+          }));
 
       localStorage.setItem(
         STORAGE_KEY,
@@ -226,59 +276,93 @@
   }
 
   function loadStorage() {
-    palettes = SYSTEM_PALETTES.map(p => ({
-      id: p.id,
-      name: p.name,
-      locked: true,
-      colors: p.colors.slice()
-    }));
+    palettes =
+      SYSTEM_PALETTES.map(
+        palette => ({
+          id: palette.id,
+          name: palette.name,
+          locked: true,
+          colors:
+            palette.colors.slice()
+        })
+      );
 
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw =
+        localStorage.getItem(
+          STORAGE_KEY
+        );
 
       if (!raw) {
-        activePaletteId = "rgmc";
+        activePaletteId =
+          "rgmc";
+
         return;
       }
 
-      const data = JSON.parse(raw);
+      const data =
+        JSON.parse(raw);
 
-      if (Array.isArray(data.palettes)) {
-        for (const item of data.palettes) {
-          if (!item || !item.id) continue;
-
+      if (
+        Array.isArray(
+          data.palettes
+        )
+      ) {
+        for (
+          const item of
+            data.palettes
+        ) {
           if (
-            item.id === "rgmc" ||
-            item.id === "iram"
+            !item ||
+            !item.id
           ) {
             continue;
           }
 
-          const colors = normalizeColors(
-            item.colors,
-            RGMC_PALETTE
-          );
+          if (
+            item.id ===
+              "rgmc" ||
+            item.id ===
+              "iram"
+          ) {
+            continue;
+          }
 
           palettes.push({
-            id: String(item.id),
+            id: String(
+              item.id
+            ),
+
             name:
-              typeof item.name === "string" &&
+              typeof item.name ===
+                "string" &&
               item.name.trim()
                 ? item.name.trim()
                 : "Моя палитра",
+
             locked: false,
-            colors
+
+            colors:
+              normalizeColors(
+                item.colors,
+                RGMC_PALETTE
+              )
           });
         }
       }
 
       if (
-        typeof data.activePaletteId === "string" &&
-        getPalette(data.activePaletteId)
+        typeof data.activePaletteId ===
+          "string" &&
+        getPalette(
+          data.activePaletteId
+        )
       ) {
-        activePaletteId = data.activePaletteId;
+        activePaletteId =
+          data.activePaletteId;
       } else {
-        activePaletteId = "rgmc";
+        activePaletteId =
+          "rgmc";
       }
     } catch (error) {
       console.warn(
@@ -286,7 +370,8 @@
         error
       );
 
-      activePaletteId = "rgmc";
+      activePaletteId =
+        "rgmc";
     }
   }
 
@@ -294,15 +379,16 @@
      RADAR API
      ======================================================= */
 
-  function applyToRadar(palette) {
-    if (!palette) return false;
-
-    /*
-       Основной API из gif-radar.js.
-    */
+  function applyToRadar(
+    palette
+  ) {
+    if (!palette) {
+      return false;
+    }
 
     if (
-      typeof window.CLOradSetCustomGIFPalette ===
+      typeof window
+        .CLOradSetCustomGIFPalette ===
       "function"
     ) {
       try {
@@ -313,7 +399,13 @@
             palette.name
           );
 
-        if (result !== false) {
+        if (
+          result !== false
+        ) {
+          updateLegend(
+            palette.colors
+          );
+
           return true;
         }
       } catch (error) {
@@ -324,18 +416,18 @@
       }
     }
 
-    /*
-       Дополнительный API, если будет использоваться
-       в новой версии gif-radar.js.
-    */
-
     if (
-      typeof window.CLOradSetGIFPaletteColors ===
+      typeof window
+        .CLOradSetGIFPaletteColors ===
       "function"
     ) {
       try {
         window.CLOradSetGIFPaletteColors(
           palette.colors.slice()
+        );
+
+        updateLegend(
+          palette.colors
         );
 
         return true;
@@ -347,12 +439,9 @@
       }
     }
 
-    /*
-       Если API ещё не подключён, обновляем хотя бы
-       легенду через собственный интерфейс.
-    */
-
-    updateLegend(palette.colors);
+    updateLegend(
+      palette.colors
+    );
 
     return false;
   }
@@ -361,37 +450,62 @@
      LEGEND
      ======================================================= */
 
-  function updateLegend(colors) {
-    if (!Array.isArray(colors)) return;
+  function updateLegend(
+    colors
+  ) {
+    if (
+      !Array.isArray(colors)
+    ) {
+      return;
+    }
 
-    for (let i = 0; i < COLOR_COUNT; i++) {
-      const color = colors[i];
+    for (
+      let i = 0;
+      i < COLOR_COUNT;
+      i++
+    ) {
+      const color =
+        colors[i];
 
-      const elements = document.querySelectorAll(
-        ".l" + (i + 1)
+      const elements =
+        document.querySelectorAll(
+          ".l" + (i + 1)
+        );
+
+      elements.forEach(
+        element => {
+          element.style.background =
+            color;
+
+          element.style.backgroundColor =
+            color;
+        }
       );
-
-      elements.forEach(element => {
-        element.style.background = color;
-        element.style.backgroundColor = color;
-      });
     }
   }
 
   /* =======================================================
-     PALETTE ACTIONS
+     ACTIVATE
      ======================================================= */
 
-  function activatePalette(id) {
-    const palette = getPalette(id);
+  function activatePalette(
+    id
+  ) {
+    const palette =
+      getPalette(id);
 
-    if (!palette) return;
+    if (!palette) {
+      return;
+    }
 
-    activePaletteId = palette.id;
+    activePaletteId =
+      palette.id;
 
     saveStorage();
 
-    applyToRadar(palette);
+    applyToRadar(
+      palette
+    );
 
     render();
 
@@ -402,12 +516,17 @@
           detail: {
             id: palette.id,
             name: palette.name,
-            colors: palette.colors.slice()
+            colors:
+              palette.colors.slice()
           }
         }
       )
     );
   }
+
+  /* =======================================================
+     CREATE
+     ======================================================= */
 
   function createPalette() {
     const source =
@@ -416,111 +535,187 @@
 
     const palette = {
       id: makeId(),
-      name: "Новая палитра",
+
+      name:
+        "Новая палитра",
+
       locked: false,
-      colors: cloneColors(
-        source?.colors || RGMC_PALETTE
-      )
+
+      colors:
+        cloneColors(
+          source?.colors ||
+            RGMC_PALETTE
+        )
     };
 
-    palettes.push(palette);
+    palettes.push(
+      palette
+    );
 
-    activePaletteId = palette.id;
+    activePaletteId =
+      palette.id;
 
     saveStorage();
 
-    openEditor(palette.id);
+    openEditor(
+      palette.id
+    );
   }
 
-  function duplicatePalette(id) {
-    const source = getPalette(id);
+  /* =======================================================
+     DUPLICATE
+     ======================================================= */
 
-    if (!source) return;
+  function duplicatePalette(
+    id
+  ) {
+    const source =
+      getPalette(id);
+
+    if (!source) {
+      return;
+    }
 
     const copy = {
       id: makeId(),
-      name: source.name + " — копия",
+
+      name:
+        source.name +
+        " — копия",
+
       locked: false,
-      colors: cloneColors(source.colors)
+
+      colors:
+        cloneColors(
+          source.colors
+        )
     };
 
-    palettes.push(copy);
+    palettes.push(
+      copy
+    );
 
-    activePaletteId = copy.id;
+    activePaletteId =
+      copy.id;
 
     saveStorage();
 
     render();
 
-    openEditor(copy.id);
+    openEditor(
+      copy.id
+    );
   }
 
-  function renamePalette(id) {
-    const palette = getPalette(id);
+  /* =======================================================
+     RENAME
+     ======================================================= */
 
-    if (!palette || palette.locked) return;
+  function renamePalette(
+    id
+  ) {
+    const palette =
+      getPalette(id);
 
-    const newName = window.prompt(
-      "Название палитры:",
-      palette.name
-    );
-
-    if (newName === null) {
+    if (
+      !palette ||
+      palette.locked
+    ) {
       return;
     }
 
-    const name = newName.trim();
+    const newName =
+      window.prompt(
+        "Название палитры:",
+        palette.name
+      );
+
+    if (
+      newName === null
+    ) {
+      return;
+    }
+
+    const name =
+      newName.trim();
 
     if (!name) {
       return;
     }
 
-    palette.name = name;
+    palette.name =
+      name;
 
     saveStorage();
 
     render();
 
-    if (editorPaletteId === id) {
+    if (
+      editorPaletteId ===
+      id
+    ) {
       renderEditor();
     }
   }
 
-  function deletePalette(id) {
-    const palette = getPalette(id);
+  /* =======================================================
+     DELETE
+     ======================================================= */
 
-    if (!palette) return;
+  function deletePalette(
+    id
+  ) {
+    const palette =
+      getPalette(id);
+
+    if (!palette) {
+      return;
+    }
 
     if (palette.locked) {
       return;
     }
 
-    const confirmed = window.confirm(
-      'Удалить палитру "' +
-      palette.name +
-      '"?'
-    );
+    const confirmed =
+      window.confirm(
+        'Удалить палитру "' +
+          palette.name +
+          '"?'
+      );
 
     if (!confirmed) {
       return;
     }
 
-    palettes = palettes.filter(
-      p => p.id !== id
-    );
+    palettes =
+      palettes.filter(
+        item =>
+          item.id !== id
+      );
 
-    if (activePaletteId === id) {
-      activePaletteId = "rgmc";
+    if (
+      activePaletteId ===
+      id
+    ) {
+      activePaletteId =
+        "rgmc";
 
-      const rgmc = getPalette("rgmc");
+      const rgmc =
+        getPalette("rgmc");
 
       if (rgmc) {
-        applyToRadar(rgmc);
+        applyToRadar(
+          rgmc
+        );
       }
     }
 
-    if (editorPaletteId === id) {
-      editorPaletteId = null;
+    if (
+      editorPaletteId ===
+      id
+    ) {
+      editorPaletteId =
+        null;
     }
 
     saveStorage();
@@ -528,34 +723,51 @@
     render();
   }
 
-  function resetPalette(id) {
-    const palette = getPalette(id);
+  /* =======================================================
+     RESET
+     ======================================================= */
 
-    if (!palette || palette.locked) {
+  function resetPalette(
+    id
+  ) {
+    const palette =
+      getPalette(id);
+
+    if (
+      !palette ||
+      palette.locked
+    ) {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Вернуть исходные цвета этой пользовательской палитры?"
-    );
+    const confirmed =
+      window.confirm(
+        "Вернуть исходные цвета этой пользовательской палитры?"
+      );
 
     if (!confirmed) {
       return;
     }
 
     const base =
-      getPalette("rgmc") ||
-      SYSTEM_PALETTES[0];
+      getPalette("rgmc");
 
-    palette.colors = base.colors.slice();
+    if (base) {
+      palette.colors =
+        base.colors.slice();
+    }
 
     saveStorage();
 
-    if (activePaletteId === palette.id) {
-      applyToRadar(palette);
+    if (
+      activePaletteId ===
+      palette.id
+    ) {
+      applyToRadar(
+        palette
+      );
     }
 
-    renderEditor();
     render();
   }
 
@@ -563,12 +775,22 @@
      EDITOR
      ======================================================= */
 
-  function openEditor(id) {
-    const palette = getPalette(id);
+  function openEditor(
+    id
+  ) {
+    const palette =
+      getPalette(id);
 
-    if (!palette) return;
+    if (!palette) {
+      return;
+    }
 
-    editorPaletteId = id;
+    if (palette.locked) {
+      return;
+    }
+
+    editorPaletteId =
+      id;
 
     render();
 
@@ -590,17 +812,24 @@
   }
 
   function closeEditor() {
-    editorPaletteId = null;
+    editorPaletteId =
+      null;
 
     render();
   }
 
-  function changeColor(index, value) {
-    const palette = getPalette(
-      editorPaletteId
-    );
+  function changeColor(
+    index,
+    value
+  ) {
+    const palette =
+      getPalette(
+        editorPaletteId
+      );
 
-    if (!palette) return;
+    if (!palette) {
+      return;
+    }
 
     if (palette.locked) {
       return;
@@ -610,26 +839,32 @@
       palette.colors[index] ||
       "#000000";
 
-    const color = normalizeColor(
-      value,
-      fallback
-    );
+    const color =
+      normalizeColor(
+        value,
+        fallback
+      );
 
-    palette.colors[index] = color;
+    palette.colors[
+      index
+    ] = color;
 
     saveStorage();
 
     if (
-      activePaletteId === palette.id
+      activePaletteId ===
+      palette.id
     ) {
-      applyToRadar(palette);
+      applyToRadar(
+        palette
+      );
     }
 
-    renderEditor();
+    render();
   }
 
   /* =======================================================
-     DOM
+     STYLES
      ======================================================= */
 
   function ensureStyles() {
@@ -642,31 +877,109 @@
     }
 
     const style =
-      document.createElement("style");
+      document.createElement(
+        "style"
+      );
 
     style.id =
       "cloradPaletteStyles";
 
     style.textContent = `
+
+      /* ================================================
+         КНОПКА ПОД РГМЦ / ИРАМ
+         ================================================ */
+
+      #cloradPaletteManagerButton {
+        width: 100%;
+        min-height: 34px;
+        margin-top: 7px;
+        padding: 7px 10px;
+
+        border: 1px solid
+          rgba(255,255,255,.12);
+
+        border-radius: 8px;
+
+        background:
+          rgba(255,255,255,.045);
+
+        color: #ddd;
+
+        font-size: 12px;
+        font-weight: 500;
+
+        cursor: pointer;
+
+        transition:
+          background .15s ease,
+          border-color .15s ease,
+          color .15s ease;
+      }
+
+      #cloradPaletteManagerButton:hover {
+        background:
+          rgba(255,255,255,.09);
+
+        border-color:
+          rgba(255,255,255,.24);
+
+        color: #fff;
+      }
+
+      #cloradPaletteManagerButton:active {
+        transform: translateY(1px);
+      }
+
+      /* ================================================
+         MANAGER
+         ================================================ */
+
       #cloradPaletteManager {
         position: fixed;
+
         z-index: 99999;
+
         top: 90px;
         right: 18px;
+
         width: 360px;
-        max-width: calc(100vw - 36px);
-        max-height: calc(100vh - 110px);
+
+        max-width:
+          calc(100vw - 36px);
+
+        max-height:
+          calc(100vh - 110px);
+
         overflow: hidden;
+
         display: none;
+
         flex-direction: column;
-        background: rgba(12, 15, 19, .97);
+
+        background:
+          rgba(12,15,19,.97);
+
         color: #fff;
-        border: 1px solid rgba(255,255,255,.12);
+
+        border:
+          1px solid
+          rgba(255,255,255,.12);
+
         border-radius: 14px;
-        box-shadow: 0 18px 60px rgba(0,0,0,.55);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        font-family: Arial, sans-serif;
+
+        box-shadow:
+          0 18px 60px
+          rgba(0,0,0,.55);
+
+        backdrop-filter:
+          blur(12px);
+
+        -webkit-backdrop-filter:
+          blur(12px);
+
+        font-family:
+          Arial, sans-serif;
       }
 
       #cloradPaletteManager.open {
@@ -675,11 +988,21 @@
 
       .cloradPaletteHeader {
         min-height: 52px;
+
         display: flex;
+
         align-items: center;
-        justify-content: space-between;
-        padding: 0 14px;
-        border-bottom: 1px solid rgba(255,255,255,.09);
+
+        justify-content:
+          space-between;
+
+        padding:
+          0 14px;
+
+        border-bottom:
+          1px solid
+          rgba(255,255,255,.09);
+
         flex-shrink: 0;
       }
 
@@ -709,11 +1032,17 @@
       .cloradPaletteSystemTitle,
       .cloradPaletteCustomTitle {
         margin: 3px 0 8px;
+
         color: #999;
+
         font-size: 11px;
         font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: .08em;
+
+        text-transform:
+          uppercase;
+
+        letter-spacing:
+          .08em;
       }
 
       .cloradPaletteList {
@@ -726,23 +1055,37 @@
         display: flex;
         align-items: center;
         gap: 8px;
+
         padding: 8px;
-        border: 1px solid rgba(255,255,255,.08);
+
+        border:
+          1px solid
+          rgba(255,255,255,.08);
+
         border-radius: 10px;
-        background: rgba(255,255,255,.035);
+
+        background:
+          rgba(255,255,255,.035);
       }
 
       .cloradPaletteItem.active {
-        border-color: rgba(255,255,255,.32);
-        background: rgba(255,255,255,.075);
+        border-color:
+          rgba(255,255,255,.32);
+
+        background:
+          rgba(255,255,255,.075);
       }
 
       .cloradPalettePreview {
         width: 78px;
         height: 28px;
+
         display: flex;
+
         overflow: hidden;
+
         border-radius: 5px;
+
         flex-shrink: 0;
       }
 
@@ -758,15 +1101,22 @@
 
       .cloradPaletteNameMain {
         overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
+
+        white-space:
+          nowrap;
+
+        text-overflow:
+          ellipsis;
+
         font-size: 13px;
         font-weight: 600;
       }
 
       .cloradPaletteNameSub {
         margin-top: 2px;
+
         color: #888;
+
         font-size: 10px;
       }
 
@@ -779,23 +1129,39 @@
       .cloradPaletteBtn {
         height: 30px;
         min-width: 30px;
-        padding: 0 8px;
-        border: 1px solid rgba(255,255,255,.1);
+
+        padding:
+          0 8px;
+
+        border:
+          1px solid
+          rgba(255,255,255,.1);
+
         border-radius: 7px;
-        background: rgba(255,255,255,.06);
+
+        background:
+          rgba(255,255,255,.06);
+
         color: #ddd;
+
         cursor: pointer;
+
         font-size: 11px;
       }
 
       .cloradPaletteBtn:hover {
-        background: rgba(255,255,255,.12);
+        background:
+          rgba(255,255,255,.12);
+
         color: #fff;
       }
 
       .cloradPaletteBtn.primary {
-        background: rgba(40, 180, 100, .2);
-        border-color: rgba(40, 180, 100, .4);
+        background:
+          rgba(40,180,100,.2);
+
+        border-color:
+          rgba(40,180,100,.4);
       }
 
       .cloradPaletteBtn.danger {
@@ -804,30 +1170,50 @@
 
       .cloradPaletteCreate {
         width: 100%;
+
         margin-top: 10px;
+
         height: 38px;
-        border: 1px dashed rgba(255,255,255,.18);
+
+        border:
+          1px dashed
+          rgba(255,255,255,.18);
+
         border-radius: 9px;
-        background: rgba(255,255,255,.035);
+
+        background:
+          rgba(255,255,255,.035);
+
         color: #ddd;
+
         cursor: pointer;
+
         font-size: 12px;
       }
 
       .cloradPaletteCreate:hover {
-        background: rgba(255,255,255,.08);
+        background:
+          rgba(255,255,255,.08);
       }
 
       .cloradPaletteEditor {
         margin-top: 14px;
+
         padding-top: 14px;
-        border-top: 1px solid rgba(255,255,255,.09);
+
+        border-top:
+          1px solid
+          rgba(255,255,255,.09);
       }
 
       .cloradPaletteEditorHead {
         display: flex;
+
         align-items: center;
-        justify-content: space-between;
+
+        justify-content:
+          space-between;
+
         margin-bottom: 10px;
       }
 
@@ -838,26 +1224,43 @@
 
       .cloradPaletteGrid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+
+        grid-template-columns:
+          repeat(4,1fr);
+
         gap: 7px;
       }
 
       .cloradColorCell {
         position: relative;
+
         min-width: 0;
-        border: 1px solid rgba(255,255,255,.09);
+
+        border:
+          1px solid
+          rgba(255,255,255,.09);
+
         border-radius: 8px;
+
         overflow: hidden;
-        background: rgba(255,255,255,.04);
+
+        background:
+          rgba(255,255,255,.04);
       }
 
       .cloradColorInput {
         display: block;
+
         width: 100%;
         height: 42px;
+
         padding: 0;
+
         border: 0;
-        background: transparent;
+
+        background:
+          transparent;
+
         cursor: pointer;
       }
 
@@ -871,15 +1274,21 @@
 
       .cloradColorLabel {
         display: block;
+
         padding: 4px;
+
         color: #888;
+
         font-size: 9px;
+
         text-align: center;
       }
 
       .cloradPaletteFooter {
         display: flex;
+
         gap: 7px;
+
         margin-top: 10px;
       }
 
@@ -888,21 +1297,186 @@
       }
 
       @media (max-width: 600px) {
+
         #cloradPaletteManager {
           top: 70px;
           right: 8px;
-          width: calc(100vw - 16px);
-          max-height: calc(100vh - 80px);
+
+          width:
+            calc(100vw - 16px);
+
+          max-height:
+            calc(100vh - 80px);
         }
 
         .cloradPaletteGrid {
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns:
+            repeat(4,1fr);
         }
+
       }
+
     `;
 
-    document.head.appendChild(style);
+    document.head.appendChild(
+      style
+    );
   }
+
+  /* =======================================================
+     КНОПКА МЕНЕДЖЕРА
+     ======================================================= */
+
+  function installPaletteManagerButton() {
+    if (
+      document.getElementById(
+        "cloradPaletteManagerButton"
+      )
+    ) {
+      return true;
+    }
+
+    const all =
+      Array.from(
+        document.querySelectorAll(
+          "button, .button, .btn, label, div"
+        )
+      );
+
+    const rgmc =
+      all.find(
+        element =>
+          element.textContent
+            .trim() === "РГМЦ"
+      );
+
+    const iram =
+      all.find(
+        element =>
+          element.textContent
+            .trim() === "ИРАМ"
+      );
+
+    if (
+      !rgmc &&
+      !iram
+    ) {
+      return false;
+    }
+
+    const reference =
+      iram || rgmc;
+
+    let container =
+      reference.parentElement;
+
+    if (!container) {
+      return false;
+    }
+
+    /*
+       Если РГМЦ и ИРАМ находятся внутри
+       общего контейнера глубже, поднимаемся
+       максимум на несколько уровней.
+    */
+
+    let current =
+      container;
+
+    for (
+      let i = 0;
+      i < 3;
+      i++
+    ) {
+      const hasRGMC =
+        Array.from(
+          current.querySelectorAll(
+            "*"
+          )
+        ).some(
+          element =>
+            element !== current &&
+            element.textContent
+              .trim() === "РГМЦ"
+        );
+
+      const hasIRAM =
+        Array.from(
+          current.querySelectorAll(
+            "*"
+          )
+        ).some(
+          element =>
+            element !== current &&
+            element.textContent
+              .trim() === "ИРАМ"
+        );
+
+      if (
+        hasRGMC &&
+        hasIRAM
+      ) {
+        container =
+          current;
+
+        break;
+      }
+
+      if (
+        current.parentElement
+      ) {
+        current =
+          current.parentElement;
+      }
+    }
+
+    if (
+      container.querySelector(
+        "#cloradPaletteManagerButton"
+      )
+    ) {
+      return true;
+    }
+
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.id =
+      "cloradPaletteManagerButton";
+
+    button.type =
+      "button";
+
+    button.textContent =
+      "Настроить палитры";
+
+    button.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        openManager();
+      }
+    );
+
+    /*
+       Ставим кнопку после существующего
+       блока выбора РГМЦ / ИРАМ.
+    */
+
+    container.appendChild(
+      button
+    );
+
+    return true;
+  }
+
+  /* =======================================================
+     MANAGER DOM
+     ======================================================= */
 
   function createManager() {
     if (
@@ -914,13 +1488,17 @@
     }
 
     const manager =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
     manager.id =
       "cloradPaletteManager";
 
     manager.innerHTML = `
+
       <div class="cloradPaletteHeader">
+
         <div class="cloradPaletteTitle">
           Палитры радара
         </div>
@@ -932,24 +1510,31 @@
         >
           ×
         </button>
+
       </div>
 
       <div
         class="cloradPaletteBody"
         id="cloradPaletteBody"
       ></div>
+
     `;
 
-    document.body.appendChild(manager);
+    document.body.appendChild(
+      manager
+    );
 
-    document
-      .getElementById(
+    const closeButton =
+      document.getElementById(
         "cloradPaletteClose"
-      )
-      .addEventListener(
+      );
+
+    if (closeButton) {
+      closeButton.addEventListener(
         "click",
         closeManager
       );
+    }
 
     manager.addEventListener(
       "click",
@@ -958,10 +1543,12 @@
   }
 
   /* =======================================================
-     RENDER
+     PREVIEW
      ======================================================= */
 
-  function palettePreview(colors) {
+  function palettePreview(
+    colors
+  ) {
     return colors
       .map(
         color =>
@@ -970,9 +1557,16 @@
       .join("");
   }
 
-  function renderPaletteItem(palette) {
+  /* =======================================================
+     PALETTE ITEM
+     ======================================================= */
+
+  function renderPaletteItem(
+    palette
+  ) {
     const active =
-      palette.id === activePaletteId
+      palette.id ===
+      activePaletteId
         ? " active"
         : "";
 
@@ -980,6 +1574,7 @@
       palette.locked;
 
     return `
+
       <div
         class="cloradPaletteItem${active}"
         data-palette-id="${escapeHTML(
@@ -994,6 +1589,7 @@
         </div>
 
         <div class="cloradPaletteName">
+
           <div class="cloradPaletteNameMain">
             ${escapeHTML(
               palette.name
@@ -1007,6 +1603,7 @@
                 : "Пользовательская"
             }
           </div>
+
         </div>
 
         <div class="cloradPaletteActions">
@@ -1020,7 +1617,8 @@
             type="button"
           >
             ${
-              palette.id === activePaletteId
+              palette.id ===
+              activePaletteId
                 ? "Включена"
                 : "Применить"
             }
@@ -1041,6 +1639,7 @@
             locked
               ? ""
               : `
+
                 <button
                   class="cloradPaletteBtn"
                   data-action="edit"
@@ -1073,13 +1672,20 @@
                 >
                   Удалить
                 </button>
+
               `
           }
 
         </div>
+
       </div>
+
     `;
   }
+
+  /* =======================================================
+     EDITOR
+     ======================================================= */
 
   function renderEditor() {
     const body =
@@ -1087,29 +1693,50 @@
         "cloradPaletteBody"
       );
 
-    if (!body) return;
+    if (!body) {
+      return;
+    }
 
     if (!editorPaletteId) {
       return;
     }
 
     const palette =
-      getPalette(editorPaletteId);
+      getPalette(
+        editorPaletteId
+      );
 
     if (!palette) {
-      editorPaletteId = null;
+      editorPaletteId =
+        null;
+
       return;
     }
 
     if (palette.locked) {
-      editorPaletteId = null;
+      editorPaletteId =
+        null;
+
       return;
+    }
+
+    const oldEditor =
+      document.getElementById(
+        "cloradPaletteEditor"
+      );
+
+    if (oldEditor) {
+      oldEditor.remove();
     }
 
     const cells =
       palette.colors
         .map(
-          (color, index) => `
+          (
+            color,
+            index
+          ) => `
+
             <div class="cloradColorCell">
 
               <input
@@ -1124,12 +1751,15 @@
               </span>
 
             </div>
+
           `
         )
         .join("");
 
     const editor =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
     editor.className =
       "cloradPaletteEditor";
@@ -1138,6 +1768,7 @@
       "cloradPaletteEditor";
 
     editor.innerHTML = `
+
       <div class="cloradPaletteEditorHead">
 
         <div class="cloradPaletteEditorName">
@@ -1185,31 +1816,42 @@
         </button>
 
       </div>
+
     `;
 
-    body.appendChild(editor);
+    body.appendChild(
+      editor
+    );
 
     editor
       .querySelectorAll(
         ".cloradColorInput"
       )
-      .forEach(input => {
-        input.addEventListener(
-          "input",
-          event => {
-            const index = Number(
-              event.target.dataset
-                .colorIndex
-            );
+      .forEach(
+        input => {
+          input.addEventListener(
+            "input",
+            event => {
+              const index =
+                Number(
+                  event.target
+                    .dataset
+                    .colorIndex
+                );
 
-            changeColor(
-              index,
-              event.target.value
-            );
-          }
-        );
-      });
+              changeColor(
+                index,
+                event.target.value
+              );
+            }
+          );
+        }
+      );
   }
+
+  /* =======================================================
+     RENDER
+     ======================================================= */
 
   function render() {
     const body =
@@ -1217,31 +1859,40 @@
         "cloradPaletteBody"
       );
 
-    if (!body) return;
+    if (!body) {
+      return;
+    }
 
     const system =
       palettes.filter(
-        p => p.locked
+        palette =>
+          palette.locked
       );
 
     const custom =
       palettes.filter(
-        p => !p.locked
+        palette =>
+          !palette.locked
       );
 
     body.innerHTML = `
+
       <div class="cloradPaletteSystemTitle">
         Системные палитры
       </div>
 
       <div class="cloradPaletteList">
         ${system
-          .map(renderPaletteItem)
+          .map(
+            renderPaletteItem
+          )
           .join("")}
       </div>
 
-      <div class="cloradPaletteCustomTitle"
-           style="margin-top:14px;">
+      <div
+        class="cloradPaletteCustomTitle"
+        style="margin-top:14px;"
+      >
         Пользовательские палитры
       </div>
 
@@ -1250,16 +1901,22 @@
         ${
           custom.length
             ? custom
-                .map(renderPaletteItem)
+                .map(
+                  renderPaletteItem
+                )
                 .join("")
             : `
-              <div style="
-                color:#777;
-                font-size:12px;
-                padding:7px 2px;
-              ">
+
+              <div
+                style="
+                  color:#777;
+                  font-size:12px;
+                  padding:7px 2px;
+                "
+              >
                 Пользовательских палитр пока нет.
               </div>
+
             `
         }
 
@@ -1272,6 +1929,7 @@
       >
         Создать палитру
       </button>
+
     `;
 
     renderEditor();
@@ -1281,13 +1939,17 @@
      EVENTS
      ======================================================= */
 
-  function handleManagerClick(event) {
+  function handleManagerClick(
+    event
+  ) {
     const button =
       event.target.closest(
         "[data-action]"
       );
 
-    if (!button) return;
+    if (!button) {
+      return;
+    }
 
     const action =
       button.dataset.action;
@@ -1295,42 +1957,66 @@
     const id =
       button.dataset.id;
 
-    if (action === "apply") {
+    if (
+      action ===
+      "apply"
+    ) {
       activatePalette(id);
       return;
     }
 
-    if (action === "edit") {
+    if (
+      action ===
+      "edit"
+    ) {
       openEditor(id);
       return;
     }
 
-    if (action === "duplicate") {
+    if (
+      action ===
+      "duplicate"
+    ) {
       duplicatePalette(id);
       return;
     }
 
-    if (action === "rename") {
+    if (
+      action ===
+      "rename"
+    ) {
       renamePalette(id);
       return;
     }
 
-    if (action === "delete") {
+    if (
+      action ===
+      "delete"
+    ) {
       deletePalette(id);
       return;
     }
 
-    if (action === "reset") {
+    if (
+      action ===
+      "reset"
+    ) {
       resetPalette(id);
       return;
     }
 
-    if (action === "close-editor") {
+    if (
+      action ===
+      "close-editor"
+    ) {
       closeEditor();
       return;
     }
 
-    if (action === "create") {
+    if (
+      action ===
+      "create"
+    ) {
       createPalette();
       return;
     }
@@ -1342,6 +2028,7 @@
 
   function openManager() {
     ensureStyles();
+
     createManager();
 
     const manager =
@@ -1349,9 +2036,13 @@
         "cloradPaletteManager"
       );
 
-    if (!manager) return;
+    if (!manager) {
+      return;
+    }
 
-    manager.classList.add("open");
+    manager.classList.add(
+      "open"
+    );
 
     render();
   }
@@ -1362,9 +2053,13 @@
         "cloradPaletteManager"
       );
 
-    if (!manager) return;
+    if (!manager) {
+      return;
+    }
 
-    manager.classList.remove("open");
+    manager.classList.remove(
+      "open"
+    );
   }
 
   function toggleManager() {
@@ -1375,7 +2070,9 @@
 
     if (
       manager &&
-      manager.classList.contains("open")
+      manager.classList.contains(
+        "open"
+      )
     ) {
       closeManager();
     } else {
@@ -1384,17 +2081,18 @@
   }
 
   /* =======================================================
-     ESCAPE
+     ESC
      ======================================================= */
 
   document.addEventListener(
     "keydown",
     event => {
-      if (event.key !== "Escape") {
-        return;
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        closeManager();
       }
-
-      closeManager();
     }
   );
 
@@ -1402,13 +2100,30 @@
      HTML ESCAPE
      ======================================================= */
 
-  function escapeHTML(value) {
+  function escapeHTML(
+    value
+  ) {
     return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+      .replace(
+        /&/g,
+        "&amp;"
+      )
+      .replace(
+        /</g,
+        "&lt;"
+      )
+      .replace(
+        />/g,
+        "&gt;"
+      )
+      .replace(
+        /"/g,
+        "&quot;"
+      )
+      .replace(
+        /'/g,
+        "&#039;"
+      );
   }
 
   /* =======================================================
@@ -1417,19 +2132,29 @@
 
   window.CLOradPalettes = {
 
-    open: openManager,
+    open:
+      openManager,
 
-    close: closeManager,
+    close:
+      closeManager,
 
-    toggle: toggleManager,
+    toggle:
+      toggleManager,
 
     getAll() {
       return palettes.map(
         palette => ({
-          id: palette.id,
-          name: palette.name,
-          locked: palette.locked,
-          colors: palette.colors.slice()
+          id:
+            palette.id,
+
+          name:
+            palette.name,
+
+          locked:
+            palette.locked,
+
+          colors:
+            palette.colors.slice()
         })
       );
     },
@@ -1443,10 +2168,17 @@
       }
 
       return {
-        id: palette.id,
-        name: palette.name,
-        locked: palette.locked,
-        colors: palette.colors.slice()
+        id:
+          palette.id,
+
+        name:
+          palette.name,
+
+        locked:
+          palette.locked,
+
+        colors:
+          palette.colors.slice()
       };
     },
 
@@ -1483,10 +2215,62 @@
     loadStorage();
 
     ensureStyles();
+
     createManager();
 
     /*
-       Сначала применяем сохранённую активную палитру.
+       Палитры РГМЦ / ИРАМ могут создаваться
+       самим gif-radar.js после его инициализации.
+
+       Поэтому пытаемся установить кнопку
+       несколько раз.
+    */
+
+    let attempts = 0;
+
+    const buttonTimer =
+      setInterval(() => {
+
+        attempts++;
+
+        const installed =
+          installPaletteManagerButton();
+
+        if (
+          installed ||
+          attempts >= 40
+        ) {
+          clearInterval(
+            buttonTimer
+          );
+        }
+
+      }, 250);
+
+    /*
+       Также следим за DOM.
+       Это нужно на случай, если gif-radar.js
+       позже перестроит панель палитр.
+    */
+
+    const observer =
+      new MutationObserver(
+        () => {
+          installPaletteManagerButton();
+        }
+      );
+
+    observer.observe(
+      document.body,
+      {
+        childList: true,
+        subtree: true
+      }
+    );
+
+    /*
+       Применяем сохранённую палитру
+       после загрузки radar-модуля.
     */
 
     const active =
@@ -1494,8 +2278,10 @@
 
     if (active) {
       setTimeout(() => {
-        applyToRadar(active);
-      }, 0);
+        applyToRadar(
+          active
+        );
+      }, 500);
     }
   }
 
@@ -1506,7 +2292,9 @@
     document.addEventListener(
       "DOMContentLoaded",
       init,
-      { once: true }
+      {
+        once: true
+      }
     );
   } else {
     init();
