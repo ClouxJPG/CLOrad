@@ -1163,7 +1163,7 @@
       1;
 
     ctx.strokeStyle =
-      "rgba(255,255,255,0.34)";
+      "rgba(255,255,255,0.28)";
 
     ctx.beginPath();
 
