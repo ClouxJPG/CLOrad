@@ -138,13 +138,6 @@
 
   let gifMeta = null;
 
-  /*
-     Кэш используется ТОЛЬКО для:
-     - текущего изображения при перекраске;
-     - готовых PNG после перекраски.
-
-     Предзагрузка соседних кадров отключена.
-  */
   let gifImageCache =
     new Map();
 
@@ -152,18 +145,6 @@
 
   let gifPlayTimer = null;
 
-  /*
-     ДВА ФИЗИЧЕСКИ РАЗНЫХ СЛОЯ:
-
-     gifOriginalLayer
-       = оригинальный кадр Meteoinfo
-
-     gifPaintedLayer
-       = кадр после применения палитры
-
-     Одновременно на карте находится
-     только один из них.
-  */
   let gifOriginalLayer =
     null;
 
@@ -1362,6 +1343,7 @@
     }
 
     removePaintedGIFLayer();
+
     removeOriginalGIFLayer();
 
     const layer =
@@ -1400,6 +1382,7 @@
     }
 
     removeOriginalGIFLayer();
+
     removePaintedGIFLayer();
 
     const layer =
@@ -1436,7 +1419,11 @@
       gifPalette ===
       "rgmc"
     ) {
-      removePaintedGIFLayer();
+      if (
+        gifPaintedLayer
+      ) {
+        removePaintedGIFLayer();
+      }
 
       if (
         !gifOriginalLayer
@@ -1455,7 +1442,11 @@
       return gifOriginalLayer;
     }
 
-    removeOriginalGIFLayer();
+    if (
+      gifOriginalLayer
+    ) {
+      removeOriginalGIFLayer();
+    }
 
     if (
       !gifPaintedLayer
@@ -1487,6 +1478,8 @@
       value =
         "rgmc";
     }
+
+    gifFrameRequest++;
 
     gifCustomPalette =
       null;
@@ -1587,6 +1580,8 @@
       return false;
     }
 
+    gifFrameRequest++;
+
     gifCustomPalette =
       normalized;
 
@@ -1622,7 +1617,7 @@
       const index =
         Number(
           $("range")?.value ||
-          0
+            0
         );
 
       showGIFFrame(
@@ -1647,6 +1642,8 @@
         value ===
         "rgmc"
       ) {
+        gifFrameRequest++;
+
         gifCustomPalette =
           null;
 
@@ -1661,6 +1658,8 @@
         value ===
         "iram"
       ) {
+        gifFrameRequest++;
+
         gifCustomPalette =
           null;
 
@@ -1700,7 +1699,7 @@
         const index =
           Number(
             $("range")?.value ||
-            0
+              0
           );
 
         showGIFFrame(
@@ -1954,6 +1953,8 @@
       value =
         1;
     }
+
+    gifFrameRequest++;
 
     gifResolution =
       value;
@@ -2696,7 +2697,7 @@
   }
 
   /* =======================================================
-     IMAGE LOAD
+     IMAGE PRELOAD
      ======================================================= */
 
   function loadImage(
@@ -3014,6 +3015,33 @@
   }
 
   /* =======================================================
+     PRELOAD
+     ======================================================= */
+
+  function preloadGIFNeighbors(
+    index
+  ) {
+    /*
+       Предзагрузка соседних кадров
+       ОТКЛЮЧЕНА.
+
+       Раньше здесь выполнялось до
+       четырёх дополнительных запросов
+       к /api/radar-gif.
+
+       Из-за этого при запуске/перемотке
+       сервер получал несколько запросов
+       одновременно и загрузка могла
+       выглядеть бесконечной.
+
+       Активный кадр теперь загружается
+       только тогда, когда он реально
+       нужен.
+    */
+    return;
+  }
+
+  /* =======================================================
      CREATE GIF OVERLAY
      ======================================================= */
 
@@ -3063,26 +3091,23 @@
          РГМЦ
          ==================================================
 
-         КРИТИЧНО:
+         ВАЖНО:
 
-         Никакого loadImage() здесь нет.
+         Здесь больше НЕТ:
 
-         Leaflet сам получает URL кадра.
-         Поэтому один кадр = один запрос
-         браузера к API.
+             await loadImage(url);
+
+         Leaflet сам загружает URL
+         через imageOverlay.
+
+         Это убирает дополнительный
+         запрос/загрузку перед показом
+         оригинального кадра.
       */
       if (
         gifPalette ===
         "rgmc"
       ) {
-        if (
-          requestId !==
-          gifFrameRequest ||
-          !gifActive
-        ) {
-          return;
-        }
-
         removePaintedGIFLayer();
 
         if (
@@ -3097,11 +3122,20 @@
           );
         }
 
-        gifOriginalLayer.setOpacity(
-          1
-        );
+        if (
+          gifOriginalLayer
+        ) {
+          gifOriginalLayer.setOpacity(
+            1
+          );
 
-        gifOriginalLayer.bringToFront();
+          if (
+            typeof gifOriginalLayer.bringToFront ===
+            "function"
+          ) {
+            gifOriginalLayer.bringToFront();
+          }
+        }
       }
 
       /*
@@ -3109,10 +3143,9 @@
          ИРАМ / CUSTOM
          ==================================================
 
-         Здесь действительно требуется
-         получить пиксели изображения,
-         поэтому loadImage() используется
-         только для текущего кадра.
+         Здесь загрузка через Image
+         нужна обязательно, потому что
+         изображение проходит через Canvas.
       */
       else {
         const displayUrl =
@@ -3128,12 +3161,6 @@
           return;
         }
 
-        /*
-           Если палитра изменилась,
-           пока canvas обрабатывался,
-           результат старой палитры
-           больше не используется.
-        */
         if (
           gifPalette ===
           "rgmc"
@@ -3152,11 +3179,20 @@
             );
           }
 
-          gifOriginalLayer.setOpacity(
-            1
-          );
+          if (
+            gifOriginalLayer
+          ) {
+            gifOriginalLayer.setOpacity(
+              1
+            );
 
-          gifOriginalLayer.bringToFront();
+            if (
+              typeof gifOriginalLayer.bringToFront ===
+              "function"
+            ) {
+              gifOriginalLayer.bringToFront();
+            }
+          }
 
         } else {
           removeOriginalGIFLayer();
@@ -3173,11 +3209,20 @@
             );
           }
 
-          gifPaintedLayer.setOpacity(
-            1
-          );
+          if (
+            gifPaintedLayer
+          ) {
+            gifPaintedLayer.setOpacity(
+              1
+            );
 
-          gifPaintedLayer.bringToFront();
+            if (
+              typeof gifPaintedLayer.bringToFront ===
+              "function"
+            ) {
+              gifPaintedLayer.bringToFront();
+            }
+          }
         }
       }
 
@@ -3186,8 +3231,16 @@
       );
 
       /*
+         Больше никаких запросов
+         соседних кадров здесь нет.
+      */
+      preloadGIFNeighbors(
+        index
+      );
+
+      /*
          Сетка всегда поверх
-         активного радарного слоя.
+         радарного слоя.
       */
       if (
         dmrlGridEnabled &&
