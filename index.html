@@ -4,370 +4,325 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CLOrad</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css">
-
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  crossorigin=""
+>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css"
+>
 <style>
 *{
-  box-sizing:border-box;
-  -webkit-tap-highlight-color:transparent
+box-sizing:border-box;
+-webkit-tap-highlight-color:transparent
 }
-
 html,body,#map{
-  margin:0;
-  width:100%;
-  height:100%;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
+margin:0;
+width:100%;
+height:100%;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif
 }
-
 body{
-  overflow:hidden;
-  background:#edf0f2;
-  color:#eef1f3
+overflow:hidden;
+background:#edf0f2;
+color:#eef1f3
 }
-
 button{
-  font:inherit;
-  cursor:pointer
+font:inherit;
+cursor:pointer
 }
-
 #map{
-  position:fixed;
-  inset:0;
-  z-index:0
+position:fixed;
+inset:0;
+z-index:0
 }
-
 .leaflet-control-attribution{
-  font-size:9px!important;
-  background:#ffffffaa!important
+font-size:9px!important;
+background:#ffffffaa!important
 }
-
-/* HEADER */
-
 .header{
-  position:fixed;
-  z-index:20;
-  top:0;
-  left:0;
-  right:0;
-  height:80px;
-  background:#10151a;
-  display:flex;
-  align-items:center;
-  padding:0 20px
+position:fixed;
+z-index:20;
+top:0;
+left:0;
+right:0;
+height:80px;
+background:#10151a;
+display:flex;
+align-items:center;
+padding:0 20px
 }
-
 .brand{
-  display:flex;
-  align-items:center;
-  gap:10px
+display:flex;
+align-items:center;
+gap:10px
 }
-
 .name{
-  font-size:34px;
-  font-weight:800;
-  letter-spacing:-2px;
-  color:#f5f6f7
+font-size:34px;
+font-weight:800;
+letter-spacing:-2px;
+color:#f5f6f7
 }
-
 .radarLogo{
-  width:49px;
-  height:49px;
-  border:2px solid #51e29a;
-  border-radius:50%;
-  position:relative;
-  overflow:hidden;
-  background:#10181a;
-  flex:none;
-  display:grid;
-  place-items:center;
-  box-shadow:0 0 10px #51e29a22
+width:49px;
+height:49px;
+border:2px solid #51e29a;
+border-radius:50%;
+position:relative;
+overflow:hidden;
+background:#10181a;
+flex:none;
+display:grid;
+place-items:center;
+box-shadow:0 0 10px #51e29a22
 }
-
 .radarLogo svg{
-  width:43px;
-  height:43px;
-  fill:none;
-  stroke:#51e29a;
-  stroke-width:1.5;
-  stroke-linecap:round;
-  stroke-linejoin:round
+width:43px;
+height:43px;
+fill:none;
+stroke:#51e29a;
+stroke-width:1.5;
+stroke-linecap:round;
+stroke-linejoin:round
 }
-
 .radarLogo .radarDot{
-  fill:#51e29a;
-  stroke:none
+fill:#51e29a;
+stroke:none
 }
-
 .head{
-  margin-left:auto;
-  display:flex;
-  gap:5px
+margin-left:auto;
+display:flex;
+gap:5px
 }
-
 .h{
-  width:51px;
-  height:51px;
-  border:0;
-  border-radius:9px;
-  background:transparent;
-  color:#c3c9cd;
-  display:grid;
-  place-items:center;
-  position:relative
+width:51px;
+height:51px;
+border:0;
+border-radius:9px;
+background:transparent;
+color:#c3c9cd;
+display:grid;
+place-items:center;
+position:relative
 }
-
 .h.active{
-  background:#222b34;
-  border:1px solid #35404a
+background:#222b34;
+border:1px solid #35404a
 }
-
 .h svg{
-  width:29px;
-  height:29px;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:2;
-  stroke-linecap:round;
-  stroke-linejoin:round
+width:29px;
+height:29px;
+fill:none;
+stroke:currentColor;
+stroke-width:2;
+stroke-linecap:round;
+stroke-linejoin:round
 }
-
 .settingsIcon{
-  width:29px;
-  height:29px
+width:29px;
+height:29px
 }
-
-/* NAV */
-
 .nav{
-  position:fixed;
-  z-index:19;
-  top:80px;
-  left:0;
-  right:0;
-  height:55px;
-  display:flex;
-  align-items:center;
-  gap:7px;
-  padding:7px 17px;
-  overflow-x:auto;
-  overflow-y:hidden;
-  scrollbar-width:none;
-  background:#12181d
+position:fixed;
+z-index:19;
+top:80px;
+left:0;
+right:0;
+height:55px;
+display:flex;
+align-items:center;
+gap:7px;
+padding:7px 17px;
+overflow-x:auto;
+overflow-y:hidden;
+scrollbar-width:none;
+background:#12181d
 }
-
 .nav::-webkit-scrollbar{
-  display:none
+display:none
 }
-
 .n{
-  flex:none;
-  height:41px;
-  padding:0 17px;
-  border:1px solid #303a42;
-  border-radius:9px;
-  background:#1b232a;
-  color:#bfc6ca;
-  font-size:14px;
-  white-space:nowrap;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition:.15s
+flex:none;
+height:41px;
+padding:0 17px;
+border:1px solid #303a42;
+border-radius:9px;
+background:#1b232a;
+color:#bfc6ca;
+font-size:14px;
+white-space:nowrap;
+display:flex;
+align-items:center;
+justify-content:center;
+transition:.15s
 }
-
 .n:hover{
-  background:#252f37
+background:#252f37
 }
-
 .n.active{
-  background:#29343d;
-  color:#fff;
-  border-color:#46535e
+background:#29343d;
+color:#fff;
+border-color:#46535e
 }
-
-/* LAYERS */
-
 .layers{
-  position:fixed;
-  z-index:1000;
-  left:17px;
-  top:50%;
-  transform:translateY(-50%);
-  width:190px;
-  background:#182028ef;
-  border:1px solid #3b4650;
-  border-radius:10px;
-  padding:5px 8px;
-  box-shadow:0 4px 14px #0003;
-  transition:left .25s,opacity .2s;
-  pointer-events:auto
+position:fixed;
+z-index:1000;
+left:17px;
+top:50%;
+transform:translateY(-50%);
+width:190px;
+background:#182028ef;
+border:1px solid #3b4650;
+border-radius:10px;
+padding:5px 8px;
+box-shadow:0 4px 14px #0003;
+transition:left .25s,opacity .2s;
+pointer-events:auto
 }
-
 .layers.hidden{
-  left:-210px;
-  opacity:0;
-  pointer-events:none
+left:-210px;
+opacity:0;
+pointer-events:none
 }
-
 .layer{
-  height:56px;
-  display:grid;
-  grid-template-columns:27px minmax(0,1fr) 46px;
-  align-items:center;
-  gap:7px
+height:56px;
+display:grid;
+grid-template-columns:27px minmax(0,1fr) 46px;
+align-items:center;
+gap:7px
 }
-
 .layer svg{
-  width:22px;
-  height:22px;
-  fill:none;
-  stroke:#cdd3d7;
-  stroke-width:1.8;
-  stroke-linecap:round;
-  stroke-linejoin:round
+width:22px;
+height:22px;
+fill:none;
+stroke:#cdd3d7;
+stroke-width:1.8;
+stroke-linecap:round;
+stroke-linejoin:round
 }
-
 .layer-name{
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  color:#e2e6e8;
-  font-size:12px
+min-width:0;
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap;
+color:#e2e6e8;
+font-size:12px
 }
-
 .switch{
-  width:46px;
-  height:26px;
-  border:0;
-  border-radius:18px;
-  background:#626a70;
-  position:relative;
-  padding:0;
-  flex:none;
-  z-index:1001;
-  pointer-events:auto
+width:46px;
+height:26px;
+border:0;
+border-radius:18px;
+background:#626a70;
+position:relative;
+padding:0;
+flex:none;
+z-index:1001;
+pointer-events:auto
 }
-
 .switch i{
-  position:absolute;
-  width:20px;
-  height:20px;
-  left:3px;
-  top:3px;
-  border-radius:50%;
-  background:#fff;
-  transition:.18s;
-  pointer-events:none
+position:absolute;
+width:20px;
+height:20px;
+left:3px;
+top:3px;
+border-radius:50%;
+background:#fff;
+transition:.18s;
+pointer-events:none
 }
-
 .switch.on{
-  background:#45c989
+background:#45c989
 }
-
 .switch.on i{
-  left:23px
+left:23px
 }
-
-/* TOOLS */
-
 .tools{
-  position:fixed;
-  z-index:1000;
-  left:17px;
-  top:155px;
-  display:flex;
-  flex-direction:column;
-  gap:6px
+position:fixed;
+z-index:1000;
+left:17px;
+top:155px;
+display:flex;
+flex-direction:column;
+gap:6px
 }
-
 .tool{
-  width:43px;
-  height:43px;
-  border:1px solid #3b4650;
-  border-radius:9px;
-  background:#182028e8;
-  color:#d5dade;
-  display:grid;
-  place-items:center
+width:43px;
+height:43px;
+border:1px solid #3b4650;
+border-radius:9px;
+background:#182028e8;
+color:#d5dade;
+display:grid;
+place-items:center
 }
-
 .tool svg{
-  width:23px;
-  height:23px;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:1.8;
-  stroke-linecap:round;
-  stroke-linejoin:round
+width:23px;
+height:23px;
+fill:none;
+stroke:currentColor;
+stroke-width:1.8;
+stroke-linecap:round;
+stroke-linejoin:round
 }
-
-/* LEGEND */
-
 .legend-tab{
-  position:fixed;
-  z-index:1000;
-  right:0;
-  top:50%;
-  transform:translateY(-50%);
-  width:31px;
-  height:120px;
-  border:1px solid #3b4650;
-  border-right:0;
-  border-radius:10px 0 0 10px;
-  background:#182028ee;
-  color:#dce1e4;
-  writing-mode:vertical-rl;
-  text-orientation:mixed;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:11px
+position:fixed;
+z-index:1000;
+right:0;
+top:50%;
+transform:translateY(-50%);
+width:31px;
+height:120px;
+border:1px solid #3b4650;
+border-right:0;
+border-radius:10px 0 0 10px;
+background:#182028ee;
+color:#dce1e4;
+writing-mode:vertical-rl;
+text-orientation:mixed;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:11px
 }
-
 .legend{
-  position:fixed;
-  z-index:999;
-  right:-230px;
-  top:50%;
-  transform:translateY(-50%);
-  width:230px;
-  max-height:70vh;
-  overflow:auto;
-  padding:12px;
-  border:1px solid #3b4650;
-  border-radius:10px 0 0 10px;
-  background:#182028f2;
-  transition:right .25s
+position:fixed;
+z-index:999;
+right:-230px;
+top:50%;
+transform:translateY(-50%);
+width:230px;
+max-height:70vh;
+overflow:auto;
+padding:12px;
+border:1px solid #3b4650;
+border-radius:10px 0 0 10px;
+background:#182028f2;
+transition:right .25s
 }
-
 .legend.open{
-  right:0
+right:0
 }
-
 .legend-title{
-  font-size:13px;
-  font-weight:700;
-  margin-bottom:9px
+font-size:13px;
+font-weight:700;
+margin-bottom:9px
 }
-
 .legend-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin:4px 0;
-  font-size:11px;
-  color:#d4d9dc
+display:flex;
+align-items:center;
+gap:8px;
+margin:4px 0;
+font-size:11px;
+color:#d4d9dc
 }
-
 .legend-color{
-  width:25px;
-  height:13px;
-  border-radius:3px
+width:25px;
+height:13px;
+border-radius:3px
 }
-
 .l1{background:#b9c1c7}.l2{background:#a9a9a9}.l3{background:#00ff00}
 .l4{background:#00cc00}.l5{background:#009900}.l6{background:#00ffff}
 .l7{background:#4da6ff}.l8{background:#3366ff}.l9{background:#0000cc}
@@ -375,1505 +330,752 @@ button{
 .l13{background:#ffff00}.l14{background:#ff9900}.l15{background:#ff0000}
 .l16{background:#cc99ff}.l17{background:#cc33ff}.l18{background:#9900cc}
 .l19{background:#000000}
-
-/* DATA */
-
 .data{
-  position:fixed;
-  z-index:1000;
-  left:17px;
-  bottom:83px;
-  min-width:220px;
-  max-width:calc(100vw - 34px);
-  padding:9px 12px;
-  border:1px solid #3b4650;
-  border-radius:9px;
-  background:#182028e8;
-  color:#dfe4e7;
-  font-size:11px
+position:fixed;
+z-index:1000;
+left:17px;
+bottom:83px;
+min-width:220px;
+max-width:calc(100vw - 34px);
+padding:9px 12px;
+border:1px solid #3b4650;
+border-radius:9px;
+background:#182028e8;
+color:#dfe4e7;
+font-size:11px
 }
-
-/* TIMELINE */
-
 .timeline{
-  position:fixed;
-  z-index:1000;
-  left:17px;
-  right:17px;
-  bottom:17px;
-  height:52px;
-  border:1px solid #3b4650;
-  border-radius:10px;
-  background:#182028ed;
-  display:flex;
-  align-items:center;
-  gap:9px;
-  padding:7px 10px
+position:fixed;
+z-index:1000;
+left:17px;
+right:17px;
+bottom:17px;
+height:52px;
+border:1px solid #3b4650;
+border-radius:10px;
+background:#182028ed;
+display:flex;
+align-items:center;
+gap:9px;
+padding:7px 10px
 }
-
 .timeline button{
-  border:0;
-  color:#dce2e5;
-  background:#26313a;
-  border-radius:7px
+border:0;
+color:#dce2e5;
+background:#26313a;
+border-radius:7px
 }
-
 #play{
-  width:38px;
-  height:34px;
-  flex:none;
-  display:grid;
-  place-items:center
+width:38px;
+height:34px;
+flex:none;
+display:grid;
+place-items:center
 }
-
 #play svg{
-  width:18px;
-  height:18px;
-  fill:currentColor
+width:18px;
+height:18px;
+fill:currentColor
 }
-
 #range{
-  flex:1;
-  min-width:0
+flex:1;
+min-width:0
 }
-
 #timeLabel{
-  min-width:130px;
-  text-align:right;
-  color:#dce2e5;
-  font-size:11px
+min-width:130px;
+text-align:right;
+color:#dce2e5;
+font-size:11px
 }
-
 #framesInfo{
-  position:fixed;
-  left:17px;
-  bottom:78px
+position:fixed;
+left:17px;
+bottom:78px
 }
-
-/* SETTINGS */
-
 .settings{
-  position:fixed;
-  z-index:1100;
-  right:17px;
-  top:145px;
-  width:270px;
-  max-height:calc(100vh - 165px);
-  overflow:auto;
-  padding:10px;
-  border:1px solid #3b4650;
-  border-radius:10px;
-  background:#182028f5;
-  display:none
+position:fixed;
+z-index:1100;
+right:17px;
+top:145px;
+width:270px;
+max-height:calc(100vh - 165px);
+overflow:auto;
+padding:10px;
+border:1px solid #3b4650;
+border-radius:10px;
+background:#182028f5;
+display:none
 }
-
 .settings.open{
-  display:block
+display:block
 }
-
 .settings-section{
-  margin-bottom:7px
+margin-bottom:7px
 }
-
 .settings-section button{
-  width:100%;
-  min-height:39px;
-  border:1px solid #3b4650;
-  border-radius:8px;
-  background:#202a32;
-  color:#e1e5e7;
-  text-align:left;
-  padding:8px 10px
+width:100%;
+min-height:39px;
+border:1px solid #3b4650;
+border-radius:8px;
+background:#202a32;
+color:#e1e5e7;
+text-align:left;
+padding:8px 10px
 }
-
 .settings-content{
-  display:none;
-  padding:8px 4px
+display:none;
+padding:8px 4px
 }
-
 .settings-content.open{
-  display:block
+display:block
 }
-
 .setting-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  margin:7px 0;
-  color:#d7dcdf;
-  font-size:12px
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:10px;
+margin:7px 0;
+color:#d7dcdf;
+font-size:12px
 }
-
 .setting-row input[type=range]{
-  width:120px
+width:120px
 }
-
 .theme-btn,
 .map-theme-btn,
 .map-action-btn,
 .frame-count-arrow{
-  border:1px solid #3b4650;
-  background:#202a32;
-  color:#dce2e5;
-  border-radius:7px;
-  padding:6px 9px
+border:1px solid #3b4650;
+background:#202a32;
+color:#dce2e5;
+border-radius:7px;
+padding:6px 9px
 }
-
 .frame-count{
-  display:flex;
-  align-items:center;
-  gap:6px
+display:flex;
+align-items:center;
+gap:6px
 }
-
 #frameCountInput{
-  width:48px;
-  height:30px;
-  border:1px solid #3b4650;
-  border-radius:7px;
-  background:#202a32;
-  color:#fff;
-  text-align:center
+width:48px;
+height:30px;
+border:1px solid #3b4650;
+border-radius:7px;
+background:#202a32;
+color:#fff;
+text-align:center
 }
-
-/* PALETTE */
-
 .palette-modal{
-  position:fixed;
-  inset:0;
-  z-index:5000;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  background:#0008;
-  padding:20px
+position:fixed;
+inset:0;
+z-index:5000;
+display:none;
+align-items:center;
+justify-content:center;
+background:#0008;
+padding:20px
 }
-
 .palette-modal.open{
-  display:flex
+display:flex
 }
-
 .palette-window{
-  width:min(560px,100%);
-  max-height:90vh;
-  overflow:auto;
-  border:1px solid #3b4650;
-  border-radius:12px;
-  background:#182028;
-  color:#e4e8ea;
-  padding:16px
+width:min(560px,100%);
+max-height:90vh;
+overflow:auto;
+border:1px solid #3b4650;
+border-radius:12px;
+background:#182028;
+color:#e4e8ea;
+padding:16px
 }
-
 .palette-title{
-  font-size:17px;
-  font-weight:700;
-  margin-bottom:12px
+font-size:17px;
+font-weight:700;
+margin-bottom:12px
 }
-
 .palette-tabs{
-  display:flex;
-  gap:6px;
-  margin-bottom:12px
+display:flex;
+gap:6px;
+margin-bottom:12px
 }
-
 .palette-tab{
-  border:1px solid #3b4650;
-  background:#202a32;
-  color:#cfd5d8;
-  border-radius:7px;
-  padding:7px 10px
+border:1px solid #3b4650;
+background:#202a32;
+color:#cfd5d8;
+border-radius:7px;
+padding:7px 10px
 }
-
 .palette-tab.active{
-  background:#31404a;
-  color:#fff
+background:#31404a;
+color:#fff
 }
-
 .palette-editor{
-  display:none
+display:none
 }
-
 .palette-editor.active{
-  display:block
+display:block
 }
-
 .palette-row{
-  display:grid;
-  grid-template-columns:1fr 55px 30px;
-  gap:7px;
-  align-items:center;
-  margin:5px 0
+display:grid;
+grid-template-columns:1fr 55px 30px;
+gap:7px;
+align-items:center;
+margin:5px 0
 }
-
 .palette-name{
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:11px
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap;
+font-size:11px
 }
-
 .palette-swatch{
-  width:50px;
-  height:26px;
-  border:1px solid #4b5861;
-  border-radius:5px
+width:50px;
+height:26px;
+border:1px solid #4b5861;
+border-radius:5px
 }
-
 .palette-actions{
-  display:flex;
-  gap:6px;
-  margin-top:12px
+display:flex;
+gap:6px;
+margin-top:12px
 }
-
 .palette-actions button{
-  border:1px solid #3b4650;
-  border-radius:7px;
-  background:#202a32;
-  color:#e0e5e7;
-  padding:7px 10px
+border:1px solid #3b4650;
+border-radius:7px;
+background:#202a32;
+color:#e0e5e7;
+padding:7px 10px
 }
-
 #loadingFrames{
-  position:fixed;
-  z-index:3000;
-  left:50%;
-  top:50%;
-  transform:translate(-50%,-50%);
-  display:none;
-  padding:9px 13px;
-  border-radius:9px;
-  background:#151a1eec;
-  color:#fff;
-  font-size:12px;
-  pointer-events:none
+position:fixed;
+z-index:3000;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+display:none;
+padding:9px 13px;
+border-radius:9px;
+background:#151a1eec;
+color:#fff;
+font-size:12px;
+pointer-events:none
 }
-
 #loadingFrames.show{
-  display:block
+display:block
 }
-
 @media(max-width:600px){
-  .header{
-    height:65px;
-    padding:0 10px
-  }
-
-  .name{
-    font-size:28px
-  }
-
-  .radarLogo{
-    width:42px;
-    height:42px
-  }
-
-  .radarLogo svg{
-    width:37px;
-    height:37px
-  }
-
-  .head{
-    gap:2px
-  }
-
-  .h{
-    width:43px;
-    height:43px
-  }
-
-  .nav{
-    top:65px;
-    height:52px;
-    padding:6px 8px
-  }
-
-  .n{
-    height:40px;
-    padding:0 13px
-  }
-
-  .layers{
-    left:8px
-  }
-
-  .tools{
-    left:8px;
-    top:125px
-  }
-
-  .timeline{
-    left:8px;
-    right:8px;
-    bottom:8px
-  }
-
-  #timeLabel{
-    min-width:90px;
-    font-size:10px
-  }
-
-  .data{
-    left:8px;
-    bottom:70px
-  }
-
-  .settings{
-    right:8px;
-    top:125px;
-    width:250px
-  }
-
-  .palette-modal{
-    padding:10px
-  }
-
-  .palette-window{
-    max-height:calc(100vh - 20px);
-    padding:12px
-  }
-
-  .palette-name{
-    font-size:11px
-  }
-
-  .palette-row{
-    grid-template-columns:1fr 43px 28px
-  }
-
-  .palette-swatch{
-    width:40px
-  }
+.header{
+height:65px;
+padding:0 10px
+}
+.name{
+font-size:28px
+}
+.radarLogo{
+width:42px;
+height:42px
+}
+.radarLogo svg{
+width:37px;
+height:37px
+}
+.head{
+gap:2px
+}
+.h{
+width:43px;
+height:43px
+}
+.nav{
+top:65px;
+height:52px;
+padding:6px 8px
+}
+.n{
+height:40px;
+padding:0 13px
+}
+.layers{
+left:8px
+}
+.tools{
+left:8px;
+top:125px
+}
+.timeline{
+left:8px;
+right:8px;
+bottom:8px
+}
+#timeLabel{
+min-width:90px;
+font-size:10px
+}
+.data{
+left:8px;
+bottom:70px
+}
+.settings{
+right:8px;
+top:125px;
+width:250px
+}
+.palette-modal{
+padding:10px
+}
+.palette-window{
+max-height:calc(100vh - 20px);
+padding:12px
+}
+.palette-name{
+font-size:11px
+}
+.palette-row{
+grid-template-columns:1fr 43px 28px
+}
+.palette-swatch{
+width:40px
+}
 }
 </style>
 </head>
-
 <body>
-
 <div id="map"></div>
-
 <header class="header">
-  <div class="brand">
-    <div class="radarLogo">
-      <svg viewBox="0 0 50 50">
-        <circle cx="25" cy="25" r="19"></circle>
-        <circle cx="25" cy="25" r="12"></circle>
-        <circle cx="25" cy="25" r="5"></circle>
-        <path d="M25 25L41 12"></path>
-        <circle class="radarDot" cx="25" cy="25" r="2.5"></circle>
-      </svg>
-    </div>
-    <div class="name">CLOrad</div>
-  </div>
-
-  <div class="head">
-    <button class="h active" id="mapBtn" title="Карта">
-      <svg viewBox="0 0 24 24">
-        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path>
-        <path d="M9 3v15M15 6v15"></path>
-      </svg>
-    </button>
-
-    <button class="h" id="settingsBtn" title="Настройки">
-      <svg class="settingsIcon" viewBox="0 0 24 24">
-        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"></path>
-        <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-1.41 1.41-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V20h-2v-.32a1.8 1.8 0 0 0-1.08-1.65 1.8 1.8 0 0 0-1.98.36l-.06.06-1.41-1.41.06-.06A1.8 1.8 0 0 0 9.2 15a1.8 1.8 0 0 0-1.65-1.08H7v-2h.55A1.8 1.8 0 0 0 9.2 10.8a1.8 1.8 0 0 0-.36-1.98l-.06-.06 1.41-1.41.06.06a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 13.31 6.1V5h2v1.1a1.8 1.8 0 0 0 1.08 1.67 1.8 1.8 0 0 0 1.98-.36l.06-.06 1.41 1.41-.06.06A1.8 1.8 0 0 0 19.4 10.8a1.8 1.8 0 0 0 1.65 1.08H21v2h-.55A1.8 1.8 0 0 0 19.4 15z"></path>
-      </svg>
-    </button>
-  </div>
+<div class="brand">
+<div class="radarLogo">
+<svg viewBox="0 0 50 50">
+<circle cx="25" cy="25" r="19"></circle>
+<circle cx="25" cy="25" r="12"></circle>
+<circle cx="25" cy="25" r="5"></circle>
+<path d="M25 25L41 12"></path>
+<circle class="radarDot" cx="25" cy="25" r="2.5"></circle>
+</svg>
+</div>
+<div class="name">CLOrad</div>
+</div>
+<div class="head">
+<button class="h active" id="mapBtn" title="Карта">
+<svg viewBox="0 0 24 24">
+<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path>
+<path d="M9 3v15M15 6v15"></path>
+</svg>
+</button>
+<button class="h" id="settingsBtn" title="Настройки">
+<svg class="settingsIcon" viewBox="0 0 24 24">
+<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"></path>
+<path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-1.41 1.41-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V20h-2v-.32a1.8 1.8 0 0 0-1.08-1.65 1.8 1.8 0 0 0-1.98.36l-.06.06-1.41-1.41.06-.06A1.8 1.8 0 0 0 9.2 15a1.8 1.8 0 0 0-1.65-1.08H7v-2h.55A1.8 1.8 0 0 0 9.2 10.8a1.8 1.8 0 0 0-.36-1.98l-.06-.06 1.41-1.41.06.06a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 13.31 6.1V5h2v1.1a1.8 1.8 0 0 0 1.08 1.67 1.8 1.8 0 0 0 1.98-.36l.06-.06 1.41 1.41-.06.06A1.8 1.8 0 0 0 19.4 10.8a1.8 1.8 0 0 0 1.65 1.08H21v2h-.55A1.8 1.8 0 0 0 19.4 15z"></path>
+</svg>
+</button>
+</div>
 </header>
-
 <nav class="nav" id="nav">
-  <button class="n active" id="oyaNav">осадки мм/ч</button>
-  <button class="n" id="warningsNav">предупр.</button>
-  <button class="n" id="gifRadarNav">ДМРЛ композит</button>
+<button class="n active" id="rainProduct">
+<svg viewBox="0 0 24 24">
+<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.7-1.5A3.5 3.5 0 1 1 18 18H7z"></path>
+<path d="M8 21v-2M12 21v-2M16 21v-2"></path>
+</svg>
+<span>Осадки-мм/ч</span>
+</button>
+<button class="n">
+<svg viewBox="0 0 24 24">
+<path d="M12 3v18"></path>
+<path d="M5 8l7-5 7 5"></path>
+<path d="M5 16l7 5 7-5"></path>
+</svg>
+<span>Дым/пепел</span>
+</button>
+<button class="n">
+<svg viewBox="0 0 24 24">
+<path d="M4 18l4-7 4 4 4-8 4 11"></path>
+<path d="M4 6h16"></path>
+</svg>
+<span>Спутниковые осадки</span>
+</button>
+<button class="n">
+<svg viewBox="0 0 24 24">
+<path d="M12 3l2.2 5.4L20 10l-5.8 1.6L12 17l-2.2-5.4L4 10l5.8-1.6z"></path>
+</svg>
+<span>Предупр.</span>
+</button>
+<button class="n">
+<svg viewBox="0 0 24 24">
+<path d="M5 17h14"></path>
+<path d="M7 17V9l5-4 5 4v8"></path>
+<path d="M9 17v-4h6v4"></path>
+</svg>
+<span>Фаза облака</span>
+</button>
+<button class="n active" id="layersNav">
+<svg viewBox="0 0 24 24">
+<path d="M12 3l9 5-9 5-9-5 9-5z"></path>
+<path d="M3 12l9 5 9-5"></path>
+<path d="M3 16l9 5 9-5"></path>
+</svg>
+<span>Слои</span>
+</button>
 </nav>
-
 <div class="layers" id="layers">
-
-  <div class="layer">
-    <svg viewBox="0 0 24 24">
-      <path d="M12 3v18M3 12h18"></path>
-      <circle cx="12" cy="12" r="8"></circle>
-    </svg>
-    <div class="layer-name">Опасные явления</div>
-    <button class="switch on" id="oyaSwitch"><i></i></button>
-  </div>
-
-  <div class="layer">
-    <svg viewBox="0 0 24 24">
-      <path d="M4 18l5-5 3 3 7-8"></path>
-      <path d="M4 5h16v14H4z"></path>
-    </svg>
-    <div class="layer-name">Отражаемость</div>
-    <button class="switch" id="reflectivitySwitch"><i></i></button>
-  </div>
-
-  <div class="layer">
-    <svg viewBox="0 0 24 24">
-      <path d="M12 3v18M5 12h14"></path>
-      <path d="M7 7l10 10M17 7L7 17"></path>
-    </svg>
-    <div class="layer-name">Молнии</div>
-    <button class="switch on" id="lightningSwitch"><i></i></button>
-  </div>
-
+<div class="layer">
+<svg viewBox="0 0 24 24">
+<path d="M12 3v18M3 12h18"></path>
+<circle cx="12" cy="12" r="8"></circle>
+</svg>
+<div class="layer-name">Опасные явления</div>
+<button class="switch on" id="oyaSwitch"><i></i></button>
 </div>
-
+<div class="layer">
+<svg viewBox="0 0 24 24">
+<path d="M4 18l5-5 3 3 7-8"></path>
+<path d="M4 5h16v14H4z"></path>
+</svg>
+<div class="layer-name">Отражаемость</div>
+<button class="switch" id="reflectivitySwitch"><i></i></button>
+</div>
+<div class="layer">
+<svg viewBox="0 0 24 24">
+<path d="M12 3v18M5 12h14"></path>
+<path d="M7 7l10 10M17 7L7 17"></path>
+</svg>
+<div class="layer-name">Молнии</div>
+<button class="switch on" id="lightningSwitch"><i></i></button>
+</div>
+</div>
 <div class="tools">
-
-  <button class="tool" id="layersNav" title="Слои">
-    <svg viewBox="0 0 24 24">
-      <path d="M12 3l9 5-9 5-9-5 9-5z"></path>
-      <path d="M3 12l9 5 9-5"></path>
-      <path d="M3 16l9 5 9-5"></path>
-    </svg>
-  </button>
-
-  <button class="tool" id="locationBtn" title="Моё положение">
-    <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="7"></circle>
-      <circle cx="12" cy="12" r="2"></circle>
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
-    </svg>
-  </button>
-
-  <button class="tool" id="zoomIn" title="Приблизить">+</button>
-  <button class="tool" id="zoomOut" title="Отдалить">−</button>
-
+<button class="tool" id="zoomIn" title="Приблизить">+</button>
+<button class="tool" id="zoomOut" title="Отдалить">−</button>
+<button class="tool" id="locationBtn" title="Моё положение">
+<svg viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="7"></circle>
+<circle cx="12" cy="12" r="2"></circle>
+<path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+</svg>
+</button>
 </div>
-
 <button class="legend-tab" id="legendTab">легенда</button>
-
 <div class="legend" id="legend">
-
-  <div class="legend-title">Отражаемость</div>
-
-  <div class="legend-row"><span class="legend-color l1"></span><span>Нет данных</span></div>
-  <div class="legend-row"><span class="legend-color l2"></span><span>Очень слабая</span></div>
-  <div class="legend-row"><span class="legend-color l3"></span><span>Слабая</span></div>
-  <div class="legend-row"><span class="legend-color l4"></span><span>Слабая +</span></div>
-  <div class="legend-row"><span class="legend-color l5"></span><span>Умеренная</span></div>
-  <div class="legend-row"><span class="legend-color l6"></span><span>Умеренная +</span></div>
-  <div class="legend-row"><span class="legend-color l7"></span><span>Средняя</span></div>
-  <div class="legend-row"><span class="legend-color l8"></span><span>Средняя +</span></div>
-  <div class="legend-row"><span class="legend-color l9"></span><span>Сильная</span></div>
-  <div class="legend-row"><span class="legend-color l10"></span><span>Сильная +</span></div>
-  <div class="legend-row"><span class="legend-color l11"></span><span>Очень сильная</span></div>
-  <div class="legend-row"><span class="legend-color l12"></span><span>Очень сильная +</span></div>
-  <div class="legend-row"><span class="legend-color l13"></span><span>Опасная</span></div>
-  <div class="legend-row"><span class="legend-color l14"></span><span>Опасная +</span></div>
-  <div class="legend-row"><span class="legend-color l15"></span><span>Очень опасная</span></div>
-  <div class="legend-row"><span class="legend-color l16"></span><span>Экстремальная</span></div>
-  <div class="legend-row"><span class="legend-color l17"></span><span>Экстремальная +</span></div>
-  <div class="legend-row"><span class="legend-color l18"></span><span>Максимальная</span></div>
-  <div class="legend-row"><span class="legend-color l19"></span><span>Нет данных / фон</span></div>
-
+<div class="legend-title">Отражаемость</div>
+<div class="legend-row"><span class="legend-color l1"></span><span>Нет данных</span></div>
+<div class="legend-row"><span class="legend-color l2"></span><span>Очень слабая</span></div>
+<div class="legend-row"><span class="legend-color l3"></span><span>Слабая</span></div>
+<div class="legend-row"><span class="legend-color l4"></span><span>Слабая +</span></div>
+<div class="legend-row"><span class="legend-color l5"></span><span>Умеренная</span></div>
+<div class="legend-row"><span class="legend-color l6"></span><span>Умеренная +</span></div>
+<div class="legend-row"><span class="legend-color l7"></span><span>Средняя</span></div>
+<div class="legend-row"><span class="legend-color l8"></span><span>Средняя +</span></div>
+<div class="legend-row"><span class="legend-color l9"></span><span>Сильная</span></div>
+<div class="legend-row"><span class="legend-color l10"></span><span>Сильная +</span></div>
+<div class="legend-row"><span class="legend-color l11"></span><span>Очень сильная</span></div>
+<div class="legend-row"><span class="legend-color l12"></span><span>Очень сильная +</span></div>
+<div class="legend-row"><span class="legend-color l13"></span><span>Опасная</span></div>
+<div class="legend-row"><span class="legend-color l14"></span><span>Опасная +</span></div>
+<div class="legend-row"><span class="legend-color l15"></span><span>Очень опасная</span></div>
+<div class="legend-row"><span class="legend-color l16"></span><span>Экстремальная</span></div>
+<div class="legend-row"><span class="legend-color l17"></span><span>Экстремальная +</span></div>
+<div class="legend-row"><span class="legend-color l18"></span><span>Максимальная</span></div>
+<div class="legend-row"><span class="legend-color l19"></span><span>Нет данных / фон</span></div>
 </div>
-
 <div class="data" id="data">
-  <div id="timeLabel">Радар не подключён</div>
-  <div id="framesInfo">Радар пока не подключён</div>
-  <div id="intensityValue">Нет данных</div>
+<div id="timeLabel">Загрузка…</div>
+<div id="framesInfo"></div>
+<div id="intensityValue"></div>
 </div>
-
 <div class="timeline">
-
-  <button id="play">
-    <svg viewBox="0 0 24 24">
-      <path d="M7 4l13 8-13 8z"></path>
-    </svg>
-  </button>
-
-  <input
-    id="range"
-    type="range"
-    min="0"
-    max="0"
-    value="0"
-    step="1"
-  >
-
+<button id="play">
+<svg viewBox="0 0 24 24">
+<path d="M7 4l13 8-13 8z"></path>
+</svg>
+</button>
+<input id="range" type="range" min="0" max="0" value="0" step="1">
 </div>
-
 <div class="settings" id="settings">
-
-  <div class="settings-section">
-    <button id="appearanceToggle">Внешний вид</button>
-    <div class="settings-content" id="appearanceSection">
-
-      <div class="setting-row">
-        <span>Тема</span>
-        <div>
-          <button class="theme-btn" id="darkThemeBtn">Тёмная</button>
-          <button class="theme-btn" id="lightThemeBtn">Светлая</button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="settings-section">
-    <button id="mapToggle">Карта</button>
-    <div class="settings-content" id="mapSection">
-
-      <div class="setting-row">
-        <span>Масштаб</span>
-        <div>
-          <button class="map-action-btn" id="zoomReset">Сброс</button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="settings-section">
-    <button id="opacityToggle">Прозрачность</button>
-    <div class="settings-content" id="opacitySection">
-
-      <div class="setting-row">
-        <span>Радар</span>
-        <input id="opacityRange" type="range" min="0" max="100" value="100">
-      </div>
-
-    </div>
-  </div>
-
-  <div class="settings-section">
-    <button id="frameCountToggle">Кадры</button>
-    <div class="settings-content" id="frameCountSection">
-
-      <div class="setting-row">
-        <span>Количество</span>
-        <div class="frame-count">
-          <button class="frame-count-arrow" id="frameCountMinus">−</button>
-          <input id="frameCountInput" value="12">
-          <button class="frame-count-arrow" id="frameCountPlus">+</button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
+<div class="settings-section">
+<button id="appearanceToggle">Внешний вид</button>
+<div class="settings-content" id="appearanceSection">
+<div class="setting-row">
+<span>Тема</span>
+<div>
+<button class="theme-btn" id="darkThemeBtn">Тёмная</button>
+<button class="theme-btn" id="lightThemeBtn">Светлая</button>
 </div>
-
+</div>
+</div>
+</div>
+<div class="settings-section">
+<button id="mapToggle">Карта</button>
+<div class="settings-content" id="mapSection">
+<div class="setting-row">
+<span>Масштаб</span>
+<div>
+<button class="map-action-btn" id="zoomReset">Сброс</button>
+</div>
+</div>
+</div>
+</div>
+<div class="settings-section">
+<button id="opacityToggle">Прозрачность</button>
+<div class="settings-content" id="opacitySection">
+<div class="setting-row">
+<span>Радар</span>
+<input id="opacityRange" type="range" min="0" max="100" value="100">
+</div>
+</div>
+</div>
+<div class="settings-section">
+<button id="frameCountToggle">Кадры</button>
+<div class="settings-content" id="frameCountSection">
+<div class="setting-row">
+<span>Количество</span>
+<div class="frame-count">
+<button class="frame-count-arrow" id="frameCountMinus">−</button>
+<input id="frameCountInput" value="12">
+<button class="frame-count-arrow" id="frameCountPlus">+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
 <div class="palette-modal" id="paletteModal">
-
-  <div class="palette-window">
-
-    <div class="palette-title">Палитры</div>
-
-    <div class="palette-tabs">
-      <button class="palette-tab active" id="oyaPaletteTab">ОЯ</button>
-      <button class="palette-tab" id="reflectivityPaletteTab">Отражаемость</button>
-    </div>
-
-    <div class="palette-editor active" id="oyaPaletteEditor">
-      <div id="paletteRows"></div>
-    </div>
-
-    <div class="palette-editor" id="reflectivityPaletteEditor">
-      <div id="reflectivityPaletteRows"></div>
-    </div>
-
-    <div class="palette-actions">
-      <button id="paletteClose">Закрыть</button>
-    </div>
-
-  </div>
-
+<div class="palette-window">
+<div class="palette-title">Палитры</div>
+<div class="palette-tabs">
+<button class="palette-tab active" id="oyaPaletteTab">ОЯ</button>
+<button class="palette-tab" id="reflectivityPaletteTab">Отражаемость</button>
 </div>
-
+<div class="palette-editor active" id="oyaPaletteEditor">
+<div id="paletteRows"></div>
+</div>
+<div class="palette-editor" id="reflectivityPaletteEditor">
+<div id="reflectivityPaletteRows"></div>
+</div>
+<div class="palette-actions">
+<button id="paletteClose">Закрыть</button>
+</div>
+</div>
+</div>
 <div id="loadingFrames">Загрузка…</div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
-
 <script>
 window.maplibregl=maplibregl;
 </script>
-
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
-
 <script>
 "use strict";
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-const $ =
-  id =>
-    document.getElementById(id);
-
+const $=id=>document.getElementById(id);
+const map=L.map("map",{zoomControl:false,attributionControl:true,minZoom:2,maxZoom:12,zoomSnap:.25}).setView([56,45],4);
+const cloradBaseMap=L.maplibreGL({style:"https://tiles.openfreemap.org/styles/dark",interactive:false,attribution:"© OpenFreeMap · © OpenStreetMap contributors"}).addTo(map);
+window.CLOradBaseMap=cloradBaseMap;
 function msg(text){
-
-  const status =
-    $("data");
-
-  if(!status){
-    return;
-  }
-
-  const old =
-    status.dataset.original ||
-    status.innerHTML;
-
-  status.innerHTML =
-    `<div>${text}</div>`;
-
-  clearTimeout(
-    status._timer
-  );
-
-  status._timer =
-    setTimeout(
-      () => {
-        status.innerHTML =
-          old;
-      },
-      1800
-    );
-
+const status=$("data");
+if(!status)return;
+const old=status.dataset.original||status.innerHTML;
+status.innerHTML=`<div>${text}</div>`;
+clearTimeout(status._timer);
+status._timer=setTimeout(()=>status.innerHTML=old,1800);
 }
-
-/* =========================================================
-   MAP
-========================================================= */
-
-const map =
-  L.map(
-    "map",
-    {
-      zoomControl:false,
-      attributionControl:true,
-      minZoom:2,
-      maxZoom:12,
-      zoomSnap:.25
-    }
-  ).setView(
-    [56,45],
-    4
-  );
-
-const cloradBaseMap =
-  L.maplibreGL({
-    style:
-      "https://tiles.openfreemap.org/styles/dark",
-    interactive:false,
-    attribution:
-      "© OpenFreeMap · © OpenStreetMap contributors"
-  }).addTo(map);
-
-window.CLOradBaseMap =
-  cloradBaseMap;
-
-/* =========================================================
-   MAP CONTROLS
-========================================================= */
-
-$("zoomIn").onclick =
-  () => map.zoomIn();
-
-$("zoomOut").onclick =
-  () => map.zoomOut();
-
-$("zoomReset").onclick =
-  () => map.setView(
-    [56,45],
-    4
-  );
-
-$("locationBtn").onclick =
-  () => {
-
-    if(
-      !navigator.geolocation
-    ){
-
-      msg(
-        "Геолокация недоступна"
-      );
-
-      return;
-
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      position => {
-
-        map.setView(
-          [
-            position.coords.latitude,
-            position.coords.longitude
-          ],
-          8
-        );
-
-      },
-      () => {
-        msg(
-          "Не удалось получить положение"
-        );
-      }
-    );
-
-  };
-
-/* =========================================================
-   LEGEND
-========================================================= */
-
-$("legendTab").onclick =
-  () => {
-
-    $("legend").classList.toggle(
-      "open"
-    );
-
-  };
-
-/* =========================================================
-   THEME
-========================================================= */
-
-$("darkThemeBtn").onclick =
-  () => {
-
-    document.body.classList.remove(
-      "light"
-    );
-
-  };
-
-$("lightThemeBtn").onclick =
-  () => {
-
-    document.body.classList.add(
-      "light"
-    );
-
-  };
-
-/* =========================================================
-   SETTINGS SECTIONS
-========================================================= */
-
-function setupSection(
-  sectionId,
-  buttonId
-){
-
-  const section =
-    $(sectionId);
-
-  const button =
-    $(buttonId);
-
-  if(
-    !section ||
-    !button
-  ){
-    return;
-  }
-
-  button.addEventListener(
-    "click",
-    () => {
-
-      section.classList.toggle(
-        "open"
-      );
-
-    }
-  );
-
+$("zoomIn").onclick=()=>map.zoomIn();
+$("zoomOut").onclick=()=>map.zoomOut();
+$("zoomReset").onclick=()=>map.setView([56,45],4);
+$("locationBtn").onclick=()=>{
+if(!navigator.geolocation){
+msg("Геолокация недоступна");
+return;
 }
-
-setupSection(
-  "appearanceSection",
-  "appearanceToggle"
-);
-
-setupSection(
-  "mapSection",
-  "mapToggle"
-);
-
-setupSection(
-  "opacitySection",
-  "opacityToggle"
-);
-
-setupSection(
-  "frameCountSection",
-  "frameCountToggle"
-);
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-$("settingsBtn").onclick =
-  () => {
-
-    $("settings").classList.toggle(
-      "open"
-    );
-
-  };
-
-$("opacityRange").oninput =
-  event => {
-
-    const value =
-      Number(
-        event.target.value
-      );
-
-    if(
-      window.CLOradSetRadarOpacity
-    ){
-
-      window.CLOradSetRadarOpacity(
-        value / 100
-      );
-
-    }
-
-  };
-
-$("frameCountMinus").onclick =
-  () => {
-
-    const input =
-      $("frameCountInput");
-
-    let value =
-      Number(input.value) || 12;
-
-    value =
-      Math.max(
-        1,
-        value - 1
-      );
-
-    input.value =
-      value;
-
-    window.CLOradSetFrameCount?.(
-      value
-    );
-
-  };
-
-$("frameCountPlus").onclick =
-  () => {
-
-    const input =
-      $("frameCountInput");
-
-    let value =
-      Number(input.value) || 12;
-
-    value =
-      Math.min(
-        50,
-        value + 1
-      );
-
-    input.value =
-      value;
-
-    window.CLOradSetFrameCount?.(
-      value
-    );
-
-  };
-
-$("frameCountInput").onchange =
-  event => {
-
-    let value =
-      Number(
-        event.target.value
-      ) || 12;
-
-    value =
-      Math.max(
-        1,
-        Math.min(
-          50,
-          value
-        )
-      );
-
-    event.target.value =
-      value;
-
-    window.CLOradSetFrameCount?.(
-      value
-    );
-
-  };
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
-const nav =
-  $("nav");
-
-let dragging = false;
-let dragStartX = 0;
-let dragScroll = 0;
-let dragMoved = false;
-
-/*
- * ВАЖНО:
- * Кнопки .n не получают pointer capture.
- * Это позволяет обычному click нормально
- * доходить до кнопки на ПК и телефоне.
- */
-
-nav.addEventListener(
-  "pointerdown",
-  event => {
-
-    if(
-      event.target &&
-      event.target.closest &&
-      event.target.closest(".n")
-    ){
-
-      dragging = false;
-      dragMoved = false;
-      dragStartX =
-        event.clientX;
-      dragScroll =
-        nav.scrollLeft;
-
-      return;
-
-    }
-
-    dragging = true;
-    dragMoved = false;
-
-    dragStartX =
-      event.clientX;
-
-    dragScroll =
-      nav.scrollLeft;
-
-  }
-);
-
-nav.addEventListener(
-  "pointermove",
-  event => {
-
-    if(
-      !dragging &&
-      !dragStartX
-    ){
-
-      return;
-
-    }
-
-    const delta =
-      event.clientX -
-      dragStartX;
-
-    if(
-      Math.abs(delta) < 6
-    ){
-
-      return;
-
-    }
-
-    dragging = true;
-    dragMoved = true;
-
-    nav.scrollLeft =
-      dragScroll -
-      delta;
-
-  }
-);
-
-nav.addEventListener(
-  "pointerup",
-  () => {
-
-    dragging = false;
-
-    setTimeout(
-      () => {
-
-        dragMoved = false;
-        dragStartX = 0;
-
-      },
-      0
-    );
-
-  }
-);
-
-nav.addEventListener(
-  "pointercancel",
-  () => {
-
-    dragging = false;
-    dragMoved = false;
-    dragStartX = 0;
-
-  }
-);
-
-nav.addEventListener(
-  "click",
-  event => {
-
-    if(
-      dragMoved
-    ){
-
-      event.preventDefault();
-      event.stopPropagation();
-
-    }
-
-  },
-  true
-);
-
-/* =========================================================
-   LAYER NAVIGATION
-========================================================= */
-
-const layers =
-  $("layers");
-
-const layersNav =
-  $("layersNav");
-
-if(
-  layers &&
-  layers.parentElement !==
-    document.body
-){
-
-  document.body.appendChild(
-    layers
-  );
-
+navigator.geolocation.getCurrentPosition(position=>{
+map.setView([position.coords.latitude,position.coords.longitude],8);
+},()=>msg("Не удалось получить положение"));
+};
+$("legendTab").onclick=()=>$("legend").classList.toggle("open");
+$("darkThemeBtn").onclick=()=>document.body.classList.remove("light");
+$("lightThemeBtn").onclick=()=>document.body.classList.add("light");
+function setupSection(sectionId,buttonId){
+const section=$(sectionId);
+const button=$(buttonId);
+if(!section||!button)return;
+button.addEventListener("click",()=>section.classList.toggle("open"));
 }
-
+setupSection("appearanceSection","appearanceToggle");
+setupSection("mapSection","mapToggle");
+setupSection("opacitySection","opacityToggle");
+setupSection("frameCountSection","frameCountToggle");
+$("settingsBtn").onclick=()=>$("settings").classList.toggle("open");
+$("opacityRange").oninput=event=>{
+const value=Number(event.target.value);
+if(window.CLOradSetRadarOpacity)window.CLOradSetRadarOpacity(value/100);
+};
+$("frameCountMinus").onclick=()=>{
+const input=$("frameCountInput");
+let value=Number(input.value)||12;
+value=Math.max(1,value-1);
+input.value=value;
+window.CLOradSetFrameCount?.(value);
+};
+$("frameCountPlus").onclick=()=>{
+const input=$("frameCountInput");
+let value=Number(input.value)||12;
+value=Math.min(50,value+1);
+input.value=value;
+window.CLOradSetFrameCount?.(value);
+};
+$("frameCountInput").onchange=event=>{
+let value=Number(event.target.value)||12;
+value=Math.max(1,Math.min(50,value));
+event.target.value=value;
+window.CLOradSetFrameCount?.(value);
+};
+const nav=$("nav");
+let dragging=false;
+let dragStartX=0;
+let dragScroll=0;
+let dragMoved=false;
+nav.addEventListener("pointerdown",event=>{
+const button=event.target?.closest?.(".n");
+dragging=!button;
+dragMoved=false;
+dragStartX=event.clientX;
+dragScroll=nav.scrollLeft;
+});
+nav.addEventListener("pointermove",event=>{
+if(!dragging&&!dragStartX)return;
+const delta=event.clientX-dragStartX;
+if(Math.abs(delta)<6)return;
+dragging=true;
+dragMoved=true;
+nav.scrollLeft=dragScroll-delta;
+});
+nav.addEventListener("pointerup",()=>{
+dragging=false;
+setTimeout(()=>{dragMoved=false;dragStartX=0},0);
+});
+nav.addEventListener("pointercancel",()=>{
+dragging=false;
+dragMoved=false;
+dragStartX=0;
+});
+nav.addEventListener("click",event=>{
+if(dragMoved){
+event.preventDefault();
+event.stopPropagation();
+}
+},true);
+const layers=$("layers");
+const oyaSwitch=$("oyaSwitch");
+const reflectivitySwitch=$("reflectivitySwitch");
+const lightningSwitch=$("lightningSwitch");
+const layersNav=$("layersNav");
+if(layers&&layers.parentElement!==document.body)document.body.appendChild(layers);
 function toggleLayers(){
-
-  if(!layers){
-    return;
-  }
-
-  layers.classList.toggle(
-    "hidden"
-  );
-
+if(!layers)return;
+layers.classList.toggle("hidden");
 }
-
-layersNav?.addEventListener(
-  "click",
-  event => {
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    toggleLayers();
-
-  }
-);
-
-/* =========================================================
-   SWITCHES
-========================================================= */
-
-function setupSwitch(
-  element,
-  onText,
-  offText
-){
-
-  if(!element){
-    return;
-  }
-
-  element.addEventListener(
-    "click",
-    event => {
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      element.classList.toggle(
-        "on"
-      );
-
-      const enabled =
-        element.classList.contains(
-          "on"
-        );
-
-      msg(
-        enabled
-          ? onText
-          : offText
-      );
-
-    }
-  );
-
+document.addEventListener("pointerdown",event=>{
+const target=event.target;
+if(target&&target.closest&&target.closest("#layersNav")){
+event.preventDefault();
+event.stopPropagation();
 }
-
-setupSwitch(
-  $("oyaSwitch"),
-  "Опасные явления",
-  "Опасные явления выключены"
-);
-
-setupSwitch(
-  $("reflectivitySwitch"),
-  "Отражаемость",
-  "Отражаемость выключена"
-);
-
-setupSwitch(
-  $("lightningSwitch"),
-  "Молнии",
-  "Молнии выключены"
-);
-
-/* =========================================================
-   CLOSE POPUPS
-========================================================= */
-
-document.addEventListener(
-  "click",
-  event => {
-
-    if(
-      !event.target.closest(
-        "#settings"
-      ) &&
-      !event.target.closest(
-        "#settingsBtn"
-      )
-    ){
-
-      $("settings")
-        ?.classList.remove(
-          "open"
-        );
-
-    }
-
-    if(
-      !event.target.closest(
-        "#legend"
-      ) &&
-      !event.target.closest(
-        "#legendTab"
-      )
-    ){
-
-      $("legend")
-        ?.classList.remove(
-          "open"
-        );
-
-    }
-
-  }
-);
-
-/* =========================================================
-   TIMELINE
-========================================================= */
-
-let activeProduct =
-  null;
-
-let activeFrames =
-  [];
-
-let activeLayer =
-  null;
-
-let activeMetadata =
-  null;
-
-let activeRequest =
-  0;
-
-let activeFrameRequest =
-  0;
-
-let playing =
-  false;
-
-let playTimer =
-  null;
-
-function formatFrameTime(
-  value
-){
-
-  if(
-    !value
-  ){
-
-    return "";
-
-  }
-
-  const date =
-    new Date(
-      value
-    );
-
-  if(
-    Number.isNaN(
-      date.getTime()
-    )
-  ){
-
-    return String(
-      value
-    );
-
-  }
-
-  return date.toLocaleString(
-    "ru-RU",
-    {
-      day:"2-digit",
-      month:"2-digit",
-      hour:"2-digit",
-      minute:"2-digit"
-    }
-  );
-
+},true);
+document.addEventListener("click",event=>{
+const target=event.target;
+if(!target||!target.closest)return;
+const layersButton=target.closest("#layersNav");
+if(layersButton){
+event.preventDefault();
+event.stopPropagation();
+toggleLayers();
+return;
 }
-
-$("range").addEventListener(
-  "input",
-  () => {
-
-    const index =
-      Number(
-        $("range").value
-      );
-
-    if(
-      typeof window.CLOradGIFShowFrame ===
-      "function" &&
-      window.CLOradGIFActive?.()
-    ){
-
-      window.CLOradGIFShowFrame(
-        index
-      );
-
-      return;
-
-    }
-
-    if(
-      activeFrames.length &&
-      window.CLOradShowFrame
-    ){
-
-      window.CLOradShowFrame(
-        index
-      );
-
-    }
-
-  }
-);
-
-/* =========================================================
-   PLAY
-========================================================= */
-
-$("play").onclick =
-  () => {
-
-    if(
-      typeof window.CLOradGIFActive ===
-      "function" &&
-      window.CLOradGIFActive()
-    ){
-
-      return;
-
-    }
-
-    if(
-      !activeFrames.length
-    ){
-
-      msg(
-        "Радар пока не подключён"
-      );
-
-      return;
-
-    }
-
-    playing =
-      !playing;
-
-    if(!playing){
-
-      clearInterval(
-        playTimer
-      );
-
-      playTimer =
-        null;
-
-      $("play").innerHTML =
-        '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
-
-      return;
-
-    }
-
-    $("play").innerHTML =
-      '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
-
-    playTimer =
-      setInterval(
-        () => {
-
-          if(
-            !activeFrames.length
-          ){
-
-            playing =
-              false;
-
-            clearInterval(
-              playTimer
-            );
-
-            playTimer =
-              null;
-
-            return;
-
-          }
-
-          let index =
-            Number(
-              $("range").value
-            );
-
-          index++;
-
-          if(
-            index >=
-            activeFrames.length
-          ){
-
-            index = 0;
-
-          }
-
-          $("range").value =
-            index;
-
-          $("range").dispatchEvent(
-            new Event(
-              "input"
-            )
-          );
-
-        },
-        700
-      );
-
-  };
-
-/* =========================================================
-   INITIAL STATE
-========================================================= */
-
-activeProduct =
-  null;
-
-activeFrames =
-  [];
-
-activeLayer =
-  null;
-
-activeMetadata =
-  null;
-
-activeRequest =
-  0;
-
-activeFrameRequest =
-  0;
-
-$("timeLabel").textContent =
-  "Радар не подключён";
-
-$("framesInfo").textContent =
-  "Радар пока не подключён";
-
-$("range").max =
-  0;
-
-$("range").value =
-  0;
-
-$("intensityValue").textContent =
-  "Нет данных";
-
-/* =========================================================
-   MAP RESIZE
-========================================================= */
-
-setTimeout(
-  () =>
-    map.invalidateSize(),
-  100
-);
-
-setTimeout(
-  () =>
-    map.invalidateSize(),
-  700
-);
-
+},true);
+function toggleLayerSwitch(element,onMessage,offMessage){
+if(!element)return;
+element.addEventListener("pointerdown",event=>{
+event.preventDefault();
+event.stopPropagation();
+},true);
+element.addEventListener("click",event=>{
+event.preventDefault();
+event.stopPropagation();
+element.classList.toggle("on");
+const enabled=element.classList.contains("on");
+msg(enabled?onMessage:offMessage);
+},true);
+}
+toggleLayerSwitch(oyaSwitch,"Опасные явления","Опасные явления выключены");
+toggleLayerSwitch(reflectivitySwitch,"Отражаемость","Отражаемость выключена");
+toggleLayerSwitch(lightningSwitch,"Молнии","Молнии выключены");
+document.addEventListener("click",event=>{
+if(!event.target.closest("#settings")&&!event.target.closest("#settingsBtn"))$("settings")?.classList.remove("open");
+if(!event.target.closest("#legend")&&!event.target.closest("#legendTab"))$("legend")?.classList.remove("open");
+});
+let activeFrames=[];
+let activeLayer=null;
+let activeMetadata=null;
+let activeRequest=0;
+let activeFrameRequest=0;
+let playing=false;
+let playTimer=null;
+function formatFrameTime(value){
+if(!value)return"";
+const date=new Date(value);
+if(Number.isNaN(date.getTime()))return String(value);
+return date.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+}
+$("range").addEventListener("input",()=>{
+const index=Number($("range").value);
+if(typeof window.CLOradGIFShowFrame==="function"&&window.CLOradGIFActive?.()){
+window.CLOradGIFShowFrame(index);
+return;
+}
+if(activeFrames.length&&window.CLOradShowFrame)window.CLOradShowFrame(index);
+});
+$("play").onclick=()=>{
+if(typeof window.CLOradGIFActive==="function"&&window.CLOradGIFActive())return;
+if(!activeFrames.length){
+msg("Радар пока не подключён");
+return;
+}
+playing=!playing;
+if(!playing){
+clearInterval(playTimer);
+playTimer=null;
+$("play").innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+return;
+}
+$("play").innerHTML='<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+playTimer=setInterval(()=>{
+if(!activeFrames.length){
+playing=false;
+clearInterval(playTimer);
+playTimer=null;
+return;
+}
+let index=Number($("range").value);
+index++;
+if(index>=activeFrames.length)index=0;
+$("range").value=index;
+$("range").dispatchEvent(new Event("input"));
+},700);
+};
+activeFrames=[];
+activeLayer=null;
+activeMetadata=null;
+activeRequest=0;
+activeFrameRequest=0;
+$("timeLabel").textContent="Радар не подключён";
+$("framesInfo").textContent="Радар пока не подключён";
+$("range").max=0;
+$("range").value=0;
+$("intensityValue").textContent="Нет данных";
+setTimeout(()=>map.invalidateSize(),100);
+setTimeout(()=>map.invalidateSize(),700);
 </script>
-
-<!-- CLOrad Lightning -->
 <script src="lightning.js"></script>
-
 <script src="risks.js"></script>
-
 <script src="idarkmeteo-raster.js"></script>
 <script src="idarkmeteo.js"></script>
 <script src="gif-radar.js"></script>
 <script src="radar-palettes.js"></script>
 <script src="layers-fix.js"></script>
-
 </body>
 </html>
