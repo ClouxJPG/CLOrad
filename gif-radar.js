@@ -74,6 +74,10 @@
     "#777c91"
   ];
 
+  /*
+     ИРАМ пока оставляем таким же,
+     как исходная палитра GIF.
+  */
   const IRAM_OY_PALETTE = [
     "#b9c1c7",
     "#a9a9a9",
@@ -116,6 +120,12 @@
     "Пользовательская";
 
   let gifPaletteCache = new Map();
+
+  /*
+     Отдельный кеш LUT для исходных палитр.
+     Это особенно важно на iPhone.
+  */
+  let gifSourceLUTCache = new Map();
 
   /* =======================================================
      STATE
@@ -746,7 +756,9 @@
     }
 
     let value =
-      hex.replace("#", "");
+      hex
+        .trim()
+        .replace("#", "");
 
     if (
       value.length === 3
@@ -761,29 +773,99 @@
           .join("");
     }
 
+    if (
+      !/^[0-9a-fA-F]{6}$/.test(
+        value
+      )
+    ) {
+      return {
+        r: 0,
+        g: 0,
+        b: 0
+      };
+    }
+
     return {
       r:
         parseInt(
           value.slice(0, 2),
           16
-        ) || 0,
+        ),
 
       g:
         parseInt(
           value.slice(2, 4),
           16
-        ) || 0,
+        ),
 
       b:
         parseInt(
           value.slice(4, 6),
           16
-        ) || 0
+        )
     };
   }
 
+  function normalizeHexColor(
+    color
+  ) {
+    if (
+      typeof color !==
+      "string"
+    ) {
+      return null;
+    }
+
+    let value =
+      color.trim();
+
+    if (
+      !value.startsWith("#")
+    ) {
+      value =
+        "#" + value;
+    }
+
+    if (
+      /^#[0-9a-fA-F]{3}$/.test(
+        value
+      )
+    ) {
+      value =
+        "#" +
+        value
+          .slice(1)
+          .split("")
+          .map(
+            char =>
+              char + char
+          )
+          .join("");
+    }
+
+    if (
+      !/^#[0-9a-fA-F]{6}$/.test(
+        value
+      )
+    ) {
+      return null;
+    }
+
+    return value.toLowerCase();
+  }
+
   function paletteToRGB(colors) {
-    return colors.map(hexToRGB);
+    if (
+      !Array.isArray(
+        colors
+      )
+    ) {
+      return [];
+    }
+
+    return colors.map(
+      hexToRGB
+    );
   }
 
   const SOURCE_PALETTE_RGB =
@@ -870,16 +952,34 @@
   }
 
   /* =======================================================
-     PALETTE — ОПРЕДЕЛЕНИЕ ИСХОДНОЙ ПАЛИТРЫ КАДРА
+     PALETTE — ОПРЕДЕЛЕНИЕ ИСХОДНОЙ ПАЛИТРЫ
      ======================================================= */
 
   function detectFrameSourcePalette(
     data
   ) {
+    /*
+       SOURCE и IRAM сейчас одинаковые.
+       Поэтому их нет смысла отдельно
+       различать.
+
+       Реально нам нужны:
+       1. исходные цвета GIF;
+       2. РГМЦ.
+    */
+
     const candidates = [
-      SOURCE_PALETTE_RGB,
-      RGMC_PALETTE_RGB,
-      IRAM_PALETTE_RGB
+      {
+        id: "source",
+        colors:
+          SOURCE_PALETTE_RGB
+      },
+
+      {
+        id: "rgmc",
+        colors:
+          RGMC_PALETTE_RGB
+      }
     ];
 
     const scores =
@@ -893,10 +993,9 @@
       );
 
     /*
-       Не обрабатываем каждый пиксель
-       при определении исходной палитры.
-       На iPhone достаточно нескольких
-       тысяч образцов.
+       Берём до 5000 образцов.
+       Это намного дешевле полного
+       анализа перед основной перекраской.
     */
     const sampleStep =
       Math.max(
@@ -934,20 +1033,13 @@
       const b =
         data[p + 2];
 
-      /*
-         Прозрачный фон не участвует.
-         Почти белый/чёрный фон тоже
-         учитывается как обычный цвет,
-         поскольку чёрный является
-         последним классом палитры.
-      */
       for (
         let i = 0;
         i < candidates.length;
         i++
       ) {
         const source =
-          candidates[i];
+          candidates[i].colors;
 
         const index =
           nearestColorIndex(
@@ -961,15 +1053,13 @@
           source[index];
 
         scores[i] +=
-          Math.sqrt(
-            colorDistance(
-              r,
-              g,
-              b,
-              ref.r,
-              ref.g,
-              ref.b
-            )
+          colorDistance(
+            r,
+            g,
+            b,
+            ref.r,
+            ref.g,
+            ref.b
           );
       }
 
@@ -980,6 +1070,17 @@
       ) {
         break;
       }
+    }
+
+    /*
+       Если данных для определения
+       практически нет — используем
+       исходную палитру.
+    */
+    if (
+      samples === 0
+    ) {
+      return SOURCE_PALETTE_RGB;
     }
 
     let best = 0;
@@ -997,16 +1098,16 @@
       }
     }
 
-    return candidates[best];
+    return candidates[
+      best
+    ].colors;
   }
 
   /* =======================================================
      PALETTE — TARGET
      ======================================================= */
 
-  function getPaletteRGB() {
-    let colors = null;
-
+  function getPaletteColors() {
     if (
       gifPalette ===
         "custom" &&
@@ -1016,32 +1117,32 @@
       gifCustomPalette.length ===
         SOURCE_OY_COLORS.length
     ) {
-      colors =
-        gifCustomPalette;
-    } else {
-      const palette =
-        OY_PALETTES[
-          gifPalette
-        ];
-
-      if (
-        !palette ||
-        !Array.isArray(
-          palette.colors
-        )
-      ) {
-        colors =
-          OY_PALETTES
-            .rgmc
-            .colors;
-      } else {
-        colors =
-          palette.colors;
-      }
+      return gifCustomPalette.slice();
     }
 
+    const palette =
+      OY_PALETTES[
+        gifPalette
+      ];
+
+    if (
+      !palette ||
+      !Array.isArray(
+        palette.colors
+      )
+    ) {
+      return OY_PALETTES
+        .rgmc
+        .colors
+        .slice();
+    }
+
+    return palette.colors.slice();
+  }
+
+  function getPaletteRGB() {
     return paletteToRGB(
-      colors
+      getPaletteColors()
     );
   }
 
@@ -1049,9 +1150,52 @@
      PALETTE — LUT ДЛЯ ИСХОДНОГО КАДРА
      ======================================================= */
 
-  function buildSourceLUT(
+  function getSourceLUT(
     source
   ) {
+    /*
+       Используем ключ по ссылке.
+       SOURCE и RGMC имеют стабильные
+       массивы на протяжении всей работы.
+    */
+
+    let cacheKey =
+      "unknown";
+
+    if (
+      source ===
+      SOURCE_PALETTE_RGB
+    ) {
+      cacheKey =
+        "source";
+    }
+
+    else if (
+      source ===
+      RGMC_PALETTE_RGB
+    ) {
+      cacheKey =
+        "rgmc";
+    }
+
+    else if (
+      source ===
+      IRAM_PALETTE_RGB
+    ) {
+      cacheKey =
+        "iram";
+    }
+
+    if (
+      gifSourceLUTCache.has(
+        cacheKey
+      )
+    ) {
+      return gifSourceLUTCache.get(
+        cacheKey
+      );
+    }
+
     const lut =
       new Uint8Array(
         4096
@@ -1083,19 +1227,31 @@
         );
     }
 
+    gifSourceLUTCache.set(
+      cacheKey,
+      lut
+    );
+
     return lut;
+  }
+
+  function buildSourceLUT(
+    source
+  ) {
+    return getSourceLUT(
+      source
+    );
   }
 
   /* =======================================================
      PALETTE — LUT TARGET
      ======================================================= */
 
-  function buildPaletteLUT() {
+  function buildPaletteLUT(
+    source
+  ) {
     const target =
       getPaletteRGB();
-
-    const source =
-      SOURCE_PALETTE_RGB;
 
     const lut =
       buildSourceLUT(
@@ -1119,8 +1275,7 @@
        РГМЦ является исходным
        отображением кадра.
 
-       В этом режиме Canvas вообще
-       не используется.
+       Здесь Canvas не нужен.
     */
     if (
       gifPalette ===
@@ -1131,22 +1286,30 @@
       );
     }
 
+    /*
+       Ключ обязательно содержит
+       все цвета кастомной палитры.
+
+       Это важно, если пользователь
+       изменил хотя бы один цвет.
+    */
+    const customKey =
+      gifPalette ===
+        "custom" &&
+      Array.isArray(
+        gifCustomPalette
+      )
+        ? gifCustomPalette.join(
+            ","
+          )
+        : "";
+
     const cacheKey =
       url +
       "|" +
       gifPalette +
       "|" +
-      (
-        gifPalette ===
-          "custom" &&
-        Array.isArray(
-          gifCustomPalette
-        )
-          ? gifCustomPalette.join(
-              ","
-            )
-          : ""
-      );
+      customKey;
 
     if (
       gifPaletteCache.has(
@@ -1247,9 +1410,9 @@
               imageData.data;
 
             /*
-               Определяем, какая из известных
-               19-цветных схем ближе всего
-               к фактическим пикселям GIF.
+               Определяем фактическую
+               цветовую схему исходного
+               PNG/GIF-кадра.
             */
             const source =
               detectFrameSourcePalette(
@@ -1257,24 +1420,24 @@
               );
 
             /*
-               Для каждого возможного
-               12-битного цвета заранее
-               определяем ближайший класс.
+               Получаем LUT именно для
+               обнаруженной исходной схемы.
             */
             const sourceLUT =
               buildSourceLUT(
                 source
               );
 
+            /*
+               Получаем ЦЕЛЕВУЮ палитру.
+
+               Для custom здесь будут
+               именно цвета, которые
+               передал менеджер.
+            */
             const target =
               getPaletteRGB();
 
-            /*
-               Если target отсутствует
-               или имеет неправильную длину,
-               кадр нельзя корректно
-               перекрасить.
-            */
             if (
               !Array.isArray(
                 target
@@ -1288,14 +1451,8 @@
             }
 
             /*
-               Основная перекраска.
-
-               Каждый пиксель:
-               1. переводится в 12-битный ключ;
-               2. через LUT получает индекс
-                  исходного класса;
-               3. получает цвет из выбранной
-                  палитры.
+               Реальная перекраска
+               каждого пикселя.
             */
             for (
               let p = 0;
@@ -1305,10 +1462,6 @@
               const alpha =
                 data[p + 3];
 
-              /*
-                 Полностью прозрачный
-                 фон оставляем прозрачным.
-              */
               if (
                 alpha === 0
               ) {
@@ -1324,6 +1477,14 @@
               const b =
                 data[p + 2];
 
+              /*
+                 Сводим RGB к 12-битному
+                 ключу.
+
+                 Это резко уменьшает
+                 количество вычислений
+                 nearestColorIndex.
+              */
               const key =
                 ((r >> 4) << 8) |
                 ((g >> 4) << 4) |
@@ -1383,16 +1544,12 @@
             );
 
             /*
-               ВАЖНО:
-               здесь больше НЕ возвращаем
-               исходный URL.
+               Никакого возврата
+               исходного URL.
 
-               Если перекраска не удалась,
-               ошибка должна быть видна,
-               а не создавать видимость,
-               будто выбранная палитра
-               работает, хотя цвета остались
-               прежними.
+               Если custom не удалось
+               применить — ошибка должна
+               быть видна.
             */
             throw error;
           }
@@ -1411,31 +1568,15 @@
      ======================================================= */
 
   function applyGIFPaletteToLegend() {
-    let colors = null;
+    const colors =
+      getPaletteColors();
 
     if (
-      gifPalette ===
-        "custom" &&
-      Array.isArray(
-        gifCustomPalette
-      ) &&
-      gifCustomPalette.length ===
-        SOURCE_OY_COLORS.length
+      !Array.isArray(
+        colors
+      )
     ) {
-      colors =
-        gifCustomPalette;
-    } else {
-      const palette =
-        OY_PALETTES[
-          gifPalette
-        ];
-
-      if (!palette) {
-        return;
-      }
-
-      colors =
-        palette.colors;
+      return;
     }
 
     colors.forEach(
@@ -1685,53 +1826,76 @@
     colors,
     name
   ) {
+    /*
+       Допускаем два варианта:
+
+       1. applyCustomPalette(colors, name)
+       2. applyCustomPalette({
+            colors: [...],
+            name: "..."
+          })
+
+       Это делает мост совместимее
+       с менеджером палитр.
+    */
+
+    if (
+      colors &&
+      !Array.isArray(
+        colors
+      ) &&
+      typeof colors ===
+        "object"
+    ) {
+      name =
+        colors.name ||
+        name;
+
+      colors =
+        colors.colors;
+    }
+
     if (
       !Array.isArray(
         colors
       )
     ) {
+      console.error(
+        "CLOrad custom palette: colors is not an array",
+        colors
+      );
+
       return false;
     }
 
+    /*
+       Кастомная палитра должна
+       содержать ровно 19 цветов.
+    */
     if (
       colors.length !==
       SOURCE_OY_COLORS.length
     ) {
+      console.error(
+        "CLOrad custom palette: требуется 19 цветов, получено:",
+        colors.length
+      );
+
       return false;
     }
 
+    /*
+       Нормализуем каждый цвет.
+
+       Поддерживаются:
+       #rrggbb
+       rrggbb
+       #rgb
+       rgb
+    */
     const normalized =
       colors.map(
-        color => {
-          if (
-            typeof color !==
-            "string"
-          ) {
-            return null;
-          }
-
-          let value =
-            color.trim();
-
-          if (
-            !value.startsWith(
-              "#"
-            )
-          ) {
-            value =
-              "#" + value;
-          }
-
-          if (
-            !/^#[0-9a-fA-F]{6}$/.test(
-              value
-            )
-          ) {
-            return null;
-          }
-
-          return value.toLowerCase();
-        }
+        normalizeHexColor
       );
 
     if (
@@ -1740,13 +1904,20 @@
           !color
       )
     ) {
+      console.error(
+        "CLOrad custom palette: один или несколько цветов имеют неверный HEX"
+      );
+
       return false;
     }
 
-    gifFrameRequest++;
-
+    /*
+       Копируем массив, чтобы менеджер
+       не мог случайно изменить его
+       после установки.
+    */
     gifCustomPalette =
-      normalized;
+      normalized.slice();
 
     gifCustomPaletteName =
       String(
@@ -1754,6 +1925,10 @@
           "Пользовательская"
       );
 
+    /*
+       Регистрируем custom-палитру
+       внутри основного объекта.
+    */
     OY_PALETTES.custom = {
       name:
         gifCustomPaletteName,
@@ -1762,17 +1937,43 @@
         gifCustomPalette.slice()
     };
 
+    /*
+       Переключаем активный режим.
+    */
     gifPalette =
       "custom";
+
+    /*
+       Отменяем ожидающиеся кадры.
+    */
+    gifFrameRequest++;
+
+    /*
+       Полностью очищаем результаты
+       старой перекраски.
+    */
+    gifPaletteCache.clear();
+
+    /*
+       Оригинальные изображения
+       можно оставить в gifImageCache,
+       потому что это только исходные
+       PNG-кадры.
+
+       Но отображаемый слой обязательно
+       пересоздаётся.
+    */
+    removeAllGIFDisplayLayers();
 
     updateGIFPaletteButtons();
 
     applyGIFPaletteToLegend();
 
-    gifPaletteCache.clear();
-
-    removeAllGIFDisplayLayers();
-
+    /*
+       Если радар уже активен —
+       немедленно перекрашиваем
+       текущий кадр.
+    */
     if (
       gifActive &&
       gifFrames.length
@@ -1815,9 +2016,33 @@
 
         gifPalette =
           "rgmc";
+
+        gifPaletteCache.clear();
+        removeAllGIFDisplayLayers();
+
+        updateGIFPaletteButtons();
+
+        applyGIFPaletteToLegend();
+
+        if (
+          gifActive &&
+          gifFrames.length
+        ) {
+          const index =
+            Number(
+              $("range")?.value ||
+              0
+            );
+
+          showGIFFrame(
+            index
+          );
+        }
+
+        return true;
       }
 
-      else if (
+      if (
         value ===
         "iram"
       ) {
@@ -1831,9 +2056,33 @@
 
         gifPalette =
           "iram";
+
+        gifPaletteCache.clear();
+        removeAllGIFDisplayLayers();
+
+        updateGIFPaletteButtons();
+
+        applyGIFPaletteToLegend();
+
+        if (
+          gifActive &&
+          gifFrames.length
+        ) {
+          const index =
+            Number(
+              $("range")?.value ||
+              0
+            );
+
+          showGIFFrame(
+            index
+          );
+        }
+
+        return true;
       }
 
-      else if (
+      if (
         value ===
         "custom"
       ) {
@@ -1843,34 +2092,7 @@
         );
       }
 
-      else {
-        return false;
-      }
-
-      updateGIFPaletteButtons();
-
-      applyGIFPaletteToLegend();
-
-      gifPaletteCache.clear();
-
-      removeAllGIFDisplayLayers();
-
-      if (
-        gifActive &&
-        gifFrames.length
-      ) {
-        const index =
-          Number(
-            $("range")?.value ||
-            0
-          );
-
-        showGIFFrame(
-          index
-        );
-      }
-
-      return true;
+      return false;
     };
 
   window.CLOradGetSourcePalette =
@@ -3278,6 +3500,12 @@
           return;
         }
 
+        /*
+           Если пользователь успел
+           переключить палитру во время
+           Canvas-обработки — старый
+           результат не показываем.
+        */
         if (
           gifPalette ===
           "rgmc"
