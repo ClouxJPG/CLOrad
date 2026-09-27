@@ -296,12 +296,7 @@ button{
 
 .layers{
   position:fixed;
-
-  /* ИСПРАВЛЕНО:
-     панель теперь гарантированно выше
-     Leaflet / MapLibre на ПК */
-  z-index:1000;
-
+  z-index:2147483647 !important;
   left:17px;
   top:50%;
   transform:translateY(-50%);
@@ -313,14 +308,19 @@ button{
   box-shadow:0 4px 14px #0003;
   transition:left .25s,opacity .2s;
 
-  /* гарантируем получение мыши */
-  pointer-events:auto
+  pointer-events:auto !important;
+  isolation:isolate
 }
 
 .layers.hidden{
   left:-210px;
   opacity:0;
-  pointer-events:none
+  pointer-events:none !important
+}
+
+.layers,
+.layers *{
+  pointer-events:auto !important
 }
 
 .layer{
@@ -367,10 +367,10 @@ button{
   position:relative;
   padding:0;
   flex:none;
-
-  /* переключатель выше содержимого панели */
-  z-index:1001;
-  pointer-events:auto
+  z-index:2147483647 !important;
+  pointer-events:auto !important;
+  cursor:pointer;
+  touch-action:manipulation
 }
 
 .switch i{
@@ -966,8 +966,8 @@ body.light .frameInput{
   }
 
   .switch{
-    z-index:1001;
-    pointer-events:auto
+    z-index:2147483647 !important;
+    pointer-events:auto !important
   }
 }
 </style>
@@ -1298,7 +1298,7 @@ body.light .frameInput{
       Опасные явления
     </span>
 
-    <button class="switch on" id="oyaSwitch">
+    <button class="switch on" id="oyaSwitch" type="button">
       <i></i>
     </button>
 
@@ -1318,7 +1318,7 @@ body.light .frameInput{
       Отражаемость
     </span>
 
-    <button class="switch" id="reflectivitySwitch">
+    <button class="switch" id="reflectivitySwitch" type="button">
       <i></i>
     </button>
 
@@ -1336,7 +1336,7 @@ body.light .frameInput{
       Молнии
     </span>
 
-    <button class="switch on" id="lightningSwitch">
+    <button class="switch on" id="lightningSwitch" type="button">
       <i></i>
     </button>
 
@@ -1617,35 +1617,111 @@ const reflectivitySwitch =
 const lightningSwitch =
   $("lightningSwitch");
 
-$("layersNav").onclick = event => {
+/* =========================================================
+   ОТКРЫТИЕ / ЗАКРЫТИЕ ПАНЕЛИ СЛОЁВ
+========================================================= */
 
-  event.stopPropagation();
+$("layersNav").addEventListener(
+  "pointerdown",
+  event => {
 
-  layers.classList.toggle("hidden");
+    event.stopPropagation();
 
-};
+  },
+  true
+);
 
-oyaSwitch.onclick = event => {
+$("layersNav").addEventListener(
+  "click",
+  event => {
 
-  event.stopPropagation();
+    event.preventDefault();
+    event.stopPropagation();
 
-  oyaSwitch.classList.toggle("on");
+    layers.classList.toggle("hidden");
 
-};
+  },
+  true
+);
 
-reflectivitySwitch.onclick = event => {
+/* =========================================================
+   ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ
+========================================================= */
 
-  event.stopPropagation();
+function setupLayerSwitch(
+  element,
+  messageOn,
+  messageOff
+){
 
-  reflectivitySwitch.classList.toggle("on");
+  if(!element){
+    return;
+  }
 
-  msg(
-    reflectivitySwitch.classList.contains("on")
-      ? "Отражаемость"
-      : "Отражаемость выключена"
+  element.addEventListener(
+    "pointerdown",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+    },
+    true
   );
 
-};
+  element.addEventListener(
+    "mousedown",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+    },
+    true
+  );
+
+  element.addEventListener(
+    "click",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      element.classList.toggle("on");
+
+      if(messageOn){
+
+        msg(
+          element.classList.contains("on")
+            ? messageOn
+            : messageOff
+        );
+
+      }
+
+    },
+    true
+  );
+
+}
+
+setupLayerSwitch(
+  oyaSwitch,
+  "Опасные явления",
+  "Опасные явления выключены"
+);
+
+setupLayerSwitch(
+  reflectivitySwitch,
+  "Отражаемость",
+  "Отражаемость выключена"
+);
+
+setupLayerSwitch(
+  lightningSwitch,
+  "Молнии",
+  "Молнии выключены"
+);
 
 /* =========================================================
    LEGEND
