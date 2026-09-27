@@ -30,6 +30,16 @@
      ПАЛИТРЫ ОЯ
      ======================================================= */
 
+  /*
+     Исходные цвета растра Meteoinfo.
+
+     Это классы, по которым определяется
+     интенсивность/ОЯ исходного радара.
+
+     ВАЖНО:
+     перекраска теперь выполняется и для РГМЦ,
+     и для ИРАМ.
+  */
   const SOURCE_OY_COLORS = [
     "#b9c1c7",
     "#a9a9a9",
@@ -52,6 +62,9 @@
     "#000000"
   ];
 
+  /*
+     РГМЦ — палитра ОЯ.
+  */
   const RGMC_OY_PALETTE = [
     "#b9c1c7",
     "#a9c7f4",
@@ -74,6 +87,9 @@
     "#777c91"
   ];
 
+  /*
+     ИРАМ — палитра ОЯ.
+  */
   const IRAM_OY_PALETTE = [
     "#bfc3c8",
     "#a8a8a8",
@@ -110,6 +126,9 @@
 
   let gifPalette = "rgmc";
 
+  /*
+     Кэш уже перекрашенных кадров.
+  */
   let gifPaletteCache =
     new Map();
 
@@ -123,7 +142,10 @@
   let gifFrameDelays = [];
   let gifFrameRequest = 0;
   let gifMeta = null;
-  let gifImageCache = new Map();
+
+  let gifImageCache =
+    new Map();
+
   let gifPlaying = false;
   let gifPlayTimer = null;
   let gifLayer = null;
@@ -815,6 +837,45 @@
     );
   }
 
+  /*
+     Расстояние между цветами.
+
+     Используется perceptual-подобное
+     взвешивание каналов, чтобы оттенки
+     зелёного/синего/красного не смешивались
+     слишком легко.
+  */
+  function colorDistance(
+    r1,
+    g1,
+    b1,
+    r2,
+    g2,
+    b2
+  ) {
+    const dr =
+      r1 - r2;
+
+    const dg =
+      g1 - g2;
+
+    const db =
+      b1 - b2;
+
+    return (
+      dr * dr * 0.30 +
+      dg * dg * 0.59 +
+      db * db * 0.11
+    );
+  }
+
+  /*
+     Поиск ближайшего исходного класса.
+
+     Допуск увеличен, потому что после
+     декодирования GIF браузер может получить
+     небольшие отклонения RGB.
+  */
   function getNearestSourceColor(
     r,
     g,
@@ -834,19 +895,15 @@
       const color =
         SOURCE_RGB[i];
 
-      const dr =
-        r - color.r;
-
-      const dg =
-        g - color.g;
-
-      const db =
-        b - color.b;
-
       const distance =
-        dr * dr +
-        dg * dg +
-        db * db;
+        colorDistance(
+          r,
+          g,
+          b,
+          color.r,
+          color.g,
+          color.b
+        );
 
       if (
         distance <
@@ -869,6 +926,19 @@
     };
   }
 
+  /*
+     ======================================================
+     LUT
+
+     4096 комбинаций:
+       4 бита R
+       4 бита G
+       4 бита B
+
+     Это значительно быстрее полного поиска
+     для каждого пикселя.
+     ======================================================
+  */
   function buildPaletteLUT() {
     const target =
       getPaletteRGB();
@@ -877,6 +947,19 @@
       new Int16Array(
         4096
       );
+
+    /*
+       Порог допуска.
+
+       Старый порог 55^2 был слишком
+       ограничивающим для реального GIF.
+
+       Здесь допускается более широкий
+       диапазон RGB, но прозрачные пиксели
+       по-прежнему не трогаются.
+    */
+    const MAX_DISTANCE =
+      125 * 125;
 
     for (
       let key = 0;
@@ -904,7 +987,7 @@
 
       lut[key] =
         result.distance <=
-        70 * 70
+        MAX_DISTANCE
           ? result.index
           : -1;
     }
@@ -925,11 +1008,12 @@
     /*
        ВАЖНО:
 
-       Здесь больше НЕТ исключения
-       для РГМЦ.
+       Здесь больше НЕТ исключения:
 
-       Обе палитры реально
-       перекрашивают радарный растр.
+         if (gifPalette === "rgmc")
+
+       Теперь ОБЕ палитры проходят через
+       реальную перекраску raster.
     */
 
     const cacheKey =
@@ -960,6 +1044,13 @@
             img.naturalHeight ||
             img.height;
 
+          if (
+            !width ||
+            !height
+          ) {
+            return url;
+          }
+
           const canvas =
             document.createElement(
               "canvas"
@@ -983,6 +1074,17 @@
           if (!ctx) {
             return url;
           }
+
+          /*
+             Рисуем исходный кадр
+             на canvas.
+          */
+          ctx.clearRect(
+            0,
+            0,
+            width,
+            height
+          );
 
           ctx.drawImage(
             img,
@@ -1025,30 +1127,86 @@
           const target =
             palette.target;
 
+          /*
+             Перекрашиваем КАЖДЫЙ
+             непрозрачный пиксель,
+             который относится к
+             радарной палитре.
+          */
           for (
             let p = 0;
             p < data.length;
             p += 4
           ) {
+            const alpha =
+              data[p + 3];
+
+            /*
+               Прозрачность оставляем
+               полностью без изменений.
+            */
             if (
-              data[p + 3] ===
-              0
+              alpha === 0
             ) {
               continue;
             }
 
+            const r =
+              data[p];
+
+            const g =
+              data[p + 1];
+
+            const b =
+              data[p + 2];
+
+            /*
+               Быстрое определение
+               приблизительного цвета.
+            */
             const key =
-              ((data[p] >> 4) <<
-                8) |
-              ((data[p + 1] >> 4) <<
-                4) |
-              (data[p + 2] >> 4);
+              ((r >> 4) << 8) |
+              ((g >> 4) << 4) |
+              (b >> 4);
 
             const index =
               lut[key];
 
             if (
-              index < 0
+              index < 0 ||
+              !target[index]
+            ) {
+              continue;
+            }
+
+            /*
+               Дополнительная проверка
+               полного RGB.
+
+               Она нужна, чтобы широкое
+               LUT-окно не перекрашивало
+               посторонние цвета карты.
+            */
+            const source =
+              SOURCE_RGB[index];
+
+            const exactDistance =
+              colorDistance(
+                r,
+                g,
+                b,
+                source.r,
+                source.g,
+                source.b
+              );
+
+            /*
+               Для реального GIF разрешаем
+               достаточно широкий диапазон.
+            */
+            if (
+              exactDistance >
+              125 * 125
             ) {
               continue;
             }
@@ -1064,6 +1222,11 @@
 
             data[p + 2] =
               color.b;
+
+            /*
+               Alpha исходного растра
+               сохраняем.
+            */
           }
 
           ctx.putImageData(
@@ -1072,9 +1235,30 @@
             0
           );
 
+          /*
+             Возвращаем уже новый PNG,
+             а не исходный URL.
+
+             Поэтому Leaflet действительно
+             получает перекрашенный raster.
+          */
           return canvas.toDataURL(
             "image/png"
           );
+        }
+      )
+      .catch(
+        error => {
+          console.error(
+            "CLOrad palette frame:",
+            error
+          );
+
+          /*
+             Если canvas не смог прочитать
+             изображение, не ломаем радар.
+          */
+          return url;
         }
       );
 
@@ -1135,15 +1319,34 @@
         "rgmc";
     }
 
+    /*
+       Меняем активную палитру.
+    */
     gifPalette =
       value;
 
     updateGIFPaletteButtons();
 
+    /*
+       Меняем легенду.
+    */
     applyGIFPaletteToLegend();
 
+    /*
+       Очень важно:
+
+       Старые PNG уже были созданы
+       с другой палитрой.
+
+       Поэтому полностью очищаем
+       кэш перекрашенных кадров.
+    */
     gifPaletteCache.clear();
 
+    /*
+       Если радар уже включён —
+       сразу перерисовываем текущий кадр.
+    */
     if (
       gifActive &&
       gifFrames.length
@@ -2505,10 +2708,19 @@
       gifFrames[index];
 
     try {
+      /*
+         Сначала получаем исходный
+         raster.
+      */
       await loadImage(
         url
       );
 
+      /*
+         Затем обязательно создаём
+         новый raster с выбранной
+         палитрой.
+      */
       const displayUrl =
         await prepareGIFFrame(
           url
