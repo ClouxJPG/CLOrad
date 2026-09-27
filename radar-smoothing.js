@@ -1,55 +1,69 @@
 /* =========================================================
-   CLOrad — RADAR GEOMETRIC SMOOTHING
+   CLOrad — Radar Morphological Smoothing
    ---------------------------------------------------------
-   Геометрическое сглаживание радарного изображения.
-   Без blur.
-   Без смешивания RGB.
-   Без изменения исходных радарных классов.
-
-   UI полностью независим от .tools и Leaflet.
-   Кнопка всегда создаётся непосредственно в body.
-   Обработка выполняется только после отпускания ползунка.
-
-   Серверная нагрузка:
-   отсутствует — всё выполняется на устройстве пользователя.
-========================================================= */
+   • Кнопка находится внутри «Настройки»
+   • Настройка стоит после «Кол. кадров»
+   • 0% = исходный радар
+   • Сглаживание работает только после отпускания ползунка
+   • Без CSS blur
+   • Без RGB-интерполяции
+   • Используются только существующие цвета радара
+   • Сглаживание выполняется на клиенте
+   ========================================================= */
 
 (() => {
-
   "use strict";
-
 
   /* =======================================================
      CONFIG
-  ======================================================= */
+     ======================================================= */
 
   const CONFIG = {
-
     min: 0,
     max: 100,
     step: 5,
     initial: 0,
 
-    resolution: 2,
-    radius: 1,
-    passes: 1,
+    /*
+      Внутреннее разрешение обработки.
 
-    cacheLimit: 5,
+      1 = максимальная детализация
+      2 = быстрее на телефоне
+    */
+    resolution: 2,
+
+    /*
+      Максимальный радиус морфологической обработки.
+      Реальный радиус зависит от strength.
+    */
+    maxRadius: 5,
+
+    /*
+      Минимальный размер области,
+      которую разрешено изменять.
+    */
     minRegionPixels: 3,
 
-    processDelay: 40
+    /*
+      Ограничение кеша обработанных кадров.
+    */
+    cacheLimit: 4,
 
+    /*
+      Небольшая задержка после изменения ползунка.
+      Само тяжёлое вычисление всё равно происходит
+      только после отпускания ползунка.
+    */
+    processDelay: 80
   };
-
 
   /* =======================================================
      STATE
-  ======================================================= */
+     ======================================================= */
 
-  let enabled = false;
   let strength = CONFIG.initial;
-
   let processing = false;
+
   let processTimer = null;
 
   let currentLayer = null;
@@ -59,21 +73,35 @@
   let cache = new Map();
   let cacheOrder = [];
 
-  let mapHooksReady = false;
+  let uiReady = false;
   let leafletHookReady = false;
+  let mapHooksReady = false;
 
-  let uiObserver = null;
-  let uiRepairTimer = null;
-  let uiRepairRunning = false;
+  let originalOnAdd = null;
+  let originalSetUrl = null;
 
+  let lastProcessToken = 0;
+
+  /* =======================================================
+     HELPERS
+     ======================================================= */
+
+  const $ = id => document.getElementById(id);
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function round(value) {
+    return Math.round(value);
+  }
 
   /* =======================================================
      STYLE
-  ======================================================= */
+     ======================================================= */
 
-  function installStyle(){
-
-    if(document.getElementById("clorad-smoothing-style")){
+  function installStyle() {
+    if ($("clorad-smoothing-style")) {
       return;
     }
 
@@ -82,2063 +110,1839 @@
     style.id = "clorad-smoothing-style";
 
     style.textContent = `
-
       /* ===================================================
-         SMOOTHING BUTTON
-         Кнопка НЕ зависит от .tools
-      =================================================== */
+         CLOrad — Radar Smoothing
+         =================================================== */
 
-      #cloradSmoothingButton{
-        position:fixed !important;
-
-        left:16px !important;
-        top:110px !important;
-
-        width:44px !important;
-        height:44px !important;
-
-        min-width:44px !important;
-        min-height:44px !important;
-
-        max-width:44px !important;
-        max-height:44px !important;
-
-        margin:0 !important;
-        padding:0 !important;
-
-        display:grid !important;
-        place-items:center !important;
-
-        box-sizing:border-box !important;
-
-        border:1px solid #35404a !important;
-        border-radius:9px !important;
-
-        background:#171e24 !important;
-        color:#cbd2d7 !important;
-
-        opacity:1 !important;
-        visibility:visible !important;
-
-        pointer-events:auto !important;
-
-        cursor:pointer !important;
-
-        z-index:2147483646 !important;
-
-        appearance:none !important;
-        -webkit-appearance:none !important;
-
-        transform:none !important;
-
-        overflow:visible !important;
+      #cloradSmoothingSetting {
+        width: 100%;
       }
 
+      #cloradSmoothingButton {
+        width: 100%;
+        min-height: 44px;
+        padding: 0 14px;
 
-      #cloradSmoothingButton:hover{
-        background:#202930 !important;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+
+        border: 0;
+        outline: 0;
+
+        background: transparent;
+        color: inherit;
+
+        font: inherit;
+        text-align: left;
+
+        cursor: pointer;
+
+        -webkit-tap-highlight-color: transparent;
       }
 
-
-      #cloradSmoothingButton:active{
-        transform:scale(.96) !important;
+      #cloradSmoothingButton:active {
+        opacity: .72;
       }
 
+      #cloradSmoothingButton .clorad-smoothing-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
 
-      #cloradSmoothingButton.active{
-        background:#26332e !important;
-        border-color:#51e29a !important;
-        color:#51e29a !important;
+        min-width: 0;
       }
 
+      #cloradSmoothingButton .clorad-smoothing-icon {
+        width: 20px;
+        height: 20px;
 
-      #cloradSmoothingButton svg{
-        width:24px !important;
-        height:24px !important;
+        flex: 0 0 20px;
 
-        display:block !important;
-
-        fill:none !important;
-
-        stroke:currentColor !important;
-        stroke-width:1.8 !important;
-
-        stroke-linecap:round !important;
-        stroke-linejoin:round !important;
-
-        pointer-events:none !important;
-
-        opacity:1 !important;
-        visibility:visible !important;
+        opacity: .82;
       }
 
-
-      /* ===================================================
-         PANEL
-      =================================================== */
-
-      #cloradSmoothingPanel{
-        position:fixed !important;
-
-        left:50% !important;
-        bottom:174px !important;
-
-        transform:
-          translateX(-50%)
-          translateY(10px) !important;
-
-        width:min(520px,calc(100vw - 32px)) !important;
-        height:54px !important;
-
-        padding:0 15px !important;
-
-        display:flex !important;
-        align-items:center !important;
-        gap:12px !important;
-
-        box-sizing:border-box !important;
-
-        background:#11181e !important;
-
-        border:1px solid #35404a !important;
-        border-radius:11px !important;
-
-        box-shadow:0 8px 30px #0008 !important;
-
-        opacity:0 !important;
-        visibility:hidden !important;
-
-        pointer-events:none !important;
-
-        transition:
-          opacity .16s ease,
-          transform .16s ease,
-          visibility .16s ease !important;
-
-        z-index:2147483645 !important;
+      #cloradSmoothingButton .clorad-smoothing-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
+      #cloradSmoothingButton .clorad-smoothing-arrow {
+        flex: 0 0 auto;
 
-      #cloradSmoothingPanel.show{
-        opacity:1 !important;
+        font-size: 22px;
+        line-height: 1;
 
-        visibility:visible !important;
+        opacity: .55;
 
-        pointer-events:auto !important;
-
-        transform:
-          translateX(-50%)
-          translateY(0) !important;
+        transform: rotate(0deg);
+        transition: transform .16s ease;
       }
 
-
-      #cloradSmoothingValue{
-        width:43px !important;
-
-        flex:none !important;
-
-        text-align:center !important;
-
-        color:#dce2e6 !important;
-
-        font-size:13px !important;
-        font-weight:600 !important;
+      #cloradSmoothingSetting.open
+      #cloradSmoothingButton
+      .clorad-smoothing-arrow {
+        transform: rotate(90deg);
       }
 
+      #cloradSmoothingPanel {
+        display: none;
 
-      #cloradSmoothingRange{
-        width:100% !important;
-
-        margin:0 !important;
-
-        accent-color:#51e29a !important;
-
-        cursor:pointer !important;
+        padding: 0 14px 13px;
       }
 
-
-      /* ===================================================
-         STATUS
-      =================================================== */
-
-      #cloradSmoothingStatus{
-        position:fixed !important;
-
-        left:50% !important;
-        bottom:235px !important;
-
-        transform:translateX(-50%) !important;
-
-        background:#151d23 !important;
-        color:#cbd2d7 !important;
-
-        border:1px solid #35404a !important;
-        border-radius:8px !important;
-
-        padding:7px 11px !important;
-
-        font-size:11px !important;
-
-        opacity:0 !important;
-        visibility:hidden !important;
-
-        pointer-events:none !important;
-
-        transition:opacity .15s ease !important;
-
-        z-index:2147483647 !important;
+      #cloradSmoothingSetting.open
+      #cloradSmoothingPanel {
+        display: block;
       }
 
+      #cloradSmoothingValue {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
 
-      #cloradSmoothingStatus.show{
-        opacity:1 !important;
-        visibility:visible !important;
+        margin-bottom: 8px;
+
+        font-size: 12px;
+        line-height: 1.2;
+
+        color: rgba(255,255,255,.58);
       }
 
-
-      @media(max-width:600px){
-
-        #cloradSmoothingButton{
-          left:12px !important;
-          top:108px !important;
-        }
-
-        #cloradSmoothingPanel{
-          bottom:168px !important;
-          width:calc(100vw - 24px) !important;
-        }
-
+      #cloradSmoothingValue strong {
+        color: rgba(255,255,255,.88);
+        font-weight: 600;
       }
 
+      #cloradSmoothingRange {
+        display: block;
+
+        width: 100%;
+        height: 24px;
+
+        margin: 0;
+        padding: 0;
+
+        appearance: none;
+        -webkit-appearance: none;
+
+        background: transparent;
+
+        cursor: pointer;
+      }
+
+      #cloradSmoothingRange::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 4px;
+
+        background: rgba(255,255,255,.16);
+      }
+
+      #cloradSmoothingRange::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+
+        width: 18px;
+        height: 18px;
+
+        margin-top: -7px;
+
+        border: 0;
+        border-radius: 50%;
+
+        background: #fff;
+
+        box-shadow:
+          0 1px 5px rgba(0,0,0,.35);
+      }
+
+      #cloradSmoothingRange::-moz-range-track {
+        height: 4px;
+        border-radius: 4px;
+
+        background: rgba(255,255,255,.16);
+      }
+
+      #cloradSmoothingRange::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+
+        border: 0;
+        border-radius: 50%;
+
+        background: #fff;
+      }
+
+      #cloradSmoothingStatus {
+        min-height: 15px;
+
+        margin-top: 5px;
+
+        font-size: 11px;
+        line-height: 1.3;
+
+        color: rgba(255,255,255,.42);
+      }
+
+      body.light
+      #cloradSmoothingValue {
+        color: rgba(0,0,0,.50);
+      }
+
+      body.light
+      #cloradSmoothingValue strong {
+        color: rgba(0,0,0,.78);
+      }
+
+      body.light
+      #cloradSmoothingStatus {
+        color: rgba(0,0,0,.42);
+      }
+
+      body.light
+      #cloradSmoothingRange::-webkit-slider-runnable-track {
+        background: rgba(0,0,0,.14);
+      }
+
+      body.light
+      #cloradSmoothingRange::-moz-range-track {
+        background: rgba(0,0,0,.14);
+      }
     `;
 
     document.head.appendChild(style);
-
   }
 
-
   /* =======================================================
-     CREATE BUTTON
-  ======================================================= */
+     SETTINGS
+     ======================================================= */
 
-  function createButton(){
+  function getSettings() {
+    return $("settings");
+  }
 
-    let button =
-      document.getElementById(
-        "cloradSmoothingButton"
-      );
+  function createUI() {
+    installStyle();
 
+    const settings = getSettings();
 
-    if(button){
-      return button;
+    if (!settings) {
+      return false;
     }
 
+    if ($("cloradSmoothingSetting")) {
+      uiReady = true;
+      return true;
+    }
 
-    button =
-      document.createElement("button");
+    const setting = document.createElement("div");
 
-    button.id =
-      "cloradSmoothingButton";
+    setting.className = "setting";
+    setting.id = "cloradSmoothingSetting";
 
-    button.type =
-      "button";
+    setting.innerHTML = `
+      <button
+        id="cloradSmoothingButton"
+        type="button"
+        aria-expanded="false"
+      >
+        <span class="clorad-smoothing-title">
 
-    button.title =
-      "Сглаживание радара";
+          <svg
+            class="clorad-smoothing-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4 16.5c2.1-5.4 4.2-8 6.3-8 1.6 0 2.5 2.1 4.1 2.1 1.5 0 2.7-1.5 5.6-4.6"/>
+            <path d="M4 20c2.2-3.1 4.1-4.5 6.1-4.5 2.1 0 2.6 2.2 4.5 2.2 1.8 0 3.1-1.2 5.4-3.7"/>
+          </svg>
 
-    button.setAttribute(
-      "aria-label",
-      "Сглаживание радара"
-    );
+          <span class="clorad-smoothing-text">
+            Сглаживание радара
+          </span>
 
+        </span>
 
-    button.innerHTML = `
+        <span class="clorad-smoothing-arrow">
+          ›
+        </span>
+      </button>
 
-      <svg viewBox="0 0 24 24">
+      <div
+        id="cloradSmoothingPanel"
+        class="settingBody"
+      >
+        <div id="cloradSmoothingValue">
+          <span>Сила сглаживания</span>
+          <strong id="cloradSmoothingValueNumber">0%</strong>
+        </div>
 
-        <path
-          d="M4 17
-             C7 17 7 11 10 11
-             C13 11 13 7 16 7
-             C18 7 19 5 20 4"
-        />
+        <input
+          id="cloradSmoothingRange"
+          type="range"
+          min="${CONFIG.min}"
+          max="${CONFIG.max}"
+          step="${CONFIG.step}"
+          value="${CONFIG.initial}"
+          inputmode="numeric"
+        >
 
-        <path
-          d="M4 20
-             C8 20 8 16 11 16
-             C14 16 15 12 18 12
-             C19 12 20 11 20 10"
-        />
-
-      </svg>
-
+        <div id="cloradSmoothingStatus"></div>
+      </div>
     `;
-
 
     /*
       КРИТИЧНО:
-
-      Кнопка всегда добавляется непосредственно
-      в body.
-
-      Мы больше НЕ делаем:
-
-        .tools.appendChild(button)
-
-      Поэтому никакая перерисовка .tools
-      не сможет удалить кнопку.
+      настройка ставится именно после «Кол. кадров».
     */
 
-    document.body.appendChild(button);
+    const framesSetting = $("framesSetting");
 
-
-    return button;
-
-  }
-
-
-  /* =======================================================
-     CREATE PANEL
-  ======================================================= */
-
-  function createPanel(){
-
-    let panel =
-      document.getElementById(
-        "cloradSmoothingPanel"
-      );
-
-
-    if(panel){
-      return panel;
+    if (framesSetting) {
+      framesSetting.after(setting);
+    } else {
+      settings.appendChild(setting);
     }
 
+    const button = $("cloradSmoothingButton");
+    const range = $("cloradSmoothingRange");
 
-    panel =
-      document.createElement("div");
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
 
-    panel.id =
-      "cloradSmoothingPanel";
-
-
-    panel.innerHTML = `
-
-      <span id="cloradSmoothingValue">
-        ${strength}%
-      </span>
-
-      <input
-        id="cloradSmoothingRange"
-        type="range"
-        min="${CONFIG.min}"
-        max="${CONFIG.max}"
-        step="${CONFIG.step}"
-        value="${strength}"
-      >
-
-    `;
-
-
-    document.body.appendChild(panel);
-
-
-    return panel;
-
-  }
-
-
-  /* =======================================================
-     CREATE STATUS
-  ======================================================= */
-
-  function createStatus(){
-
-    let status =
-      document.getElementById(
-        "cloradSmoothingStatus"
-      );
-
-
-    if(status){
-      return status;
-    }
-
-
-    status =
-      document.createElement("div");
-
-    status.id =
-      "cloradSmoothingStatus";
-
-    status.textContent =
-      "Обработка радара…";
-
-
-    document.body.appendChild(status);
-
-
-    return status;
-
-  }
-
-
-  /* =======================================================
-     CREATE UI
-  ======================================================= */
-
-  function createUI(){
-
-    if(!document.body){
-      return;
-    }
-
-
-    installStyle();
-
-
-    const button =
-      createButton();
-
-    const panel =
-      createPanel();
-
-    createStatus();
-
-
-    /* =====================================================
-       BUTTON EVENTS
-    ===================================================== */
-
-    if(!button.__cloradSmoothingEvents){
-
-      button.__cloradSmoothingEvents = true;
-
-
-      button.addEventListener(
-        "click",
-        () => {
-
-          enabled =
-            !enabled;
-
-
-          button.classList.toggle(
-            "active",
-            enabled
-          );
-
-
-          panel.classList.toggle(
-            "show",
-            enabled
-          );
-
-
-          if(enabled){
-
-            scanLayers();
-
-
-            if(currentLayer){
-
-              scheduleProcess();
-
-            }
-
-          }else{
-
-            restoreOriginal();
-
-          }
-
-        }
-      );
-
-    }
-
-
-    /* =====================================================
-       RANGE EVENTS
-    ===================================================== */
-
-    const range =
-      document.getElementById(
-        "cloradSmoothingRange"
-      );
-
-
-    if(
-      range &&
-      !range.__cloradSmoothingEvents
-    ){
-
-      range.__cloradSmoothingEvents =
-        true;
-
-
-      range.addEventListener(
-        "input",
-        () => {
-
-          strength =
-            Number(range.value);
-
-
-          const value =
-            document.getElementById(
-              "cloradSmoothingValue"
-            );
-
-
-          if(value){
-
-            value.textContent =
-              strength + "%";
-
-          }
-
-        }
-      );
-
+      const isOpen = setting.classList.contains("open");
 
       /*
-        ВАЖНО:
-
-        input только меняет число.
-
-        Реальная обработка начинается
-        только на change — после отпускания
-        ползунка.
+        Не закрываем сам popup настроек.
+        Закрываем только другие раскрытые setting.
       */
 
-      range.addEventListener(
-        "change",
-        () => {
-
-          if(enabled){
-
-            scheduleProcess();
-
+      document
+        .querySelectorAll(".setting.open")
+        .forEach(other => {
+          if (other !== setting) {
+            other.classList.remove("open");
           }
+        });
 
-        }
+      setting.classList.toggle("open", !isOpen);
+
+      button.setAttribute(
+        "aria-expanded",
+        String(!isOpen)
       );
+    });
 
-    }
+    range.addEventListener("input", () => {
+      strength = Number(range.value) || 0;
 
+      updateValue();
+
+      /*
+        Никакой тяжёлой обработки во время движения.
+      */
+
+      if (processTimer) {
+        clearTimeout(processTimer);
+        processTimer = null;
+      }
+
+      setStatus(
+        strength === 0
+          ? ""
+          : "Отпустите ползунок для применения"
+      );
+    });
+
+    range.addEventListener("change", () => {
+      strength = Number(range.value) || 0;
+
+      updateValue();
+
+      if (processTimer) {
+        clearTimeout(processTimer);
+        processTimer = null;
+      }
+
+      processTimer = setTimeout(() => {
+        processTimer = null;
+        processCurrentLayer();
+      }, CONFIG.processDelay);
+    });
+
+    uiReady = true;
+
+    updateValue();
+
+    return true;
   }
 
+  function updateValue() {
+    const number = $("cloradSmoothingValueNumber");
+
+    if (number) {
+      number.textContent = `${strength}%`;
+    }
+  }
+
+  function setStatus(text) {
+    const status = $("cloradSmoothingStatus");
+
+    if (status) {
+      status.textContent = text || "";
+    }
+  }
 
   /* =======================================================
      UI WATCHER
-  ======================================================= */
+     ======================================================= */
 
-  function repairUI(){
-
-    if(
-      uiRepairRunning
-    ){
-
-      return;
-
-    }
-
-
-    uiRepairRunning =
-      true;
-
-
-    try{
-
-      /*
-        Если какой-либо другой код удалил кнопку,
-        создаём её заново.
-      */
-
-      createUI();
-
-
-    }finally{
-
-      uiRepairRunning =
-        false;
-
-    }
-
-  }
-
-
-  function scheduleUIRepair(){
-
-    if(uiRepairTimer){
+  function startUIWatcher() {
+    if (uiReady) {
       return;
     }
 
-
-    uiRepairTimer =
-      requestAnimationFrame(
-        () => {
-
-          uiRepairTimer =
-            null;
-
-          repairUI();
-
-        }
-      );
-
-  }
-
-
-  function startUIWatcher(){
-
-    if(uiObserver){
-      return;
-    }
-
-
-    if(!document.body){
-      return;
-    }
-
-
-    uiObserver =
-      new MutationObserver(
-        mutations => {
-
-          let relevant =
-            false;
-
-
-          for(
-            const mutation of mutations
-          ){
-
-            if(
-              mutation.type !==
-              "childList"
-            ){
-
-              continue;
-
-            }
-
-
-            if(
-              mutation.addedNodes.length ||
-              mutation.removedNodes.length
-            ){
-
-              relevant =
-                true;
-
-              break;
-
-            }
-
-          }
-
-
-          if(relevant){
-
-            const button =
-              document.getElementById(
-                "cloradSmoothingButton"
-              );
-
-            const panel =
-              document.getElementById(
-                "cloradSmoothingPanel"
-              );
-
-            const range =
-              document.getElementById(
-                "cloradSmoothingRange"
-              );
-
-
-            if(
-              !button ||
-              !panel ||
-              !range
-            ){
-
-              scheduleUIRepair();
-
-            }
-
-          }
-
-        }
-      );
-
-
-    uiObserver.observe(
-      document.body,
-      {
-        childList:true,
-        subtree:true
+    const observer = new MutationObserver(() => {
+      if (!uiReady) {
+        createUI();
       }
-    );
 
-  }
-
-
-  /* =======================================================
-     STATUS
-  ======================================================= */
-
-  function showStatus(){
-
-    const element =
-      document.getElementById(
-        "cloradSmoothingStatus"
-      );
-
-
-    if(element){
-
-      element.classList.add(
-        "show"
-      );
-
-    }
-
-  }
-
-
-  function hideStatus(){
-
-    const element =
-      document.getElementById(
-        "cloradSmoothingStatus"
-      );
-
-
-    if(element){
-
-      element.classList.remove(
-        "show"
-      );
-
-    }
-
-  }
-
-
-  /* =======================================================
-     IMAGE LOADING
-  ======================================================= */
-
-  function loadImage(source){
-
-    return new Promise(
-      (resolve,reject) => {
-
-        const image =
-          new Image();
-
-
-        image.crossOrigin =
-          "anonymous";
-
-
-        image.onload =
-          () => resolve(image);
-
-
-        image.onerror =
-          () => reject(
-            new Error(
-              "Не удалось прочитать радарный кадр"
-            )
-          );
-
-
-        image.src =
-          source;
-
+      if (uiReady) {
+        observer.disconnect();
       }
-    );
+    });
 
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    /*
+      На случай, если DOM уже полностью готов.
+    */
+
+    createUI();
   }
 
-
   /* =======================================================
-     CANVAS
-  ======================================================= */
+     IMAGE
+     ======================================================= */
 
-  function createCanvas(
-    width,
-    height
-  ){
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
 
-    const canvas =
-      document.createElement(
-        "canvas"
-      );
+      img.crossOrigin = "anonymous";
 
+      img.onload = () => resolve(img);
 
-    canvas.width =
-      width;
+      img.onerror = () => {
+        reject(
+          new Error("Не удалось загрузить радарный кадр")
+        );
+      };
 
-    canvas.height =
-      height;
+      img.src = url;
+    });
+  }
 
+  function createCanvas(width, height) {
+    const canvas = document.createElement("canvas");
+
+    canvas.width = width;
+    canvas.height = height;
 
     return canvas;
-
   }
-
-
-  function pixelIndex(
-    x,
-    y,
-    width
-  ){
-
-    return (
-      (y * width + x) * 4
-    );
-
-  }
-
 
   /* =======================================================
-     COLOR HASH
-  ======================================================= */
+     COLOR HELPERS
+     ======================================================= */
 
-  function colorKey(
-    r,
-    g,
-    b,
-    a
-  ){
-
+  function colorKey(r, g, b, a) {
     return (
-      r + "," +
-      g + "," +
-      b + "," +
+      (r << 24) |
+      (g << 16) |
+      (b << 8) |
       a
     );
-
   }
 
+  function colorDistanceSquared(
+    r1,
+    g1,
+    b1,
+    r2,
+    g2,
+    b2
+  ) {
+    const dr = r1 - r2;
+    const dg = g1 - g2;
+    const db = b1 - b2;
+
+    return (
+      dr * dr +
+      dg * dg +
+      db * db
+    );
+  }
 
   /* =======================================================
-     BUILD PALETTE
-  ======================================================= */
+     PALETTE
+     ======================================================= */
 
-  function buildPalette(data){
+  function buildPalette(data) {
+    const counts = new Map();
 
-    const counts =
-      new Map();
+    /*
+      Берём только непрозрачные/видимые пиксели.
+      Прозрачный фон не становится радарным классом.
+    */
 
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
 
-    for(
-      let i = 0;
-      i < data.length;
-      i += 8
-    ){
-
-      const a =
-        data[i + 3];
-
-
-      if(a < 12){
+      if (a < 180) {
         continue;
       }
 
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
       const key =
-        colorKey(
-          data[i],
-          data[i + 1],
-          data[i + 2],
-          a
-        );
-
+        (r << 16) |
+        (g << 8) |
+        b;
 
       counts.set(
         key,
         (counts.get(key) || 0) + 1
       );
-
     }
 
+    const colors = [];
 
-    const colors =
-      [...counts.entries()]
-        .sort(
-          (a,b) =>
-            b[1] - a[1]
-        )
-        .slice(0,32)
-        .map(
-          entry => {
+    counts.forEach((count, key) => {
+      colors.push({
+        r: (key >> 16) & 255,
+        g: (key >> 8) & 255,
+        b: key & 255,
+        count
+      });
+    });
 
-            const parts =
-              entry[0]
-                .split(",")
-                .map(Number);
+    colors.sort(
+      (a, b) => b.count - a.count
+    );
 
+    /*
+      Большое число классов сильно увеличивает
+      стоимость обработки.
 
-            return {
+      Берём реальные доминирующие цвета кадра.
+    */
 
-              r:parts[0],
-              g:parts[1],
-              b:parts[2],
-              a:parts[3]
-
-            };
-
-          }
-        );
-
-
-    return colors.length
-      ? colors
-      : null;
-
+    return colors.slice(0, 32);
   }
 
-
-  /* =======================================================
-     NEAREST COLOR
-  ======================================================= */
-
-  function nearestColor(
-    data,
-    index,
+  function nearestPaletteColor(
+    r,
+    g,
+    b,
     palette
-  ){
-
-    const r =
-      data[index];
-
-    const g =
-      data[index + 1];
-
-    const b =
-      data[index + 2];
-
-    const a =
-      data[index + 3];
-
-
-    if(a < 12){
-      return -1;
-    }
-
-
-    let best = 0;
+  ) {
+    let best = -1;
     let bestDistance = Infinity;
 
-
-    for(
-      let i = 0;
-      i < palette.length;
-      i++
-    ){
-
-      const c =
-        palette[i];
-
-
-      const dr =
-        r - c.r;
-
-      const dg =
-        g - c.g;
-
-      const db =
-        b - c.b;
-
+    for (let i = 0; i < palette.length; i++) {
+      const p = palette[i];
 
       const distance =
-        dr * dr +
-        dg * dg +
-        db * db;
+        colorDistanceSquared(
+          r,
+          g,
+          b,
+          p.r,
+          p.g,
+          p.b
+        );
 
-
-      if(
-        distance <
-        bestDistance
-      ){
-
-        bestDistance =
-          distance;
-
-        best =
-          i;
-
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
       }
-
     }
 
-
     return best;
-
   }
-
 
   /* =======================================================
      CLASS MAP
-  ======================================================= */
+     ======================================================= */
 
   function buildClassMap(
     data,
     width,
     height,
     palette
-  ){
+  ) {
+    const map = new Int16Array(
+      width * height
+    );
 
-    const map =
-      new Int16Array(
+    /*
+      -1 = прозрачный / фон
+    */
+
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+
+      for (let x = 0; x < width; x++) {
+        const index =
+          (row + x) * 4;
+
+        const alpha =
+          data[index + 3];
+
+        if (alpha < 180) {
+          map[row + x] = -1;
+          continue;
+        }
+
+        map[row + x] =
+          nearestPaletteColor(
+            data[index],
+            data[index + 1],
+            data[index + 2],
+            palette
+          );
+      }
+    }
+
+    return map;
+  }
+
+  /* =======================================================
+     REGION SIZE
+     ======================================================= */
+
+  function collectRegion(
+    labels,
+    width,
+    height,
+    start,
+    classId,
+    visited
+  ) {
+    const queue = [start];
+    const region = [];
+
+    visited[start] = 1;
+
+    let pointer = 0;
+
+    while (pointer < queue.length) {
+      const index =
+        queue[pointer++];
+
+      region.push(index);
+
+      const x =
+        index % width;
+
+      const y =
+        (index / width) | 0;
+
+      const left =
+        x > 0
+          ? index - 1
+          : -1;
+
+      const right =
+        x < width - 1
+          ? index + 1
+          : -1;
+
+      const top =
+        y > 0
+          ? index - width
+          : -1;
+
+      const bottom =
+        y < height - 1
+          ? index + width
+          : -1;
+
+      if (
+        left >= 0 &&
+        !visited[left] &&
+        labels[left] === classId
+      ) {
+        visited[left] = 1;
+        queue.push(left);
+      }
+
+      if (
+        right >= 0 &&
+        !visited[right] &&
+        labels[right] === classId
+      ) {
+        visited[right] = 1;
+        queue.push(right);
+      }
+
+      if (
+        top >= 0 &&
+        !visited[top] &&
+        labels[top] === classId
+      ) {
+        visited[top] = 1;
+        queue.push(top);
+      }
+
+      if (
+        bottom >= 0 &&
+        !visited[bottom] &&
+        labels[bottom] === classId
+      ) {
+        visited[bottom] = 1;
+        queue.push(bottom);
+      }
+    }
+
+    return region;
+  }
+
+  /* =======================================================
+     MORPHOLOGICAL SMOOTHING
+     ======================================================= */
+
+  function calculateRadius() {
+    if (strength <= 0) {
+      return 0;
+    }
+
+    /*
+      0–100%
+      превращаем в радиус примерно 1–5 пикселей
+      внутренней сетки обработки.
+    */
+
+    return Math.max(
+      1,
+      Math.round(
+        (strength / 100) *
+        CONFIG.maxRadius
+      )
+    );
+  }
+
+  function smoothClassMap(
+    source,
+    width,
+    height,
+    strengthValue
+  ) {
+    if (strengthValue <= 0) {
+      return source.slice();
+    }
+
+    const radius =
+      calculateRadius();
+
+    if (radius <= 0) {
+      return source.slice();
+    }
+
+    /*
+      Работаем с копией.
+
+      Важно:
+      каждая радарная категория сглаживается
+      относительно самой себя.
+
+      Новые цвета не создаются.
+    */
+
+    let result = source.slice();
+
+    /*
+      Несколько проходов в зависимости от силы.
+    */
+
+    const passes =
+      strengthValue >= 70
+        ? 2
+        : 1;
+
+    for (
+      let pass = 0;
+      pass < passes;
+      pass++
+    ) {
+      result =
+        morphologicalPass(
+          result,
+          width,
+          height,
+          radius
+        );
+    }
+
+    return result;
+  }
+
+  function morphologicalPass(
+    source,
+    width,
+    height,
+    radius
+  ) {
+    const total =
+      width * height;
+
+    const output =
+      source.slice();
+
+    /*
+      Сглаживаем только существующие классы.
+      Для каждой точки рассматриваем локальную
+      окрестность и определяем геометрию области.
+
+      Это НЕ обычный majority filter:
+      сначала определяется граница области,
+      затем изменяются только её пограничные пиксели.
+    */
+
+    const boundary =
+      new Uint8Array(total);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index =
+          y * width + x;
+
+        const cls =
+          source[index];
+
+        if (cls < 0) {
+          continue;
+        }
+
+        let different = false;
+
+        for (
+          let dy = -1;
+          dy <= 1 && !different;
+          dy++
+        ) {
+          for (
+            let dx = -1;
+            dx <= 1;
+            dx++
+          ) {
+            if (
+              dx === 0 &&
+              dy === 0
+            ) {
+              continue;
+            }
+
+            const nx = x + dx;
+            const ny = y + dy;
+
+            if (
+              nx < 0 ||
+              ny < 0 ||
+              nx >= width ||
+              ny >= height
+            ) {
+              different = true;
+              break;
+            }
+
+            const n =
+              source[
+                ny * width + nx
+              ];
+
+            if (n !== cls) {
+              different = true;
+              break;
+            }
+          }
+        }
+
+        if (different) {
+          boundary[index] = 1;
+        }
+      }
+    }
+
+    /*
+      Сглаживаем только контур.
+
+      Для каждой граничной точки ищем ближайшие
+      классы по радиусу.
+
+      Если вокруг явно доминирует один из соседних
+      классов — граница может переместиться.
+
+      При близком конфликте исходный класс сохраняется.
+    */
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index =
+          y * width + x;
+
+        if (!boundary[index]) {
+          continue;
+        }
+
+        const original =
+          source[index];
+
+        if (original < 0) {
+          continue;
+        }
+
+        const candidates =
+          new Map();
+
+        const minX =
+          Math.max(
+            0,
+            x - radius
+          );
+
+        const maxX =
+          Math.min(
+            width - 1,
+            x + radius
+          );
+
+        const minY =
+          Math.max(
+            0,
+            y - radius
+          );
+
+        const maxY =
+          Math.min(
+            height - 1,
+            y + radius
+          );
+
+        for (
+          let ny = minY;
+          ny <= maxY;
+          ny++
+        ) {
+          for (
+            let nx = minX;
+            nx <= maxX;
+            nx++
+          ) {
+            const cls =
+              source[
+                ny * width + nx
+              ];
+
+            if (cls < 0) {
+              continue;
+            }
+
+            const dx =
+              nx - x;
+
+            const dy =
+              ny - y;
+
+            const distance =
+              Math.sqrt(
+                dx * dx +
+                dy * dy
+              );
+
+            if (distance > radius) {
+              continue;
+            }
+
+            /*
+              Ближайшие пиксели получают больший вес.
+            */
+
+            const weight =
+              1 /
+              (1 + distance);
+
+            candidates.set(
+              cls,
+              (candidates.get(cls) || 0) +
+                weight
+            );
+          }
+        }
+
+        let bestClass =
+          original;
+
+        let bestScore =
+          candidates.get(original) || 0;
+
+        candidates.forEach(
+          (score, cls) => {
+            if (
+              score >
+              bestScore * 1.18
+            ) {
+              bestScore = score;
+              bestClass = cls;
+            }
+          }
+        );
+
+        output[index] =
+          bestClass;
+      }
+    }
+
+    /*
+      Удаляем крошечные случайные островки,
+      появившиеся только из-за обработки границы.
+    */
+
+    return removeTinyIslands(
+      output,
+      width,
+      height
+    );
+  }
+
+  /* =======================================================
+     REMOVE TINY ISLANDS
+     ======================================================= */
+
+  function removeTinyIslands(
+    labels,
+    width,
+    height
+  ) {
+    const result =
+      labels.slice();
+
+    const visited =
+      new Uint8Array(
         width * height
       );
 
-
-    map.fill(-1);
-
-
-    for(
-      let y = 0;
-      y < height;
-      y++
-    ){
-
-      for(
-        let x = 0;
-        x < width;
-        x++
-      ){
-
-        map[
-          y * width + x
-        ] =
-          nearestColor(
-            data,
-            pixelIndex(
-              x,
-              y,
-              width
-            ),
-            palette
-          );
-
+    for (
+      let index = 0;
+      index < result.length;
+      index++
+    ) {
+      if (
+        visited[index] ||
+        result[index] < 0
+      ) {
+        continue;
       }
 
-    }
+      const cls =
+        result[index];
 
-
-    return map;
-
-  }
-
-
-  /* =======================================================
-     GET CLASS
-  ======================================================= */
-
-  function getClass(
-    classes,
-    x,
-    y,
-    width,
-    height
-  ){
-
-    if(
-      x < 0 ||
-      y < 0 ||
-      x >= width ||
-      y >= height
-    ){
-
-      return -1;
-
-    }
-
-
-    return classes[
-      y * width + x
-    ];
-
-  }
-
-
-  /* =======================================================
-     BOUNDARY
-  ======================================================= */
-
-  function isBoundary(
-    classes,
-    x,
-    y,
-    width,
-    height
-  ){
-
-    const center =
-      getClass(
-        classes,
-        x,
-        y,
-        width,
-        height
-      );
-
-
-    return (
-      center !==
-        getClass(
-          classes,
-          x - 1,
-          y,
+      const region =
+        collectRegion(
+          result,
           width,
-          height
-        ) ||
-
-      center !==
-        getClass(
-          classes,
-          x + 1,
-          y,
-          width,
-          height
-        ) ||
-
-      center !==
-        getClass(
-          classes,
-          x,
-          y - 1,
-          width,
-          height
-        ) ||
-
-      center !==
-        getClass(
-          classes,
-          x,
-          y + 1,
-          width,
-          height
-        )
-    );
-
-  }
-
-
-  /* =======================================================
-     CORNER
-  ======================================================= */
-
-  function cornerFilled(
-    classes,
-    x,
-    y,
-    corner,
-    width,
-    height
-  ){
-
-    const center =
-      getClass(
-        classes,
-        x,
-        y,
-        width,
-        height
-      );
-
-
-    if(center < 0){
-      return false;
-    }
-
-
-    let a;
-    let b;
-    let diagonal;
-
-
-    if(corner === 0){
-
-      a =
-        getClass(
-          classes,
-          x - 1,
-          y,
-          width,
-          height
+          height,
+          index,
+          cls,
+          visited
         );
 
-      b =
-        getClass(
-          classes,
-          x,
-          y - 1,
-          width,
-          height
-        );
+      if (
+        region.length >=
+        CONFIG.minRegionPixels
+      ) {
+        continue;
+      }
 
-      diagonal =
-        getClass(
-          classes,
-          x - 1,
-          y - 1,
-          width,
-          height
-        );
+      /*
+        Маленькая область возвращается
+        к наиболее распространённому соседнему классу.
+      */
 
-    }else if(corner === 1){
+      const neighbours =
+        new Map();
 
-      a =
-        getClass(
-          classes,
-          x + 1,
-          y,
-          width,
-          height
-        );
+      for (
+        let i = 0;
+        i < region.length;
+        i++
+      ) {
+        const p =
+          region[i];
 
-      b =
-        getClass(
-          classes,
-          x,
-          y - 1,
-          width,
-          height
-        );
+        const x =
+          p % width;
 
-      diagonal =
-        getClass(
-          classes,
-          x + 1,
-          y - 1,
-          width,
-          height
-        );
+        const y =
+          (p / width) | 0;
 
-    }else if(corner === 2){
+        for (
+          let dy = -1;
+          dy <= 1;
+          dy++
+        ) {
+          for (
+            let dx = -1;
+            dx <= 1;
+            dx++
+          ) {
+            if (
+              dx === 0 &&
+              dy === 0
+            ) {
+              continue;
+            }
 
-      a =
-        getClass(
-          classes,
-          x + 1,
-          y,
-          width,
-          height
-        );
+            const nx = x + dx;
+            const ny = y + dy;
 
-      b =
-        getClass(
-          classes,
-          x,
-          y + 1,
-          width,
-          height
-        );
+            if (
+              nx < 0 ||
+              ny < 0 ||
+              nx >= width ||
+              ny >= height
+            ) {
+              continue;
+            }
 
-      diagonal =
-        getClass(
-          classes,
-          x + 1,
-          y + 1,
-          width,
-          height
-        );
+            const n =
+              result[
+                ny * width + nx
+              ];
 
-    }else{
+            if (
+              n >= 0 &&
+              n !== cls
+            ) {
+              neighbours.set(
+                n,
+                (neighbours.get(n) || 0) + 1
+              );
+            }
+          }
+        }
+      }
 
-      a =
-        getClass(
-          classes,
-          x - 1,
-          y,
-          width,
-          height
-        );
+      let replacement =
+        cls;
 
-      b =
-        getClass(
-          classes,
-          x,
-          y + 1,
-          width,
-          height
-        );
+      let best =
+        0;
 
-      diagonal =
-        getClass(
-          classes,
-          x - 1,
-          y + 1,
-          width,
-          height
-        );
-
-    }
-
-
-    if(
-      a !== center &&
-      b !== center
-    ){
-
-      return false;
-
-    }
-
-
-    if(
-      a === center &&
-      b === center
-    ){
-
-      return true;
-
-    }
-
-
-    if(
-      diagonal === center
-    ){
-
-      return true;
-
-    }
-
-
-    return true;
-
-  }
-
-
-  /* =======================================================
-     GEOMETRIC RENDER
-  ======================================================= */
-
-  function renderGeometry(
-    sourceCanvas,
-    classes,
-    palette,
-    width,
-    height,
-    amount
-  ){
-
-    if(amount <= 0){
-
-      return sourceCanvas;
-
-    }
-
-
-    let scale =
-      CONFIG.resolution;
-
-
-    if(
-      amount >= 80 &&
-      width * height < 1500000
-    ){
-
-      scale = 3;
-
-    }
-
-
-    const output =
-      createCanvas(
-        width * scale,
-        height * scale
-      );
-
-
-    const ctx =
-      output.getContext(
-        "2d",
-        {
-          alpha:true
+      neighbours.forEach(
+        (count, candidate) => {
+          if (count > best) {
+            best = count;
+            replacement = candidate;
+          }
         }
       );
 
+      if (replacement !== cls) {
+        for (
+          let i = 0;
+          i < region.length;
+          i++
+        ) {
+          result[
+            region[i]
+          ] = replacement;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /* =======================================================
+     GEOMETRIC RENDERING
+     ======================================================= */
+
+  function renderSmoothGeometry(
+    labels,
+    originalLabels,
+    width,
+    height,
+    palette,
+    sourceData
+  ) {
+    const canvas =
+      createCanvas(
+        width,
+        height
+      );
+
+    const ctx =
+      canvas.getContext(
+        "2d",
+        {
+          alpha: true,
+          willReadFrequently: false
+        }
+      );
+
+    /*
+      Никакого сглаживания изображений.
+    */
+
+    ctx.imageSmoothingEnabled =
+      false;
 
     ctx.clearRect(
       0,
       0,
-      output.width,
-      output.height
+      width,
+      height
     );
 
+    /*
+      Сначала восстанавливаем фон
+      из исходного изображения.
 
-    ctx.imageSmoothingEnabled =
-      false;
+      Это важно для прозрачных частей GIF.
+    */
 
-
-    for(
-      let y = 0;
-      y < height;
-      y++
-    ){
-
-      for(
-        let x = 0;
-        x < width;
-        x++
-      ){
-
-        const classIndex =
-          classes[
-            y * width + x
-          ];
-
-
-        if(classIndex < 0){
-          continue;
-        }
-
-
-        const color =
-          palette[classIndex];
-
-
-        if(!color){
-          continue;
-        }
-
-
-        const boundary =
-          isBoundary(
-            classes,
-            x,
-            y,
-            width,
-            height
-          );
-
-
-        const px =
-          x * scale;
-
-        const py =
-          y * scale;
-
-
-        ctx.fillStyle =
-          `rgba(
-            ${color.r},
-            ${color.g},
-            ${color.b},
-            ${color.a / 255}
-          )`;
-
-
-        if(
-          !boundary ||
-          amount < 15
-        ){
-
-          ctx.fillRect(
-            px,
-            py,
-            scale,
-            scale
-          );
-
-          continue;
-
-        }
-
-
-        const inset =
-          Math.min(
-            scale * 0.5,
-            scale *
-            (
-              0.12 +
-              amount / 100 *
-              0.38
-            )
-          );
-
-
-        const tl =
-          cornerFilled(
-            classes,
-            x,
-            y,
-            0,
-            width,
-            height
-          );
-
-
-        const tr =
-          cornerFilled(
-            classes,
-            x,
-            y,
-            1,
-            width,
-            height
-          );
-
-
-        const br =
-          cornerFilled(
-            classes,
-            x,
-            y,
-            2,
-            width,
-            height
-          );
-
-
-        const bl =
-          cornerFilled(
-            classes,
-            x,
-            y,
-            3,
-            width,
-            height
-          );
-
-
-        ctx.beginPath();
-
-
-        if(tl){
-
-          ctx.moveTo(
-            px,
-            py + inset
-          );
-
-        }else{
-
-          ctx.moveTo(
-            px + inset,
-            py + inset
-          );
-
-        }
-
-
-        if(tr){
-
-          ctx.lineTo(
-            px + scale - inset,
-            py
-          );
-
-        }else{
-
-          ctx.lineTo(
-            px + scale - inset,
-            py + inset
-          );
-
-        }
-
-
-        if(tr){
-
-          ctx.quadraticCurveTo(
-            px + scale,
-            py,
-            px + scale,
-            py + inset
-          );
-
-        }
-
-
-        if(br){
-
-          ctx.lineTo(
-            px + scale,
-            py + scale - inset
-          );
-
-        }else{
-
-          ctx.lineTo(
-            px + scale - inset,
-            py + scale - inset
-          );
-
-        }
-
-
-        if(br){
-
-          ctx.quadraticCurveTo(
-            px + scale,
-            py + scale,
-            px + scale - inset,
-            py + scale
-          );
-
-        }
-
-
-        if(bl){
-
-          ctx.lineTo(
-            px + inset,
-            py + scale
-          );
-
-        }else{
-
-          ctx.lineTo(
-            px + inset,
-            py + scale - inset
-          );
-
-        }
-
-
-        if(bl){
-
-          ctx.quadraticCurveTo(
-            px,
-            py + scale,
-            px,
-            py + scale - inset
-          );
-
-        }
-
-
-        if(tl){
-
-          ctx.lineTo(
-            px,
-            py + inset
-          );
-
-        }else{
-
-          ctx.lineTo(
-            px + inset,
-            py + inset
-          );
-
-        }
-
-
-        ctx.closePath();
-        ctx.fill();
-
-      }
-
-    }
-
-
-    if(amount >= 40){
-
-      return refineOuterGeometry(
-        output,
-        classes,
-        palette,
-        width,
-        height,
-        scale,
-        amount
-      );
-
-    }
-
-
-    return output;
-
-  }
-
-
-  /* =======================================================
-     OUTER GEOMETRY
-  ======================================================= */
-
-  function refineOuterGeometry(
-    canvas,
-    classes,
-    palette,
-    width,
-    height,
-    scale,
-    amount
-  ){
-
-    const output =
+    const sourceCanvas =
       createCanvas(
-        canvas.width,
-        canvas.height
+        width,
+        height
       );
 
-
-    const ctx =
-      output.getContext(
+    const sourceCtx =
+      sourceCanvas.getContext(
         "2d",
         {
-          alpha:true
+          willReadFrequently: false
         }
       );
 
+    const originalImage =
+      sourceCtx.createImageData(
+        width,
+        height
+      );
 
-    ctx.imageSmoothingEnabled =
-      false;
+    originalImage.data.set(
+      sourceData
+    );
 
+    /*
+      Фон оставляем как был.
+    */
 
-    ctx.drawImage(
-      canvas,
+    for (
+      let i = 0;
+      i < originalImage.data.length;
+      i += 4
+    ) {
+      if (
+        originalImage.data[i + 3] < 180
+      ) {
+        originalImage.data[i] = 0;
+        originalImage.data[i + 1] = 0;
+        originalImage.data[i + 2] = 0;
+        originalImage.data[i + 3] = 0;
+      }
+    }
+
+    sourceCtx.putImageData(
+      originalImage,
       0,
       0
     );
 
+    /*
+      Для каждой клетки определяем соседей.
+      Если сосед того же класса, граница между
+      клетками убирается.
 
-    const radius =
-      Math.min(
-        1.4,
-        0.35 +
-        amount / 100 *
-        1.05
-      );
+      На внешних углах используем округление.
+    */
 
-
-    for(
-      let y = 0;
-      y < height;
-      y++
-    ){
-
-      for(
-        let x = 0;
-        x < width;
-        x++
-      ){
-
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
         const index =
           y * width + x;
 
+        const cls =
+          labels[index];
 
-        const current =
-          classes[index];
-
-
-        if(current < 0){
+        if (cls < 0) {
           continue;
         }
 
+        const p =
+          palette[cls];
 
-        const left =
-          getClass(
-            classes,
-            x - 1,
-            y,
-            width,
-            height
-          );
-
-
-        const right =
-          getClass(
-            classes,
-            x + 1,
-            y,
-            width,
-            height
-          );
-
-
-        const top =
-          getClass(
-            classes,
-            x,
-            y - 1,
-            width,
-            height
-          );
-
-
-        const bottom =
-          getClass(
-            classes,
-            x,
-            y + 1,
-            width,
-            height
-          );
-
-
-        const outside =
-          left < 0 ||
-          right < 0 ||
-          top < 0 ||
-          bottom < 0;
-
-
-        if(!outside){
+        if (!p) {
           continue;
         }
-
-
-        const color =
-          palette[current];
-
-
-        if(!color){
-          continue;
-        }
-
 
         ctx.fillStyle =
-          `rgba(
-            ${color.r},
-            ${color.g},
-            ${color.b},
-            ${color.a / 255}
-          )`;
+          `rgb(${p.r},${p.g},${p.b})`;
 
+        const left =
+          x > 0
+            ? labels[index - 1] === cls
+            : false;
 
-        const px =
-          x * scale;
+        const right =
+          x < width - 1
+            ? labels[index + 1] === cls
+            : false;
 
-        const py =
-          y * scale;
+        const top =
+          y > 0
+            ? labels[index - width] === cls
+            : false;
 
+        const bottom =
+          y < height - 1
+            ? labels[index + width] === cls
+            : false;
+
+        const tl =
+          x > 0 &&
+          y > 0 &&
+          labels[
+            index - width - 1
+          ] === cls;
+
+        const tr =
+          x < width - 1 &&
+          y > 0 &&
+          labels[
+            index - width + 1
+          ] === cls;
+
+        const bl =
+          x > 0 &&
+          y < height - 1 &&
+          labels[
+            index + width - 1
+          ] === cls;
+
+        const br =
+          x < width - 1 &&
+          y < height - 1 &&
+          labels[
+            index + width + 1
+          ] === cls;
+
+        /*
+          Радиус угла зависит от силы.
+        */
+
+        const radius =
+          strength <= 20
+            ? 0
+            : strength <= 45
+              ? 0.18
+              : strength <= 70
+                ? 0.28
+                : 0.38;
+
+        const r =
+          radius;
+
+        /*
+          Если вокруг клетки полностью одна
+          область — обычный прямоугольник.
+        */
+
+        if (
+          left &&
+          right &&
+          top &&
+          bottom
+        ) {
+          ctx.fillRect(
+            x,
+            y,
+            1,
+            1
+          );
+
+          continue;
+        }
+
+        /*
+          Для пограничных клеток строим контур.
+          Это убирает квадратную ступеньку,
+          но цвет остаётся строго исходным.
+        */
 
         ctx.beginPath();
 
+        const x0 = x;
+        const y0 = y;
+        const x1 = x + 1;
+        const y1 = y + 1;
 
-        ctx.arc(
-          px + scale / 2,
-          py + scale / 2,
-          scale *
-          (
-            0.43 +
-            radius * 0.035
-          ),
-          0,
-          Math.PI * 2
-        );
+        /*
+          Верхний левый угол
+        */
 
+        if (
+          top ||
+          left ||
+          tl
+        ) {
+          ctx.moveTo(
+            x0,
+            y0 + r
+          );
+        } else {
+          ctx.moveTo(
+            x0 + r,
+            y0 + r
+          );
+        }
 
+        /*
+          Верхняя сторона
+        */
+
+        if (top) {
+          ctx.lineTo(
+            x1,
+            y0
+          );
+        } else {
+          ctx.lineTo(
+            x1 - r,
+            y0
+          );
+        }
+
+        /*
+          Верхний правый
+        */
+
+        if (
+          right ||
+          top ||
+          tr
+        ) {
+          ctx.lineTo(
+            x1,
+            y0 + r
+          );
+        } else {
+          ctx.quadraticCurveTo(
+            x1,
+            y0,
+            x1 - r,
+            y0
+          );
+        }
+
+        /*
+          Правая сторона
+        */
+
+        if (right) {
+          ctx.lineTo(
+            x1,
+            y1
+          );
+        } else {
+          ctx.lineTo(
+            x1,
+            y1 - r
+          );
+        }
+
+        /*
+          Нижний правый
+        */
+
+        if (
+          right ||
+          bottom ||
+          br
+        ) {
+          ctx.lineTo(
+            x1 - r,
+            y1
+          );
+        } else {
+          ctx.quadraticCurveTo(
+            x1,
+            y1,
+            x1 - r,
+            y1
+          );
+        }
+
+        /*
+          Нижняя сторона
+        */
+
+        if (bottom) {
+          ctx.lineTo(
+            x0,
+            y1
+          );
+        } else {
+          ctx.lineTo(
+            x0 + r,
+            y1
+          );
+        }
+
+        /*
+          Нижний левый
+        */
+
+        if (
+          left ||
+          bottom ||
+          bl
+        ) {
+          ctx.lineTo(
+            x0,
+            y1 - r
+          );
+        } else {
+          ctx.quadraticCurveTo(
+            x0,
+            y1,
+            x0,
+            y1 - r
+          );
+        }
+
+        /*
+          Левая сторона
+        */
+
+        if (left) {
+          ctx.lineTo(
+            x0,
+            y0
+          );
+        } else {
+          ctx.lineTo(
+            x0,
+            y0 + r
+          );
+        }
+
+        ctx.closePath();
         ctx.fill();
-
       }
-
     }
 
+    /*
+      Второй проход закрывает возможные микроскопические
+      дырки между одинаковыми соседними областями.
+    */
 
-    return output;
+    if (strength >= 40) {
+      ctx.globalCompositeOperation =
+        "source-over";
 
+      for (
+        let y = 0;
+        y < height;
+        y++
+      ) {
+        for (
+          let x = 0;
+          x < width;
+          x++
+        ) {
+          const index =
+            y * width + x;
+
+          const cls =
+            labels[index];
+
+          if (cls < 0) {
+            continue;
+          }
+
+          const sameLeft =
+            x > 0 &&
+            labels[index - 1] === cls;
+
+          const sameRight =
+            x < width - 1 &&
+            labels[index + 1] === cls;
+
+          const sameTop =
+            y > 0 &&
+            labels[index - width] === cls;
+
+          const sameBottom =
+            y < height - 1 &&
+            labels[index + width] === cls;
+
+          if (
+            sameLeft &&
+            sameRight
+          ) {
+            const p =
+              palette[cls];
+
+            ctx.fillStyle =
+              `rgb(${p.r},${p.g},${p.b})`;
+
+            ctx.fillRect(
+              x,
+              y,
+              1,
+              1
+            );
+          }
+
+          if (
+            sameTop &&
+            sameBottom
+          ) {
+            const p =
+              palette[cls];
+
+            ctx.fillStyle =
+              `rgb(${p.r},${p.g},${p.b})`;
+
+            ctx.fillRect(
+              x,
+              y,
+              1,
+              1
+            );
+          }
+        }
+      }
+    }
+
+    return canvas;
   }
 
-
   /* =======================================================
-     CANVAS → URL
-  ======================================================= */
+     URL
+     ======================================================= */
 
-  function canvasToURL(canvas){
-
+  function canvasToURL(canvas) {
     return new Promise(
-      (resolve,reject) => {
-
+      resolve => {
         canvas.toBlob(
           blob => {
-
-            if(!blob){
-
-              reject(
-                new Error(
-                  "Не удалось создать PNG радара"
-                )
-              );
-
+            if (!blob) {
+              resolve(null);
               return;
-
             }
-
 
             resolve(
               URL.createObjectURL(
                 blob
               )
             );
-
           },
-          "image/png"
+          "image/png",
+          1
         );
-
       }
     );
-
   }
-
 
   /* =======================================================
      CACHE
-  ======================================================= */
+     ======================================================= */
 
-  function cacheGet(key){
+  function cacheKey(
+    source,
+    value
+  ) {
+    return (
+      `${source}::${value}`
+    );
+  }
 
-    if(!cache.has(key)){
+  function getCache(
+    key
+  ) {
+    if (!cache.has(key)) {
       return null;
     }
-
 
     const value =
       cache.get(key);
 
+    const index =
+      cacheOrder.indexOf(key);
 
-    cacheOrder =
-      cacheOrder.filter(
-        x => x !== key
+    if (index >= 0) {
+      cacheOrder.splice(
+        index,
+        1
       );
-
+    }
 
     cacheOrder.push(key);
 
-
     return value;
-
   }
 
-
-  function cacheSet(
+  function setCache(
     key,
     value
-  ){
+  ) {
+    if (cache.has(key)) {
+      const old =
+        cache.get(key);
 
-    if(cache.has(key)){
+      if (
+        old &&
+        old !== value
+      ) {
+        try {
+          URL.revokeObjectURL(old);
+        } catch (_) {}
+      }
 
-      cacheOrder =
-        cacheOrder.filter(
-          x => x !== key
+      const index =
+        cacheOrder.indexOf(key);
+
+      if (index >= 0) {
+        cacheOrder.splice(
+          index,
+          1
         );
-
+      }
     }
-
 
     cache.set(
       key,
       value
     );
 
-
     cacheOrder.push(key);
 
-
-    while(
+    while (
       cacheOrder.length >
       CONFIG.cacheLimit
-    ){
-
-      const oldKey =
+    ) {
+      const oldest =
         cacheOrder.shift();
 
-
-      const old =
-        cache.get(oldKey);
-
-
-      cache.delete(
-        oldKey
-      );
-
-
-      if(
-        old &&
-        old !== currentProcessedURL
-      ){
-
-        try{
-          URL.revokeObjectURL(old);
-        }catch{}
-
+      if (!oldest) {
+        break;
       }
 
+      const url =
+        cache.get(oldest);
+
+      cache.delete(oldest);
+
+      if (url) {
+        try {
+          URL.revokeObjectURL(
+            url
+          );
+        } catch (_) {}
+      }
     }
-
   }
 
+  function clearCache() {
+    cache.forEach(url => {
+      try {
+        URL.revokeObjectURL(
+          url
+        );
+      } catch (_) {}
+    });
 
-  function makeCacheKey(source){
-
-    return (
-      String(source) +
-      "::" +
-      String(strength)
-    );
-
+    cache.clear();
+    cacheOrder = [];
   }
-
 
   /* =======================================================
      PROCESS SOURCE
-  ======================================================= */
+     ======================================================= */
 
-  async function processSource(source){
-
-    if(strength <= 0){
-      return source;
+  async function processSource(
+    source,
+    token
+  ) {
+    if (
+      !source ||
+      strength <= 0
+    ) {
+      return null;
     }
 
-
     const key =
-      makeCacheKey(
-        source
+      cacheKey(
+        source,
+        strength
       );
 
-
     const cached =
-      cacheGet(key);
+      getCache(key);
 
-
-    if(cached){
+    if (cached) {
       return cached;
     }
 
-
     processing = true;
 
-    showStatus();
+    setStatus(
+      "Обработка радарного кадра…"
+    );
 
-
-    try{
-
-      const image =
+    try {
+      const img =
         await loadImage(
           source
         );
 
-
-      const width =
-        image.naturalWidth ||
-        image.width;
-
-
-      const height =
-        image.naturalHeight ||
-        image.height;
-
-
-      if(
-        !width ||
-        !height
-      ){
-
-        return source;
-
+      if (
+        token !== lastProcessToken
+      ) {
+        return null;
       }
 
+      const width =
+        img.naturalWidth ||
+        img.width;
+
+      const height =
+        img.naturalHeight ||
+        img.height;
+
+      if (
+        !width ||
+        !height
+      ) {
+        return null;
+      }
 
       const sourceCanvas =
         createCanvas(
@@ -2146,28 +1950,19 @@
           height
         );
 
-
       const sourceCtx =
         sourceCanvas.getContext(
           "2d",
           {
-            willReadFrequently:true
+            willReadFrequently: true
           }
         );
 
-
-      sourceCtx.imageSmoothingEnabled =
-        false;
-
-
       sourceCtx.drawImage(
-        image,
+        img,
         0,
-        0,
-        width,
-        height
+        0
       );
-
 
       const imageData =
         sourceCtx.getImageData(
@@ -2177,19 +1972,24 @@
           height
         );
 
+      if (
+        token !== lastProcessToken
+      ) {
+        return null;
+      }
 
       const palette =
         buildPalette(
           imageData.data
         );
 
-
-      if(!palette){
-        return source;
+      if (
+        !palette.length
+      ) {
+        return null;
       }
 
-
-      const classes =
+      const originalLabels =
         buildClassMap(
           imageData.data,
           width,
@@ -2197,509 +1997,370 @@
           palette
         );
 
+      if (
+        token !== lastProcessToken
+      ) {
+        return null;
+      }
 
-      const result =
-        renderGeometry(
-          sourceCanvas,
-          classes,
-          palette,
+      /*
+        Морфологическая обработка формы.
+      */
+
+      const smoothedLabels =
+        smoothClassMap(
+          originalLabels,
           width,
           height,
           strength
         );
 
-
-      if(
-        result ===
-        sourceCanvas
-      ){
-
-        return source;
-
+      if (
+        token !== lastProcessToken
+      ) {
+        return null;
       }
 
+      /*
+        Геометрический рендеринг.
+      */
+
+      const output =
+        renderSmoothGeometry(
+          smoothedLabels,
+          originalLabels,
+          width,
+          height,
+          palette,
+          imageData.data
+        );
+
+      if (
+        token !== lastProcessToken
+      ) {
+        return null;
+      }
 
       const url =
         await canvasToURL(
-          result
+          output
         );
 
+      if (
+        token !== lastProcessToken
+      ) {
+        if (url) {
+          try {
+            URL.revokeObjectURL(
+              url
+            );
+          } catch (_) {}
+        }
 
-      cacheSet(
+        return null;
+      }
+
+      if (!url) {
+        return null;
+      }
+
+      setCache(
         key,
         url
       );
 
-
       return url;
-
-    }finally{
-
+    } finally {
       processing = false;
-
-      hideStatus();
-
     }
-
   }
 
-
   /* =======================================================
-     RESTORE ORIGINAL
-  ======================================================= */
+     APPLY TO LEAFLET LAYER
+     ======================================================= */
 
-  function restoreOriginal(){
-
-    if(!currentLayer){
+  async function applyToLayer(
+    layer
+  ) {
+    if (
+      !layer ||
+      !layer._url
+    ) {
       return;
     }
 
+    currentLayer = layer;
+    currentSource = layer._url;
 
-    const image =
-      currentLayer._image;
+    /*
+      Если 0% — обязательно оригинал.
+    */
 
-
-    if(!image){
+    if (strength <= 0) {
+      restoreOriginal(layer);
+      setStatus("");
       return;
     }
 
+    const token =
+      ++lastProcessToken;
 
-    if(currentSource){
+    const source =
+      layer._url;
 
-      image.src =
-        currentSource;
+    const processed =
+      await processSource(
+        source,
+        token
+      );
 
+    if (
+      token !== lastProcessToken
+    ) {
+      return;
     }
 
+    if (
+      !processed
+    ) {
+      return;
+    }
+
+    currentProcessedURL =
+      processed;
+
+    /*
+      setUrl() перехватывается ниже.
+      Передаём специальный флаг,
+      чтобы не запустить бесконечную обработку.
+    */
+
+    layer.__cloradSmoothingInternal =
+      true;
+
+    try {
+      if (
+        typeof layer.setUrl ===
+        "function"
+      ) {
+        layer.setUrl(
+          processed
+        );
+      }
+    } finally {
+      layer.__cloradSmoothingInternal =
+        false;
+    }
+
+    setStatus(
+      `Применено: ${strength}%`
+    );
+  }
+
+  function restoreOriginal(
+    layer
+  ) {
+    if (
+      !layer
+    ) {
+      return;
+    }
+
+    const source =
+      layer.__cloradOriginalURL ||
+      currentSource;
+
+    if (
+      !source
+    ) {
+      return;
+    }
+
+    layer.__cloradSmoothingInternal =
+      true;
+
+    try {
+      layer.setUrl(
+        source
+      );
+    } finally {
+      layer.__cloradSmoothingInternal =
+        false;
+    }
 
     currentProcessedURL =
       null;
-
   }
-
 
   /* =======================================================
-     APPLY TO LAYER
-  ======================================================= */
+     PROCESS CURRENT LAYER
+     ======================================================= */
 
-  async function applyToLayer(layer){
+  function processCurrentLayer() {
+    /*
+      Если текущего слоя нет —
+      ищем радарный ImageOverlay.
+    */
 
-    if(
-      !enabled ||
-      strength <= 0 ||
-      !layer
-    ){
-
-      return;
-
+    if (
+      !currentLayer
+    ) {
+      scanLayers();
     }
 
-
-    const image =
-      layer._image;
-
-
-    if(!image){
-      return;
-    }
-
-
-    let source =
-      image.src;
-
-
-    if(
-      !source ||
-      (
-        !source.startsWith("data:") &&
-        !source.startsWith("blob:") &&
-        !source.startsWith("http")
-      )
-    ){
-
-      return;
-
-    }
-
-
-    if(
-      layer.__cloradSmoothSource
-    ){
-
-      currentSource =
-        layer.__cloradSmoothSource;
-
-
-      if(
-        image.src !==
-        currentSource
-      ){
-
-        image.src =
-          currentSource;
-
-      }
-
-    }else{
-
-      layer.__cloradSmoothSource =
-        source;
-
-
-      currentSource =
-        source;
-
-    }
-
-
-    currentLayer =
-      layer;
-
-
-    if(
-      !image.complete ||
-      !image.naturalWidth
-    ){
-
-      await new Promise(
-        resolve => {
-
-          const done =
-            () => {
-
-              image.removeEventListener(
-                "load",
-                done
-              );
-
-              image.removeEventListener(
-                "error",
-                done
-              );
-
-              resolve();
-
-            };
-
-
-          image.addEventListener(
-            "load",
-            done,
-            {
-              once:true
-            }
-          );
-
-
-          image.addEventListener(
-            "error",
-            done,
-            {
-              once:true
-            }
-          );
-
-        }
+    if (
+      !currentLayer
+    ) {
+      setStatus(
+        "Радарный кадр ещё не загружен"
       );
 
-    }
-
-
-    if(
-      !enabled ||
-      strength <= 0
-    ){
-
       return;
-
     }
 
-
-    const original =
-      layer.__cloradSmoothSource;
-
-
-    const key =
-      makeCacheKey(
-        original
-      );
-
-
-    const cached =
-      cacheGet(
-        key
-      );
-
-
-    if(cached){
-
-      if(
-        image.src !==
-        cached
-      ){
-
-        image.src =
-          cached;
-
-      }
-
-
-      currentProcessedURL =
-        cached;
-
-
-      return;
-
-    }
-
-
-    try{
-
-      const processed =
-        await processSource(
-          original
-        );
-
-
-      if(
-        currentLayer !==
-        layer
-      ){
-
-        return;
-
-      }
-
-
-      if(!enabled){
-        return;
-      }
-
-
-      if(
-        processed &&
-        processed !== original
-      ){
-
-        image.src =
-          processed;
-
-
-        currentProcessedURL =
-          processed;
-
-      }
-
-    }catch(error){
-
-      console.error(
-        "CLOrad smoothing:",
-        error
-      );
-
-    }
-
+    applyToLayer(
+      currentLayer
+    );
   }
-
-
-  /* =======================================================
-     SCHEDULE PROCESS
-  ======================================================= */
-
-  function scheduleProcess(){
-
-    if(processTimer){
-
-      clearTimeout(
-        processTimer
-      );
-
-    }
-
-
-    processTimer =
-      setTimeout(
-        () => {
-
-          processTimer =
-            null;
-
-
-          if(
-            currentLayer &&
-            enabled
-          ){
-
-            applyToLayer(
-              currentLayer
-            );
-
-          }
-
-        },
-        CONFIG.processDelay
-      );
-
-  }
-
 
   /* =======================================================
      LEAFLET HOOK
-  ======================================================= */
+     ======================================================= */
 
-  function installLeafletHook(){
-
-    if(
-      !window.L ||
-      !window.L.ImageOverlay
-    ){
-
+  function isRadarLayer(
+    layer
+  ) {
+    if (
+      !layer
+    ) {
       return false;
-
     }
 
+    const options =
+      layer.options || {};
 
-    if(
-      L.ImageOverlay.prototype
-        .__cloradSmoothingInstalled
-    ){
+    const className =
+      options.className || "";
 
-      leafletHookReady =
-        true;
+    return (
+      className.includes(
+        "clorad-gif-radar-image"
+      ) ||
+      className.includes(
+        "clorad-radar-raster"
+      )
+    );
+  }
 
+  function installLeafletHook() {
+    if (
+      leafletHookReady
+    ) {
       return true;
-
     }
 
+    if (
+      typeof window.L ===
+      "undefined" ||
+      !L.ImageOverlay
+    ) {
+      return false;
+    }
 
-    L.ImageOverlay.prototype
-      .__cloradSmoothingInstalled =
-      true;
+    if (
+      !L.ImageOverlay.prototype.onAdd ||
+      !L.ImageOverlay.prototype.setUrl
+    ) {
+      return false;
+    }
 
-
-    const originalOnAdd =
+    originalOnAdd =
       L.ImageOverlay.prototype.onAdd;
 
+    originalSetUrl =
+      L.ImageOverlay.prototype.setUrl;
 
     L.ImageOverlay.prototype.onAdd =
-      function(map){
-
+      function(map) {
         const result =
           originalOnAdd.call(
             this,
             map
           );
 
+        if (
+          isRadarLayer(this)
+        ) {
+          /*
+            Сохраняем настоящий исходный URL.
+          */
 
-        if(
-          this.options &&
-          (
-            this.options.className ===
-              "clorad-gif-radar-image" ||
-            this.options.className ===
-              "clorad-radar-raster"
-          )
-        ){
-
-          currentLayer =
-            this;
-
-
-          const image =
-            this._image;
-
-
-          if(image){
-
-            const handleLoad =
-              () => {
-
-                if(
-                  !this.__cloradSmoothSource
-                ){
-
-                  this.__cloradSmoothSource =
-                    image.src;
-
-                }
-
-
-                currentSource =
-                  this.__cloradSmoothSource;
-
-
-                if(
-                  enabled &&
-                  strength > 0
-                ){
-
-                  scheduleProcess();
-
-                }
-
-              };
-
-
-            image.addEventListener(
-              "load",
-              handleLoad
-            );
-
-
-            if(
-              image.complete &&
-              image.naturalWidth
-            ){
-
-              setTimeout(
-                handleLoad,
-                0
-              );
-
-            }
-
+          if (
+            !this.__cloradOriginalURL
+          ) {
+            this.__cloradOriginalURL =
+              this._url;
           }
 
-        }
-
-
-        return result;
-
-      };
-
-
-    const originalSetUrl =
-      L.ImageOverlay.prototype.setUrl;
-
-
-    L.ImageOverlay.prototype.setUrl =
-      function(url){
-
-        if(
-          this.options &&
-          (
-            this.options.className ===
-              "clorad-gif-radar-image" ||
-            this.options.className ===
-              "clorad-radar-raster"
-          )
-        ){
-
-          this.__cloradSmoothSource =
-            url;
-
-
           currentLayer =
             this;
 
+          currentSource =
+            this.__cloradOriginalURL;
+
+          /*
+            Сглаживание применяется
+            после появления слоя на карте.
+          */
+
+          if (
+            strength > 0
+          ) {
+            setTimeout(() => {
+              if (
+                currentLayer === this
+              ) {
+                applyToLayer(
+                  this
+                );
+              }
+            }, 0);
+          }
+        }
+
+        return result;
+      };
+
+    L.ImageOverlay.prototype.setUrl =
+      function(url) {
+        /*
+          Внутренний URL сглаженного PNG
+          не должен становиться новым
+          исходным радарным кадром.
+        */
+
+        if (
+          isRadarLayer(this) &&
+          !this.__cloradSmoothingInternal
+        ) {
+          this.__cloradOriginalURL =
+            url;
+
+          currentLayer =
+            this;
 
           currentSource =
             url;
 
-
           currentProcessedURL =
             null;
 
+          /*
+            При смене кадра очищаем старый
+            обработанный URL.
+
+            Но сам объект кеша остаётся.
+          */
 
           const result =
             originalSetUrl.call(
@@ -2707,614 +2368,277 @@
               url
             );
 
-
-          if(this._image){
-
-            const image =
-              this._image;
-
-
-            image.addEventListener(
-              "load",
-              () => {
-
-                if(
-                  enabled &&
-                  strength > 0 &&
-                  currentLayer === this
-                ){
-
-                  scheduleProcess();
-
-                }
-
-              },
-              {
-                once:true
+          if (
+            strength > 0
+          ) {
+            setTimeout(() => {
+              if (
+                currentLayer === this
+              ) {
+                applyToLayer(
+                  this
+                );
               }
-            );
-
+            }, 0);
           }
 
-
           return result;
-
         }
-
 
         return originalSetUrl.call(
           this,
           url
         );
-
       };
-
 
     leafletHookReady =
       true;
 
-
     return true;
-
   }
 
-
   /* =======================================================
-     SCAN LAYERS
-  ======================================================= */
+     MAP SCANNER
+     ======================================================= */
 
-  function scanLayers(){
-
-    if(
-      !window.map ||
-      !map._layers
-    ){
-
+  function scanLayers() {
+    if (
+      typeof window.map ===
+      "undefined" ||
+      !window.map
+    ) {
       return;
-
     }
 
+    const layers =
+      window.map._layers;
 
-    for(
-      const key in map._layers
-    ){
+    if (
+      !layers
+    ) {
+      return;
+    }
 
+    Object.keys(
+      layers
+    ).forEach(id => {
       const layer =
-        map._layers[key];
+        layers[id];
 
-
-      if(
-        !layer ||
-        !layer.options
-      ){
-
-        continue;
-
-      }
-
-
-      const className =
-        layer.options.className;
-
-
-      if(
-        className ===
-          "clorad-gif-radar-image" ||
-        className ===
-          "clorad-radar-raster"
-      ){
-
+      if (
+        isRadarLayer(layer)
+      ) {
         currentLayer =
           layer;
 
-
-        const image =
-          layer._image;
-
-
-        if(image){
-
-          if(
-            !layer.__cloradSmoothSource
-          ){
-
-            layer.__cloradSmoothSource =
-              image.src;
-
-          }
-
-
-          currentSource =
-            layer.__cloradSmoothSource;
-
-        }
-
-
-        if(
-          enabled &&
-          strength > 0
-        ){
-
-          scheduleProcess();
-
-        }
-
-
-        return;
-
+        currentSource =
+          layer.__cloradOriginalURL ||
+          layer._url;
       }
-
-    }
-
+    });
   }
-
 
   /* =======================================================
      MAP HOOKS
-  ======================================================= */
+     ======================================================= */
 
-  function installMapHooks(){
-
-    if(
-      !window.map ||
-      !window.map.on
-    ){
-
-      return false;
-
-    }
-
-
-    if(mapHooksReady){
+  function installMapHooks() {
+    if (
+      mapHooksReady
+    ) {
       return true;
     }
 
+    if (
+      typeof window.map ===
+      "undefined" ||
+      !window.map
+    ) {
+      return false;
+    }
 
-    map.on(
+    window.map.on(
       "layeradd",
       event => {
-
         const layer =
           event.layer;
 
-
-        if(
-          !layer ||
-          !layer.options
-        ){
-
+        if (
+          !isRadarLayer(layer)
+        ) {
           return;
-
         }
-
-
-        const className =
-          layer.options.className;
-
-
-        if(
-          className !==
-            "clorad-gif-radar-image" &&
-          className !==
-            "clorad-radar-raster"
-        ){
-
-          return;
-
-        }
-
 
         currentLayer =
           layer;
 
+        currentSource =
+          layer.__cloradOriginalURL ||
+          layer._url;
 
-        const image =
-          layer._image;
-
-
-        if(!image){
-          return;
-        }
-
-
-        const process =
-          () => {
-
-            if(
-              !layer.__cloradSmoothSource
-            ){
-
-              layer.__cloradSmoothSource =
-                image.src;
-
+        if (
+          strength > 0
+        ) {
+          setTimeout(() => {
+            if (
+              currentLayer === layer
+            ) {
+              applyToLayer(
+                layer
+              );
             }
-
-
-            currentSource =
-              layer.__cloradSmoothSource;
-
-
-            if(
-              enabled &&
-              strength > 0
-            ){
-
-              scheduleProcess();
-
-            }
-
-          };
-
-
-        image.addEventListener(
-          "load",
-          process,
-          {
-            once:true
-          }
-        );
-
-
-        if(
-          image.complete &&
-          image.naturalWidth
-        ){
-
-          setTimeout(
-            process,
-            0
-          );
-
+          }, 0);
         }
-
       }
     );
 
-
-    map.on(
+    window.map.on(
       "layerremove",
       event => {
-
-        if(
+        if (
           event.layer ===
           currentLayer
-        ){
-
-          currentLayer =
-            null;
-
-          currentSource =
-            null;
-
+        ) {
+          currentLayer = null;
+          currentSource = null;
           currentProcessedURL =
             null;
-
         }
-
       }
     );
-
 
     mapHooksReady =
       true;
 
+    scanLayers();
 
     return true;
-
   }
 
+  /* =======================================================
+     WATCH FOR MAP
+     ======================================================= */
+
+  function waitForMap() {
+    if (
+      typeof window.map ===
+      "undefined" ||
+      !window.map
+    ) {
+      setTimeout(
+        waitForMap,
+        250
+      );
+
+      return;
+    }
+
+    installLeafletHook();
+    installMapHooks();
+    scanLayers();
+  }
 
   /* =======================================================
      PUBLIC API
-  ======================================================= */
+     ======================================================= */
 
   window.CLOradRadarSmoothing = {
-
-    enable(){
-
-      enabled =
-        true;
-
-
-      const button =
-        document.getElementById(
-          "cloradSmoothingButton"
-        );
-
-
-      const panel =
-        document.getElementById(
-          "cloradSmoothingPanel"
-        );
-
-
-      if(button){
-
-        button.classList.add(
-          "active"
-        );
-
-      }
-
-
-      if(panel){
-
-        panel.classList.add(
-          "show"
-        );
-
-      }
-
-
-      scanLayers();
-
-      scheduleProcess();
-
+    getStrength() {
+      return strength;
     },
 
-
-    disable(){
-
-      enabled =
-        false;
-
-
-      restoreOriginal();
-
-
-      const button =
-        document.getElementById(
-          "cloradSmoothingButton"
+    setStrength(value) {
+      const next =
+        clamp(
+          Number(value) || 0,
+          CONFIG.min,
+          CONFIG.max
         );
-
-
-      const panel =
-        document.getElementById(
-          "cloradSmoothingPanel"
-        );
-
-
-      if(button){
-
-        button.classList.remove(
-          "active"
-        );
-
-      }
-
-
-      if(panel){
-
-        panel.classList.remove(
-          "show"
-        );
-
-      }
-
-    },
-
-
-    setStrength(value){
 
       strength =
-        Math.max(
-          CONFIG.min,
-          Math.min(
-            CONFIG.max,
-            Number(value) || 0
-          )
-        );
-
+        Math.round(
+          next / CONFIG.step
+        ) * CONFIG.step;
 
       const range =
-        document.getElementById(
-          "cloradSmoothingRange"
-        );
+        $("cloradSmoothingRange");
 
-
-      const valueElement =
-        document.getElementById(
-          "cloradSmoothingValue"
-        );
-
-
-      if(range){
-
+      if (range) {
         range.value =
-          strength;
-
+          String(strength);
       }
 
+      updateValue();
 
-      if(valueElement){
-
-        valueElement.textContent =
-          strength + "%";
-
-      }
-
-
-      if(enabled){
-
-        scheduleProcess();
-
-      }
-
+      processCurrentLayer();
     },
 
+    clearCache() {
+      clearCache();
+    },
 
-    clearCache(){
+    process() {
+      processCurrentLayer();
+    },
 
-      for(
-        const url of cache.values()
-      ){
-
-        try{
-
-          URL.revokeObjectURL(
-            url
-          );
-
-        }catch{}
-
+    restore() {
+      if (
+        currentLayer
+      ) {
+        restoreOriginal(
+          currentLayer
+        );
       }
 
-
-      cache.clear();
-
-      cacheOrder = [];
-
-    },
-
-
-    isEnabled(){
-
-      return enabled;
-
-    },
-
-
-    getStrength(){
-
-      return strength;
-
+      setStatus("");
     }
-
   };
 
-
   /* =======================================================
-     LEAFLET INITIALIZATION
-  ======================================================= */
+     INIT
+     ======================================================= */
 
-  function initLeaflet(){
-
-    if(
-      !installLeafletHook()
-    ){
-
-      setTimeout(
-        initLeaflet,
-        250
-      );
-
-      return;
-
-    }
-
-
-    if(
-      !installMapHooks()
-    ){
-
-      setTimeout(
-        initLeaflet,
-        250
-      );
-
-      return;
-
-    }
-
-
-    setTimeout(
-      scanLayers,
-      250
-    );
-
-
-    setTimeout(
-      scanLayers,
-      1000
-    );
-
-
-    setTimeout(
-      scanLayers,
-      2500
-    );
-
-  }
-
-
-  /* =======================================================
-     START
-  ======================================================= */
-
-  function init(){
-
-    /*
-      Сначала полностью создаём UI.
-    */
+  function init() {
+    installStyle();
 
     createUI();
 
-
-    /*
-      Следим только за существованием
-      наших элементов.
-    */
-
     startUIWatcher();
 
+    if (
+      !installLeafletHook()
+    ) {
+      setTimeout(
+        installLeafletHook,
+        250
+      );
+    }
 
-    /*
-      Leaflet запускается отдельно.
-    */
+    if (
+      !installMapHooks()
+    ) {
+      setTimeout(
+        installMapHooks,
+        500
+      );
+    }
 
-    initLeaflet();
-
-
-    /*
-      Дополнительная страховка:
-      если другой код всё-таки удалит
-      элементы сразу после запуска.
-    */
-
-    setTimeout(
-      repairUI,
-      100
-    );
-
-    setTimeout(
-      repairUI,
-      500
-    );
-
-    setTimeout(
-      repairUI,
-      1500
-    );
-
-    setTimeout(
-      repairUI,
-      3000
-    );
-
+    waitForMap();
   }
 
-
-  /* =======================================================
-     DOM START
-  ======================================================= */
-
-  if(
+  if (
     document.readyState ===
     "loading"
-  ){
-
+  ) {
     document.addEventListener(
       "DOMContentLoaded",
       init,
       {
-        once:true
+        once: true
       }
     );
-
-  }else{
-
+  } else {
     init();
-
   }
 
 })();
