@@ -292,54 +292,88 @@ button{
   stroke:none
 }
 
-/* LAYERS */
+/* =========================================================
+   LAYERS — ОТДЕЛЬНЫЙ ВЕРХНИЙ UI-СЛОЙ
+========================================================= */
 
 .layers{
-  position:fixed;
+  position:fixed !important;
   z-index:2147483647 !important;
-  left:17px;
-  top:50%;
-  transform:translateY(-50%);
-  width:190px;
+
+  left:17px !important;
+  top:50% !important;
+
+  width:190px !important;
+
+  transform:translate3d(0,-50%,0) !important;
+
   background:#182028ef;
+
   border:1px solid #3b4650;
   border-radius:10px;
+
   padding:5px 8px;
+
   box-shadow:0 4px 14px #0003;
-  transition:left .25s,opacity .2s;
+
+  transition:
+    left .25s,
+    opacity .2s;
+
+  isolation:isolate;
 
   pointer-events:auto !important;
-  isolation:isolate
+
+  touch-action:none;
+
+  user-select:none;
+  -webkit-user-select:none;
 }
 
 .layers.hidden{
-  left:-210px;
+  left:-210px !important;
   opacity:0;
-  pointer-events:none !important
+
+  pointer-events:none !important;
 }
 
-.layers,
 .layers *{
-  pointer-events:auto !important
+  pointer-events:auto !important;
 }
 
 .layer{
   height:56px;
+
   display:grid;
-  grid-template-columns:27px minmax(0,1fr) 46px;
+
+  grid-template-columns:
+    27px
+    minmax(0,1fr)
+    46px;
+
   align-items:center;
-  gap:7px
+
+  gap:7px;
+
+  pointer-events:auto !important;
 }
 
 .layer svg{
   width:27px;
   height:27px;
+
   fill:none;
+
   stroke:#50df98;
+
   stroke-width:2;
+
   stroke-linecap:round;
   stroke-linejoin:round;
-  flex:none
+
+  flex:none;
+
+  pointer-events:none !important;
 }
 
 .layer:nth-child(2) svg{
@@ -353,36 +387,66 @@ button{
 .layer span{
   font-size:13px;
   line-height:15px;
+
   min-width:0;
+
   overflow-wrap:break-word;
-  word-break:normal
+  word-break:normal;
+
+  pointer-events:none !important;
 }
 
 .switch{
+  appearance:none;
+  -webkit-appearance:none;
+
   width:46px;
   height:26px;
+
   border:0;
   border-radius:18px;
+
   background:#626a70;
+
   position:relative;
+
   padding:0;
+  margin:0;
+
   flex:none;
+
   z-index:2147483647 !important;
+
   pointer-events:auto !important;
+
   cursor:pointer;
-  touch-action:manipulation
+
+  touch-action:none;
+
+  user-select:none;
+  -webkit-user-select:none;
+
+  outline:none;
+
+  display:block;
 }
 
 .switch i{
   position:absolute;
+
   width:20px;
   height:20px;
+
   left:3px;
   top:3px;
+
   border-radius:50%;
+
   background:#f6f7f7;
+
   transition:.2s;
-  pointer-events:none
+
+  pointer-events:none !important;
 }
 
 .switch.on{
@@ -891,8 +955,8 @@ body.light .frameInput{
   }
 
   .layers{
-    left:17px;
-    width:190px
+    left:17px !important;
+    width:190px !important
   }
 
   .data{
@@ -920,7 +984,7 @@ body.light .frameInput{
   }
 
   .layers{
-    width:190px
+    width:190px !important
   }
 
   .data{
@@ -1128,122 +1192,85 @@ body.light .frameInput{
 
 <nav class="nav" id="nav">
 
-  <!-- КАРТА -->
-
   <button class="n active">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-
       <circle cx="12" cy="12" r="7"/>
-
       <circle cx="12" cy="12" r="3"/>
-
     </svg>
 
     Карта
 
   </button>
 
-  <!-- ДЫМ / ПЕПЕЛ -->
-
   <button class="n">
 
     <svg viewBox="0 0 70 45">
-
       <path d="M5 18l8-5 4-7 8 2 5-5 8 4 6-2 6 6 10 2 6 6-7 6-9-2-5 6-8-3-8 4-7-6-8 2-6-5z"/>
-
     </svg>
 
     Дым/пепел
 
   </button>
 
-  <!-- СПУТНИКОВЫЕ ОСАДКИ -->
-
   <button class="n">
 
     <svg viewBox="0 0 36 30">
-
       <rect x="13" y="9" width="9" height="9" rx="1.8"/>
-
       <path d="M17.5 9V5"/>
       <path d="M15.5 5h4"/>
-
       <path d="M13 11H5v7h8"/>
       <path d="M9 11v7"/>
-
       <path d="M22 11h8v7h-8"/>
       <path d="M26 11v7"/>
-
       <path d="M15 18v5"/>
       <path d="M20 18v5"/>
-
       <path d="M9 6c1.5-1.3 3-2 4.5-2"/>
       <path d="M26 6c-1.5-1.3-3-2-4.5-2"/>
-
       <path d="M28 21.5c0 2.1-1.35 3.5-3 3.5s-3-1.4-3-3.5c0-1.7 1.6-3.7 3-5.5 1.4 1.8 3 3.8 3 5.5Z"/>
-
     </svg>
 
     Спутниковые осадки
 
   </button>
 
-  <!-- ПРЕДУПРЕЖДЕНИЯ -->
-
   <button class="n">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M12 3l10 18H2L12 3zM12 9v5M12 18h.01"/>
-
     </svg>
 
     Предупр.
 
   </button>
 
-  <!-- ФАЗА ОБЛАКА -->
-
   <button class="n">
 
     <svg viewBox="0 0 32 30">
-
       <path d="M8 22h16.5a5.5 5.5 0 0 0 .4-11 8 8 0 0 0-15.3-1.9 A6.3 6.3 0 0 0 8 22Z"/>
-
       <path d="M16 20V12"/>
       <path d="M12.8 15.2 16 12l3.2 3.2"/>
-
     </svg>
 
     Фаза облака
 
   </button>
 
-  <!-- ОСАДКИ ММ/Ч -->
-
   <button class="n" id="rainProduct">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M5 20V11M12 20V6M19 20V3"/>
-
     </svg>
 
     Осадки-мм/ч
 
   </button>
 
-  <!-- СЛОИ -->
-
   <button class="n active" id="layersNav">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M4 7h16M4 12h16M4 17h16"/>
-
     </svg>
 
     Слои
@@ -1273,32 +1300,36 @@ body.light .frameInput{
   <button class="tool geoTool" id="geo" aria-label="Моё местоположение">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M20.2 3.8 4.1 10.7c-.72.31-.67 1.35.08 1.57l6.05 1.76 1.76 6.05c.22.75 1.26.8 1.57.08l6.91-16.1c.29-.67-.27-1.23-.94-.94Z"/>
-
     </svg>
 
   </button>
 
 </div>
 
+<!-- =====================================================
+     LAYERS
+===================================================== -->
+
 <div class="layers" id="layers">
 
   <div class="layer">
 
     <svg viewBox="0 0 24 24">
-
       <circle cx="12" cy="12" r="7"/>
       <circle cx="12" cy="12" r="3"/>
       <path d="M12 2v3"/>
-
     </svg>
 
     <span>
       Опасные явления
     </span>
 
-    <button class="switch on" id="oyaSwitch" type="button">
+    <button
+      class="switch on"
+      id="oyaSwitch"
+      type="button"
+    >
       <i></i>
     </button>
 
@@ -1307,18 +1338,19 @@ body.light .frameInput{
   <div class="layer">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M8 5c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-4-4-4-7z"/>
-
       <path d="M17 10c0 2-3 3-3 5a3 3 0 0 0 6 0c0-2-3-3-3-5z"/>
-
     </svg>
 
     <span>
       Отражаемость
     </span>
 
-    <button class="switch" id="reflectivitySwitch" type="button">
+    <button
+      class="switch"
+      id="reflectivitySwitch"
+      type="button"
+    >
       <i></i>
     </button>
 
@@ -1327,16 +1359,18 @@ body.light .frameInput{
   <div class="layer">
 
     <svg viewBox="0 0 24 24">
-
       <path d="M13 2L4 14h7l-1 8 10-13h-7z"/>
-
     </svg>
 
     <span>
       Молнии
     </span>
 
-    <button class="switch on" id="lightningSwitch" type="button">
+    <button
+      class="switch on"
+      id="lightningSwitch"
+      type="button"
+    >
       <i></i>
     </button>
 
@@ -1528,7 +1562,7 @@ function msg(text){
 
   x.style =
     "position:fixed;" +
-    "z-index:100;" +
+    "z-index:2147483646;" +
     "left:50%;" +
     "bottom:125px;" +
     "transform:translateX(-50%);" +
@@ -1602,7 +1636,7 @@ $("geo").onclick = () => {
 };
 
 /* =========================================================
-   LAYERS
+   LAYERS — НАДЁЖНОЕ УПРАВЛЕНИЕ
 ========================================================= */
 
 const layers =
@@ -1617,28 +1651,100 @@ const reflectivitySwitch =
 const lightningSwitch =
   $("lightningSwitch");
 
+const layersNav =
+  $("layersNav");
+
 /* =========================================================
-   ОТКРЫТИЕ / ЗАКРЫТИЕ ПАНЕЛИ СЛОЁВ
+   ПЕРЕНОС ПАНЕЛИ НЕПОСРЕДСТВЕННО В BODY
 ========================================================= */
 
-$("layersNav").addEventListener(
+if(
+  layers &&
+  layers.parentElement !== document.body
+){
+
+  document.body.appendChild(
+    layers
+  );
+
+}
+
+/* =========================================================
+   ОТКРЫТИЕ / ЗАКРЫТИЕ ПАНЕЛИ
+========================================================= */
+
+function toggleLayers(){
+
+  if(!layers){
+    return;
+  }
+
+  layers.classList.toggle(
+    "hidden"
+  );
+
+}
+
+/* =========================================================
+   ЗАЩИТА КНОПКИ "СЛОИ"
+   ОТ NAV / LEAFLET / MAPLIBRE
+========================================================= */
+
+document.addEventListener(
   "pointerdown",
   event => {
 
-    event.stopPropagation();
+    const target =
+      event.target;
+
+    if(
+      target &&
+      target.closest &&
+      target.closest("#layersNav")
+    ){
+
+      event.preventDefault();
+      event.stopPropagation();
+
+    }
 
   },
   true
 );
 
-$("layersNav").addEventListener(
+document.addEventListener(
   "click",
   event => {
 
-    event.preventDefault();
-    event.stopPropagation();
+    const target =
+      event.target;
 
-    layers.classList.toggle("hidden");
+    if(
+      !target ||
+      !target.closest
+    ){
+
+      return;
+
+    }
+
+    const layersButton =
+      target.closest(
+        "#layersNav"
+      );
+
+    if(
+      layersButton
+    ){
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      toggleLayers();
+
+      return;
+
+    }
 
   },
   true
@@ -1648,10 +1754,10 @@ $("layersNav").addEventListener(
    ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ
 ========================================================= */
 
-function setupLayerSwitch(
+function toggleLayerSwitch(
   element,
-  messageOn,
-  messageOff
+  onMessage,
+  offMessage
 ){
 
   if(!element){
@@ -1670,34 +1776,26 @@ function setupLayerSwitch(
   );
 
   element.addEventListener(
-    "mousedown",
-    event => {
-
-      event.preventDefault();
-      event.stopPropagation();
-
-    },
-    true
-  );
-
-  element.addEventListener(
     "click",
     event => {
 
       event.preventDefault();
       event.stopPropagation();
 
-      element.classList.toggle("on");
+      element.classList.toggle(
+        "on"
+      );
 
-      if(messageOn){
-
-        msg(
-          element.classList.contains("on")
-            ? messageOn
-            : messageOff
+      const enabled =
+        element.classList.contains(
+          "on"
         );
 
-      }
+      msg(
+        enabled
+          ? onMessage
+          : offMessage
+      );
 
     },
     true
@@ -1705,19 +1803,19 @@ function setupLayerSwitch(
 
 }
 
-setupLayerSwitch(
+toggleLayerSwitch(
   oyaSwitch,
   "Опасные явления",
   "Опасные явления выключены"
 );
 
-setupLayerSwitch(
+toggleLayerSwitch(
   reflectivitySwitch,
   "Отражаемость",
   "Отражаемость выключена"
 );
 
-setupLayerSwitch(
+toggleLayerSwitch(
   lightningSwitch,
   "Молнии",
   "Молнии выключены"
@@ -1756,9 +1854,23 @@ nav.addEventListener(
   "pointerdown",
   event => {
 
+    if(
+      event.target &&
+      event.target.closest &&
+      event.target.closest("#layersNav")
+    ){
+
+      return;
+
+    }
+
     dragging = true;
-    dragStartX = event.clientX;
-    dragScroll = nav.scrollLeft;
+
+    dragStartX =
+      event.clientX;
+
+    dragScroll =
+      nav.scrollLeft;
 
     nav.setPointerCapture?.(
       event.pointerId
