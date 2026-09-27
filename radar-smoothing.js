@@ -1,6 +1,16 @@
 /* =========================================================
    CLOrad — Data Aware Radar Smoothing
-   Интерполяция исходных радарных значений
+   Sharp Data Interpolation
+
+   ВАЖНО:
+
+   1. RGB цветов НИКОГДА не смешивается.
+   2. Используются только реальные цвета палитры.
+   3. Интерполируется только числовой класс радара 0..18.
+   4. После интерполяции значение квантуется
+      обратно в один из 19 реальных классов.
+   5. На внешней границе сглаживается только alpha.
+   6. Никаких blur / filter / CSS transform.
    ========================================================= */
 
 (() => {
@@ -17,19 +27,49 @@
 
   const DEFAULT_LEVEL = 55;
 
-  const MAX_SCALE = 4;
+  /*
+     Максимальный масштаб вывода.
+
+     2x достаточно для аккуратной
+     субпиксельной границы и намного
+     быстрее 4x.
+  */
+  const OUTPUT_SCALE = 2;
+
+  /*
+     Максимальный радиус обработки
+     исходного поля.
+
+     Мы НЕ делаем большой blur.
+     Поэтому максимум 1 соседняя
+     ячейка.
+  */
+  const MAX_RADIUS = 1;
+
+  /*
+     Минимальная доля реальных данных,
+     необходимая для заполнения
+     промежуточного пикселя.
+  */
+  const MIN_COVERAGE = 0.42;
 
   let smoothingLevel =
     DEFAULT_LEVEL;
 
-  let processTimer = null;
+  let processTimer =
+    null;
 
-  const processedSources =
+  let processingGeneration = 0;
+
+  /*
+     Состояние каждого Leaflet image.
+  */
+  const states =
     new WeakMap();
 
   /* =======================================================
      STORAGE
-  ======================================================= */
+     ======================================================= */
 
   function loadLevel() {
     try {
@@ -63,34 +103,27 @@
   }
 
   /* =======================================================
-     SCALE
-  ======================================================= */
-
-  function getScale() {
-    if (
-      smoothingLevel <= 0
-    ) {
-      return 1;
-    }
-
-    if (
-      smoothingLevel < 30
-    ) {
-      return 2;
-    }
-
-    if (
-      smoothingLevel < 65
-    ) {
-      return 3;
-    }
-
-    return MAX_SCALE;
-  }
-
-  /* =======================================================
      PALETTE
   ======================================================= */
+
+  function parseCSSColor(
+    color
+  ) {
+    const match =
+      String(color).match(
+        /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+      );
+
+    if (!match) {
+      return null;
+    }
+
+    return {
+      r: Number(match[1]),
+      g: Number(match[2]),
+      b: Number(match[3])
+    };
+  }
 
   function readPalette() {
     const colors = [];
@@ -114,43 +147,25 @@
           element
         ).backgroundColor;
 
-      /*
-         ВАЖНО:
-         здесь именно ОДИН обратный
-         слэш перед скобкой.
-      */
-      const match =
-        color.match(
-          /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+      const parsed =
+        parseCSSColor(
+          color
         );
 
-      if (!match) {
+      if (!parsed) {
         return null;
       }
 
-      colors.push({
-        r:
-          Number(
-            match[1]
-          ),
-
-        g:
-          Number(
-            match[2]
-          ),
-
-        b:
-          Number(
-            match[3]
-          )
-      });
+      colors.push(
+        parsed
+      );
     }
 
     return colors;
   }
 
   /* =======================================================
-     COLOR DISTANCE
+     COLOR MATCHING
   ======================================================= */
 
   function colorDistance(
@@ -175,10 +190,6 @@
     );
   }
 
-  /* =======================================================
-     FIND RADAR CLASS
-  ======================================================= */
-
   function nearestPaletteIndex(
     r,
     g,
@@ -186,16 +197,14 @@
     palette
   ) {
     let best = 0;
-
-    let distance =
-      Infinity;
+    let distance = Infinity;
 
     for (
       let i = 0;
       i < palette.length;
       i++
     ) {
-      const current =
+      const d =
         colorDistance(
           r,
           g,
@@ -204,12 +213,9 @@
         );
 
       if (
-        current <
-        distance
+        d < distance
       ) {
-        distance =
-          current;
-
+        distance = d;
         best = i;
       }
     }
@@ -218,80 +224,60 @@
   }
 
   /* =======================================================
-     INTERPOLATION
+     STATE
   ======================================================= */
 
-  function interpolate(
-    a,
-    b,
-    t
+  function getState(
+    img
   ) {
-    return (
-      a +
-      (
-        b - a
-      ) * t
-    );
+    let state =
+      states.get(img);
+
+    if (!state) {
+      state = {
+        sourceURL: "",
+        outputURL: "",
+        processing: false,
+        generation: 0,
+        level: -1
+      };
+
+      states.set(
+        img,
+        state
+      );
+    }
+
+    return state;
   }
 
   /* =======================================================
-     CREATE SMOOTHED RADAR
+     FIELD CREATION
   ======================================================= */
 
-  async function createSmoothedRadar(
-    img
+  function decodeRadarField(
+    img,
+    palette
   ) {
-    if (
-      smoothingLevel <= 0
-    ) {
-      return null;
-    }
-
-    if (
-      !img ||
-      !img.naturalWidth ||
-      !img.naturalHeight
-    ) {
-      return null;
-    }
-
-    const palette =
-      readPalette();
-
-    if (
-      !palette ||
-      palette.length !== 19
-    ) {
-      return null;
-    }
-
-    const sourceWidth =
+    const width =
       img.naturalWidth;
 
-    const sourceHeight =
+    const height =
       img.naturalHeight;
 
-    const source =
-      new Float32Array(
-        sourceWidth *
-        sourceHeight
-      );
-
-    source.fill(-1);
-
-    const sourceCanvas =
+    const canvas =
       document.createElement(
         "canvas"
       );
 
-    sourceCanvas.width =
-      sourceWidth;
+    canvas.width =
+      width;
 
-    sourceCanvas.height =
-      sourceHeight;
+    canvas.height =
+      height;
 
-    const sourceCtx =
-      sourceCanvas.getContext(
+    const ctx =
+      canvas.getContext(
         "2d",
         {
           willReadFrequently:
@@ -299,100 +285,490 @@
         }
       );
 
-    if (!sourceCtx) {
+    if (!ctx) {
       return null;
     }
 
-    sourceCtx.clearRect(
-      0,
-      0,
-      sourceWidth,
-      sourceHeight
-    );
-
-    sourceCtx.drawImage(
+    ctx.drawImage(
       img,
       0,
       0,
-      sourceWidth,
-      sourceHeight
+      width,
+      height
     );
 
     let imageData;
 
     try {
       imageData =
-        sourceCtx.getImageData(
+        ctx.getImageData(
           0,
           0,
-          sourceWidth,
-          sourceHeight
+          width,
+          height
         );
     } catch (error) {
-      console.error(
-        "CLOrad smoothing:",
-        error
-      );
-
       return null;
     }
 
-    const data =
+    const pixels =
       imageData.data;
 
     /*
-       Восстанавливаем
-       исходный радарный класс
-       каждого непрозрачного
-       пикселя.
+       Значение:
+
+       -1 = нет данных
+       0..18 = реальный класс
     */
+
+    const field =
+      new Int8Array(
+        width * height
+      );
+
+    field.fill(-1);
+
+    /*
+       alpha хранится отдельно.
+       Это позволит сглаживать только
+       геометрическую границу.
+    */
+
+    const mask =
+      new Uint8Array(
+        width * height
+      );
+
+    for (
+      let i = 0,
+          p = 0;
+      i < field.length;
+      i++,
+      p += 4
+    ) {
+      const alpha =
+        pixels[p + 3];
+
+      if (
+        alpha < 20
+      ) {
+        continue;
+      }
+
+      field[i] =
+        nearestPaletteIndex(
+          pixels[p],
+          pixels[p + 1],
+          pixels[p + 2],
+          palette
+        );
+
+      mask[i] = 255;
+    }
+
+    return {
+      width,
+      height,
+      field,
+      mask
+    };
+  }
+
+  /* =======================================================
+     DATA AWARE LOCAL SMOOTHING
+  ======================================================= */
+
+  function smoothField(
+    fieldData,
+    level,
+    generation
+  ) {
+    const {
+      width,
+      height,
+      field
+    } = fieldData;
+
+    /*
+       При маленьком уровне
+       вообще не меняем данные.
+
+       Только интерполируем
+       границы при выводе.
+    */
+
+    if (
+      level < 15
+    ) {
+      return {
+        width,
+        height,
+        field
+      };
+    }
+
+    /*
+       Сильнее сглаживание =
+       немного больше влияние
+       соседних реальных ячеек.
+
+       Но радиус всегда максимум 1.
+       Это предотвращает "растекание"
+       одного значения по карте.
+    */
+
+    const strength =
+      Math.min(
+        0.72,
+        0.20 +
+        level / 100 * 0.52
+      );
+
+    const result =
+      new Float32Array(
+        field.length
+      );
+
+    result.fill(-1);
+
+    /*
+       3x3 ядро.
+
+       Центр имеет намного больший
+       вес, чем соседи.
+
+       Это сохраняет исходное
+       радарное значение.
+    */
+
+    const weights = [
+      1, 2, 1,
+      2, 6, 2,
+      1, 2, 1
+    ];
 
     for (
       let y = 0;
-      y < sourceHeight;
+      y < height;
       y++
     ) {
+      /*
+         Проверка поколения позволяет
+         отменить старую тяжёлую
+         обработку, если пользователь
+         быстро двигает slider.
+      */
+
+      if (
+        generation !==
+        processingGeneration
+      ) {
+        return null;
+      }
+
       for (
         let x = 0;
-        x < sourceWidth;
+        x < width;
         x++
       ) {
-        const p =
-          (
-            y *
-            sourceWidth +
-            x
-          ) * 4;
+        const centerIndex =
+          y *
+            width +
+          x;
+
+        const center =
+          field[
+            centerIndex
+          ];
+
+        let sum = 0;
+        let weight = 0;
+        let possible = 0;
+
+        let wi = 0;
+
+        for (
+          let dy = -1;
+          dy <= 1;
+          dy++
+        ) {
+          const yy =
+            y + dy;
+
+          for (
+            let dx = -1;
+            dx <= 1;
+            dx++
+          ) {
+            const xx =
+              x + dx;
+
+            const w =
+              weights[wi++];
+
+            if (
+              xx < 0 ||
+              xx >= width ||
+              yy < 0 ||
+              yy >= height
+            ) {
+              continue;
+            }
+
+            possible += w;
+
+            const value =
+              field[
+                yy *
+                  width +
+                xx
+              ];
+
+            if (
+              value >= 0
+            ) {
+              sum +=
+                value * w;
+
+              weight += w;
+            }
+          }
+        }
+
+        /*
+           Для реальной ячейки
+           всегда сохраняем данные.
+        */
 
         if (
-          data[p + 3] < 20
+          center >= 0
         ) {
+          const averaged =
+            weight > 0
+              ? sum / weight
+              : center;
+
+          result[
+            centerIndex
+          ] =
+            center +
+            (
+              averaged -
+              center
+            ) *
+            strength;
+
           continue;
         }
 
-        source[
-          y *
-            sourceWidth +
-            x
-        ] =
-          nearestPaletteIndex(
-            data[p],
-            data[p + 1],
-            data[p + 2],
-            palette
-          );
+        /*
+           Пустые пиксели можно заполнить
+           только если вокруг действительно
+           достаточно радарных данных.
+
+           Это аккуратно соединяет ячейки,
+           но не создаёт огромные пятна.
+        */
+
+        if (
+          weight > 0 &&
+          possible > 0
+        ) {
+          const coverage =
+            weight /
+            possible;
+
+          if (
+            coverage >=
+            MIN_COVERAGE
+          ) {
+            result[
+              centerIndex
+            ] =
+              sum / weight;
+          }
+        }
       }
     }
 
+    return {
+      width,
+      height,
+      field: result
+    };
+  }
+
+  /* =======================================================
+     BILINEAR DATA SAMPLE
+  ======================================================= */
+
+  function sampleField(
+    field,
+    width,
+    height,
+    x,
+    y
+  ) {
+    const x0 =
+      Math.floor(x);
+
+    const y0 =
+      Math.floor(y);
+
+    const x1 =
+      Math.min(
+        width - 1,
+        x0 + 1
+      );
+
+    const y1 =
+      Math.min(
+        height - 1,
+        y0 + 1
+      );
+
+    const fx =
+      x - x0;
+
+    const fy =
+      y - y0;
+
+    const v00 =
+      field[
+        y0 *
+          width +
+        x0
+      ];
+
+    const v10 =
+      field[
+        y0 *
+          width +
+        x1
+      ];
+
+    const v01 =
+      field[
+        y1 *
+          width +
+        x0
+      ];
+
+    const v11 =
+      field[
+        y1 *
+          width +
+        x1
+      ];
+
+    /*
+       Только реальные значения
+       участвуют в интерполяции.
+    */
+
+    let sum = 0;
+    let weight = 0;
+
+    const w00 =
+      (1 - fx) *
+      (1 - fy);
+
+    const w10 =
+      fx *
+      (1 - fy);
+
+    const w01 =
+      (1 - fx) *
+      fy;
+
+    const w11 =
+      fx * fy;
+
+    if (
+      v00 >= 0
+    ) {
+      sum +=
+        v00 * w00;
+
+      weight +=
+        w00;
+    }
+
+    if (
+      v10 >= 0
+    ) {
+      sum +=
+        v10 * w10;
+
+      weight +=
+        w10;
+    }
+
+    if (
+      v01 >= 0
+    ) {
+      sum +=
+        v01 * w01;
+
+      weight +=
+        w01;
+    }
+
+    if (
+      v11 >= 0
+    ) {
+      sum +=
+        v11 * w11;
+
+      weight +=
+        w11;
+    }
+
+    if (
+      weight <= 0
+    ) {
+      return {
+        value: -1,
+        coverage: 0
+      };
+    }
+
+    return {
+      value:
+        sum / weight,
+
+      coverage:
+        weight
+    };
+  }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
+
+  function renderRadar(
+    fieldData,
+    palette,
+    level,
+    generation
+  ) {
+    const {
+      width,
+      height,
+      field
+    } = fieldData;
+
     const scale =
-      getScale();
+      level <= 0
+        ? 1
+        : OUTPUT_SCALE;
 
     const outputWidth =
-      sourceWidth *
+      width *
       scale;
 
     const outputHeight =
-      sourceHeight *
+      height *
       scale;
 
     const canvas =
@@ -425,48 +801,41 @@
       output.data;
 
     /*
-       Интерполируем именно
-       числовое радарное поле.
+       Порог антиалиасинга.
 
-       Это НЕ CSS blur.
-       Это НЕ размытие RGB.
+       RGB всё равно остаётся
+       одним из 19 цветов.
+
+       Сглаживается только alpha.
     */
+
+    const edgeThreshold =
+      0.18;
 
     for (
       let y = 0;
       y < outputHeight;
       y++
     ) {
+      if (
+        generation !==
+        processingGeneration
+      ) {
+        return null;
+      }
+
       const sourceY =
         (
           y + 0.5
         ) / scale -
         0.5;
 
-      const y0 =
-        Math.floor(
-          sourceY
-        );
-
-      const fy =
-        sourceY -
-        y0;
-
-      const yA =
+      const safeY =
         Math.max(
           0,
           Math.min(
-            sourceHeight - 1,
-            y0
-          )
-        );
-
-      const yB =
-        Math.max(
-          0,
-          Math.min(
-            sourceHeight - 1,
-            y0 + 1
+            height - 1,
+            sourceY
           )
         );
 
@@ -481,60 +850,23 @@
           ) / scale -
           0.5;
 
-        const x0 =
-          Math.floor(
-            sourceX
-          );
-
-        const fx =
-          sourceX -
-          x0;
-
-        const xA =
+        const safeX =
           Math.max(
             0,
             Math.min(
-              sourceWidth - 1,
-              x0
+              width - 1,
+              sourceX
             )
           );
 
-        const xB =
-          Math.max(
-            0,
-            Math.min(
-              sourceWidth - 1,
-              x0 + 1
-            )
+        const sampled =
+          sampleField(
+            field,
+            width,
+            height,
+            safeX,
+            safeY
           );
-
-        const v00 =
-          source[
-            yA *
-              sourceWidth +
-              xA
-          ];
-
-        const v10 =
-          source[
-            yA *
-              sourceWidth +
-              xB
-          ];
-
-        const v01 =
-          source[
-            yB *
-              sourceWidth +
-              xA
-          ];
-
-        const v11 =
-          source[
-            yB *
-              sourceWidth +
-              xB
-          ];
 
         const index =
           (
@@ -543,61 +875,10 @@
             x
           ) * 4;
 
-        let sum = 0;
-        let weight = 0;
-
-        const values = [
-          [
-            v00,
-            (1 - fx) *
-            (1 - fy)
-          ],
-          [
-            v10,
-            fx *
-            (1 - fy)
-          ],
-          [
-            v01,
-            (1 - fx) *
-            fy
-          ],
-          [
-            v11,
-            fx * fy
-          ]
-        ];
-
-        for (
-          let i = 0;
-          i < values.length;
-          i++
-        ) {
-          const value =
-            values[i][0];
-
-          const w =
-            values[i][1];
-
-          if (
-            value >= 0 &&
-            w > 0
-          ) {
-            sum +=
-              value * w;
-
-            weight +=
-              w;
-          }
-        }
-
-        /*
-           Никаких данных вокруг —
-           прозрачность.
-        */
-
         if (
-          weight <= 0
+          sampled.value < 0 ||
+          sampled.coverage <=
+            edgeThreshold
         ) {
           out[
             index + 3
@@ -606,72 +887,91 @@
           continue;
         }
 
-        const value =
-          sum /
-          weight;
+        /*
+           КЛЮЧЕВОЕ ОТЛИЧИЕ:
 
-        const clamped =
-          Math.max(
-            0,
-            Math.min(
-              18,
-              value
-            )
+           Мы НЕ делаем:
+
+             RGB = lerp(colorA,colorB)
+
+           Вместо этого выбираем
+           ближайший реальный класс.
+
+           Поэтому новых цветов
+           физически не возникает.
+        */
+
+        let radarClass =
+          Math.round(
+            sampled.value
           );
 
-        const low =
-          Math.floor(
-            clamped
-          );
+        if (
+          radarClass < 0
+        ) {
+          radarClass = 0;
+        }
 
-        const high =
-          Math.min(
-            18,
-            low + 1
-          );
+        if (
+          radarClass > 18
+        ) {
+          radarClass = 18;
+        }
 
-        const amount =
-          clamped -
-          low;
-
-        const colorA =
+        const color =
           palette[
-            low
-          ];
-
-        const colorB =
-          palette[
-            high
+            radarClass
           ];
 
         out[index] =
-          Math.round(
-            interpolate(
-              colorA.r,
-              colorB.r,
-              amount
-            )
-          );
+          color.r;
 
         out[index + 1] =
-          Math.round(
-            interpolate(
-              colorA.g,
-              colorB.g,
-              amount
-            )
-          );
+          color.g;
 
         out[index + 2] =
-          Math.round(
-            interpolate(
-              colorA.b,
-              colorB.b,
-              amount
-            )
-          );
+          color.b;
 
-        out[index + 3] = 255;
+        /*
+           Внутри поля —
+           полностью непрозрачный
+           настоящий цвет радара.
+
+           На внешнем краю —
+           только alpha AA.
+        */
+
+        if (
+          sampled.coverage >=
+          0.999
+        ) {
+          out[
+            index + 3
+          ] = 255;
+        } else {
+          const alpha =
+            Math.max(
+              0,
+              Math.min(
+                1,
+                (
+                  sampled.coverage -
+                  edgeThreshold
+                ) /
+                (
+                  1 -
+                  edgeThreshold
+                )
+              )
+            );
+
+          out[
+            index + 3
+          ] =
+            Math.round(
+              alpha * 255
+            );
+        }
       }
     }
 
@@ -687,7 +987,7 @@
   }
 
   /* =======================================================
-     PROCESS RADAR IMAGE
+     MAIN PROCESS
   ======================================================= */
 
   async function processImage(
@@ -702,8 +1002,40 @@
       return;
     }
 
+    const state =
+      getState(img);
+
+    /*
+       При 0% возвращаем
+       настоящий исходный кадр.
+    */
+
     if (
       smoothingLevel <= 0
+    ) {
+      if (
+        state.outputURL &&
+        state.sourceURL &&
+        img.src ===
+          state.outputURL
+      ) {
+        state.generation++;
+
+        img.src =
+          state.sourceURL;
+
+        state.outputURL =
+          "";
+
+        state.level =
+          0;
+      }
+
+      return;
+    }
+
+    if (
+      state.processing
     ) {
       return;
     }
@@ -715,84 +1047,205 @@
       return;
     }
 
-    const sourceUrl =
-      img.dataset
-        .cloradRadarSource ||
-      img.src;
-
-    const processedKey =
-      sourceUrl +
-      "|" +
-      smoothingLevel;
+    /*
+       Если источник ещё не записан,
+       запоминаем его.
+    */
 
     if (
-      processedSources.get(
-        img
-      ) ===
-      processedKey
+      !state.sourceURL
+    ) {
+      state.sourceURL =
+        img.src;
+    }
+
+    /*
+       Если это наш уже готовый
+       результат — повторно его
+       не обрабатываем.
+    */
+
+    if (
+      state.outputURL &&
+      img.src ===
+        state.outputURL &&
+      state.level ===
+        smoothingLevel
     ) {
       return;
     }
 
-    if (
-      img.dataset
-        .cloradSmoothingBusy ===
-      "1"
-    ) {
-      return;
-    }
+    const sourceURL =
+      state.sourceURL;
 
-    img.dataset
-      .cloradSmoothingBusy =
-      "1";
+    const generation =
+      ++state.generation;
+
+    state.processing =
+      true;
 
     try {
-      const result =
-        await createSmoothedRadar(
-          img
-        );
-
-      const currentSource =
-        img.dataset
-          .cloradRadarSource ||
-        img.src;
-
       /*
-         Если GIF уже переключил
-         кадр — старый результат
-         не устанавливаем.
+         Загружаем исходный кадр
+         отдельным Image.
+
+         Благодаря этому мы НИКОГДА
+         не сглаживаем уже сглаженный
+         результат.
       */
 
+      const sourceImage =
+        new Image();
+
+      sourceImage.decoding =
+        "async";
+
+      sourceImage.src =
+        sourceURL;
+
+      await new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+          if (
+            sourceImage.complete &&
+            sourceImage.naturalWidth
+          ) {
+            resolve();
+            return;
+          }
+
+          sourceImage.onload =
+            resolve;
+
+          sourceImage.onerror =
+            reject;
+        }
+      );
+
       if (
-        currentSource !==
-        sourceUrl
+        generation !==
+        state.generation
       ) {
         return;
       }
 
-      if (result) {
-        img.dataset
-          .cloradRadarSource =
-          sourceUrl;
-
-        img.src =
-          result;
-
-        processedSources.set(
-          img,
-          processedKey
-        );
+      if (
+        sourceURL !==
+        state.sourceURL
+      ) {
+        return;
       }
 
+      const palette =
+        readPalette();
+
+      if (
+        !palette ||
+        palette.length !== 19
+      ) {
+        return;
+      }
+
+      /*
+         1.
+         Декодируем реальные
+         радарные классы.
+      */
+
+      const decoded =
+        decodeRadarField(
+          sourceImage,
+          palette
+        );
+
+      if (!decoded) {
+        return;
+      }
+
+      /*
+         2.
+         Локальная интерполяция
+         только числовых значений.
+      */
+
+      const smoothed =
+        smoothField(
+          decoded,
+          smoothingLevel,
+          generation
+        );
+
+      if (!smoothed) {
+        return;
+      }
+
+      /*
+         3.
+         Рендерим только реальные
+         цвета палитры.
+      */
+
+      const result =
+        renderRadar(
+          smoothed,
+          palette,
+          smoothingLevel,
+          generation
+        );
+
+      if (!result) {
+        return;
+      }
+
+      if (
+        generation !==
+        state.generation
+      ) {
+        return;
+      }
+
+      if (
+        sourceURL !==
+        state.sourceURL
+      ) {
+        return;
+      }
+
+      /*
+         Leaflet ImageOverlay
+         остаётся тем же самым.
+
+         Меняется только src.
+
+         bounds не трогаем.
+         transform не трогаем.
+      */
+
+      state.outputURL =
+        result;
+
+      state.level =
+        smoothingLevel;
+
+      img.src =
+        result;
+
     } catch (error) {
+      /*
+         Ошибка одного кадра
+         не должна ломать весь CLOrad.
+      */
+
       console.error(
-        "CLOrad data smoothing:",
+        "CLOrad radar smoothing:",
         error
       );
 
     } finally {
-      delete img.dataset
-        .cloradSmoothingBusy;
+      state.processing =
+        false;
     }
   }
 
@@ -801,37 +1254,60 @@
   ======================================================= */
 
   function processAll() {
-    if (
-      smoothingLevel <= 0
-    ) {
-      return;
-    }
-
-    document
-      .querySelectorAll(
+    const images =
+      document.querySelectorAll(
         "img.clorad-gif-radar-image"
-      )
-      .forEach(
-        img => {
-          if (
-            !img.dataset
-              .cloradRadarSource &&
-            img.src
-          ) {
-            img.dataset
-              .cloradRadarSource =
-              img.src;
-          }
-
-          processImage(
-            img
-          );
-        }
       );
+
+    images.forEach(
+      img => {
+        const state =
+          getState(img);
+
+        /*
+           Если Leaflet поставил
+           новый URL — это новый кадр.
+        */
+
+        if (
+          img.src &&
+          state.outputURL &&
+          img.src !==
+            state.outputURL
+        ) {
+          state.sourceURL =
+            img.src;
+
+          state.outputURL =
+            "";
+
+          state.level =
+            -1;
+
+          state.generation++;
+        }
+
+        /*
+           Первый кадр.
+        */
+
+        if (
+          !state.sourceURL &&
+          img.src
+        ) {
+          state.sourceURL =
+            img.src;
+        }
+
+        processImage(
+          img
+        );
+      }
+    );
   }
 
   /* =======================================================
-     STYLE
+     UI STYLE
   ======================================================= */
 
   function installStyle() {
@@ -885,6 +1361,19 @@
         font-size:10px;
       }
 
+      /*
+         НИКАКОГО CSS blur.
+
+         Leaflet сам отвечает
+         за географическое положение
+         imageOverlay.
+      */
+
+      img.clorad-gif-radar-image{
+        filter:none !important;
+        transform:none !important;
+      }
+
       body.light
       #${SETTING_ID}
       .clorad-smoothing-value{
@@ -904,7 +1393,7 @@
   }
 
   /* =======================================================
-     UPDATE UI
+     UI UPDATE
   ======================================================= */
 
   function updateSetting() {
@@ -940,7 +1429,7 @@
   }
 
   /* =======================================================
-     INSTALL BUTTON
+     INSTALL SETTING BUTTON
   ======================================================= */
 
   function installSetting() {
@@ -949,15 +1438,9 @@
         "settings"
       );
 
-    if (
-      !settings
-    ) {
+    if (!settings) {
       return;
     }
-
-    /*
-       Уже установлен.
-    */
 
     if (
       document.getElementById(
@@ -1032,12 +1515,8 @@
     `;
 
     /*
-       В ТВОЁМ index.html
-       существующая настройка называется
-       framesSetting.
-
-       Поэтому вставляем именно
-       ПОСЛЕ неё.
+       В текущем CLOrad эта настройка
+       располагается после framesSetting.
     */
 
     const framesSetting =
@@ -1059,10 +1538,6 @@
       );
     }
 
-    /* =====================================================
-       OPEN / CLOSE
-    ===================================================== */
-
     const head =
       document.getElementById(
         "cloradSmoothingHead"
@@ -1075,16 +1550,35 @@
           event.preventDefault();
           event.stopPropagation();
 
+          const isOpen =
+            setting.classList.contains(
+              "open"
+            );
+
+          document
+            .querySelectorAll(
+              "#settings .setting.open"
+            )
+            .forEach(
+              item => {
+                if (
+                  item !==
+                  setting
+                ) {
+                  item.classList.remove(
+                    "open"
+                  );
+                }
+              }
+            );
+
           setting.classList.toggle(
-            "open"
+            "open",
+            !isOpen
           );
         }
       );
     }
-
-    /* =====================================================
-       SLIDER
-    ===================================================== */
 
     const slider =
       setting.querySelector(
@@ -1102,15 +1596,22 @@
               0,
               Math.min(
                 100,
-                Number(
-                  event.target.value
+                Math.round(
+                  Number(
+                    event.target.value
+                  )
                 )
               )
             );
 
           saveLevel();
 
-          updateSetting();
+          /*
+             Полностью отменяем
+             старые вычисления.
+          */
+
+          processingGeneration++;
 
           document
             .querySelectorAll(
@@ -1118,11 +1619,17 @@
             )
             .forEach(
               img => {
-                processedSources.delete(
-                  img
-                );
+                const state =
+                  getState(img);
+
+                state.generation++;
+
+                state.level =
+                  -1;
               }
             );
+
+          updateSetting();
 
           scheduleProcess();
         }
@@ -1145,6 +1652,13 @@
       );
     }
 
+    /*
+       Небольшая задержка.
+       Если slider быстро двигается,
+       запускается только последняя
+       обработка.
+    */
+
     processTimer =
       setTimeout(
         () => {
@@ -1153,17 +1667,19 @@
 
           processAll();
         },
-        100
+        120
       );
   }
 
   /* =======================================================
-     WATCH GIF FRAMES
+     WATCH LEAFLET FRAME CHANGES
   ======================================================= */
 
   const attributeObserver =
     new MutationObserver(
       mutations => {
+        let changed = false;
+
         for (
           const mutation of mutations
         ) {
@@ -1174,37 +1690,61 @@
             continue;
           }
 
-          const element =
+          const img =
             mutation.target;
 
           if (
-            element instanceof
-              HTMLImageElement &&
-            element.classList.contains(
+            !(img instanceof
+              HTMLImageElement)
+          ) {
+            continue;
+          }
+
+          if (
+            !img.classList.contains(
               "clorad-gif-radar-image"
             )
           ) {
-            /*
-               Не считаем собственный
-               PNG новым GIF-кадром.
-            */
-
-            const source =
-              element.dataset
-                .cloradRadarSource;
-
-            if (
-              source &&
-              element.src ===
-              source
-            ) {
-              processedSources.delete(
-                element
-              );
-
-              scheduleProcess();
-            }
+            continue;
           }
+
+          const state =
+            getState(img);
+
+          /*
+             Наш собственный PNG
+             не является новым кадром.
+          */
+
+          if (
+            state.outputURL &&
+            img.src ===
+              state.outputURL
+          ) {
+            continue;
+          }
+
+          /*
+             Leaflet установил
+             настоящий новый кадр.
+          */
+
+          state.sourceURL =
+            img.src;
+
+          state.outputURL =
+            "";
+
+          state.level =
+            -1;
+
+          state.generation++;
+
+          changed = true;
+        }
+
+        if (changed) {
+          scheduleProcess();
         }
       }
     );
@@ -1226,6 +1766,26 @@
           "clorad-gif-radar-image"
         )
       ) {
+        const state =
+          getState(img);
+
+        /*
+           Если это результат
+           нашего рендера — ничего
+           повторно не делаем.
+        */
+
+        if (
+          state.outputURL &&
+          img.src ===
+            state.outputURL
+        ) {
+          return;
+        }
+
+        state.sourceURL =
+          img.src;
+
         scheduleProcess();
       }
     },
@@ -1244,12 +1804,15 @@
           Math.min(
             100,
             Math.round(
-              Number(value) || 0
+              Number(value) ||
+              0
             )
           )
         );
 
       saveLevel();
+
+      processingGeneration++;
 
       document
         .querySelectorAll(
@@ -1257,9 +1820,11 @@
         )
         .forEach(
           img => {
-            processedSources.delete(
-              img
-            );
+            const state =
+              getState(img);
+
+            state.generation++;
+            state.level = -1;
           }
         );
 
@@ -1283,8 +1848,8 @@
   installSetting();
 
   /*
-     На случай, если settings
-     появляется позже.
+     settings существует не всегда
+     в момент загрузки скрипта.
   */
 
   const settingsObserver =
