@@ -1,17 +1,18 @@
 /* =========================================================
-   CLOrad — Lightweight Radar Smoothing
-   ---------------------------------------------------------
-   0%   = оригинальный GIF
-   1-100% = лёгкое data-aware сглаживание
+   CLOrad — Radar Smoothing
+   Лёгкое сглаживание GIF-радара
+
+   0% = оригинальный радар
+   Кнопка "Сглаживание" открывает шкалу 0–100%
 
    ВАЖНО:
-   - RGB цветов НЕ смешивается
+   - без CSS blur
+   - без обработки всего сайта
+   - без MutationObserver
+   - без постоянного пересчёта кадров
+   - RGB не смешивается
    - используются только цвета исходной палитры
-   - фон не превращается в радар
-   - Leaflet ImageOverlay не перемещается
-   - нет MutationObserver на весь body
-   - нет постоянного рендера
-   - обработка только по запросу
+   - GIF остаётся обычным Leaflet ImageOverlay
    ========================================================= */
 
 (() => {
@@ -22,50 +23,28 @@
      ======================================================= */
 
   const DEFAULT_LEVEL = 0;
-  const MIN_LEVEL = 0;
-  const MAX_LEVEL = 100;
-
-  /*
-     2x достаточно для сглаживания краёв.
-     Не ставим 3x/4x — это сильно тяжелее на iPhone.
-  */
   const SCALE = 2;
 
-  /*
-     Максимальное количество сохранённых
-     обработанных кадров.
-  */
-  const MAX_CACHE = 4;
+  let level = DEFAULT_LEVEL;
 
-  /* =======================================================
-     STATE
-     ======================================================= */
-
-  let smoothingLevel = DEFAULT_LEVEL;
-
-  let currentFrameURL = null;
-
+  let lastSource = null;
+  let lastResult = null;
   let processing = false;
-  let processingToken = 0;
-
-  const cache = new Map();
 
   /* =======================================================
-     BASIC HELPERS
+     HELPERS
      ======================================================= */
+
+  function getRadarImage() {
+    return document.querySelector(
+      "img.clorad-gif-radar-image"
+    );
+  }
 
   function clamp(value, min, max) {
     return Math.max(
       min,
       Math.min(max, value)
-    );
-  }
-
-  function getRadarImages() {
-    return Array.from(
-      document.querySelectorAll(
-        "img.clorad-gif-radar-image"
-      )
     );
   }
 
@@ -80,42 +59,33 @@
       return null;
     }
 
-    let value =
+    let h =
       hex.replace("#", "");
 
     if (
-      value.length === 3
+      h.length === 3
     ) {
-      value =
-        value[0] + value[0] +
-        value[1] + value[1] +
-        value[2] + value[2];
+      h =
+        h[0] + h[0] +
+        h[1] + h[1] +
+        h[2] + h[2];
     }
 
     if (
-      value.length !== 6
+      h.length !== 6
     ) {
       return null;
     }
 
     return [
-      parseInt(
-        value.slice(0, 2),
-        16
-      ),
-      parseInt(
-        value.slice(2, 4),
-        16
-      ),
-      parseInt(
-        value.slice(4, 6),
-        16
-      )
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16)
     ];
   }
 
   function readPalette() {
-    const result = [];
+    const palette = [];
 
     for (
       let i = 1;
@@ -128,7 +98,7 @@
         );
 
       if (!el) {
-        result.push(null);
+        palette.push(null);
         continue;
       }
 
@@ -142,55 +112,20 @@
         );
 
       if (match) {
-        result.push([
+        palette.push([
           Number(match[1]),
           Number(match[2]),
           Number(match[3])
         ]);
-
-        continue;
-      }
-
-      result.push(
-        hexToRGB(color)
-      );
-    }
-
-    /*
-       Если легенда ещё не готова,
-       пытаемся использовать палитры
-       из gif-radar.js.
-    */
-
-    if (
-      result.filter(Boolean)
-        .length !== 19
-    ) {
-      if (
-        Array.isArray(
-          window.RGMC_OY_PALETTE
-        )
-      ) {
-        return window.RGMC_OY_PALETTE
-          .map(hexToRGB);
-      }
-
-      if (
-        Array.isArray(
-          window.IRAM_OY_PALETTE
-        )
-      ) {
-        return window.IRAM_OY_PALETTE
-          .map(hexToRGB);
+      } else {
+        palette.push(
+          hexToRGB(color)
+        );
       }
     }
 
-    return result;
+    return palette;
   }
-
-  /* =======================================================
-     COLOR MATCH
-     ======================================================= */
 
   function nearestColor(
     r,
@@ -199,42 +134,38 @@
     palette
   ) {
     let best = 0;
-    let bestDistance =
-      Infinity;
+    let distance = Infinity;
 
     for (
       let i = 0;
       i < palette.length;
       i++
     ) {
-      const color =
+      const c =
         palette[i];
 
-      if (!color) {
+      if (!c) {
         continue;
       }
 
       const dr =
-        r - color[0];
+        r - c[0];
 
       const dg =
-        g - color[1];
+        g - c[1];
 
       const db =
-        b - color[2];
+        b - c[2];
 
-      const distance =
+      const d =
         dr * dr +
         dg * dg +
         db * db;
 
       if (
-        distance <
-        bestDistance
+        d < distance
       ) {
-        bestDistance =
-          distance;
-
+        distance = d;
         best = i;
       }
     }
@@ -271,12 +202,10 @@
 
   function readImage(image) {
     const width =
-      image.naturalWidth ||
-      image.width;
+      image.naturalWidth;
 
     const height =
-      image.naturalHeight ||
-      image.height;
+      image.naturalHeight;
 
     if (
       !width ||
@@ -324,15 +253,10 @@
   }
 
   /* =======================================================
-     BUILD RADAR FIELD
+     CREATE DATA FIELD
      ======================================================= */
 
-  /*
-     0..18 = реальный класс радара
-     -1    = прозрачный фон
-  */
-
-  function buildField(
+  function createField(
     raster,
     palette
   ) {
@@ -362,10 +286,6 @@
       const alpha =
         source[p + 3];
 
-      /*
-         Прозрачный GIF-фон.
-      */
-
       if (
         alpha < 30
       ) {
@@ -381,20 +301,6 @@
       const b =
         source[p + 2];
 
-      /*
-         Почти прозрачные служебные
-         пиксели не считаем осадками.
-      */
-
-      if (
-        alpha < 80 &&
-        r > 170 &&
-        g > 170 &&
-        b > 170
-      ) {
-        continue;
-      }
-
       field[i] =
         nearestColor(
           r,
@@ -408,29 +314,17 @@
   }
 
   /* =======================================================
-     LIGHT DATA SMOOTHING
+     LIGHT SMOOTH
      ======================================================= */
-
-  /*
-     Очень дешёвое сглаживание.
-
-     В отличие от предыдущей версии:
-     - нет полного 3x3/5x5 пересчёта
-       для каждого пикселя;
-     - нет нескольких проходов;
-     - исходный класс сохраняется;
-     - соседний цвет может изменить пиксель
-       только если он действительно преобладает.
-  */
 
   function smoothField(
     field,
     width,
     height,
-    level
+    amount
   ) {
     if (
-      level <= 0
+      amount <= 0
     ) {
       return field;
     }
@@ -441,16 +335,16 @@
       );
 
     /*
-       При слабом сглаживании
-       вообще используем только
-       прямых соседей.
+       Чем выше процент,
+       тем сильнее влияние
+       соседних пикселей.
 
-       При сильном — добавляем
-       диагонали.
+       Но радиус всегда максимум 1,
+       чтобы радар не расползался.
     */
 
-    const useDiagonal =
-      level >= 55;
+    const strength =
+      amount / 100;
 
     for (
       let y = 1;
@@ -474,176 +368,62 @@
           continue;
         }
 
-        let best =
-          center;
-
-        let bestScore =
-          3;
+        let same = 0;
+        let total = 0;
 
         /*
-           Верх
+           Только 4 ближайших
+           соседа.
         */
 
-        let value =
-          field[
-            index - width
-          ];
+        const neighbors = [
+          index - 1,
+          index + 1,
+          index - width,
+          index + width
+        ];
 
-        if (
-          value >= 0
-        ) {
-          if (
-            value === center
-          ) {
-            bestScore += 2;
-          } else {
-            bestScore += 1;
-          }
-        }
-
-        /*
-           Низ
-        */
-
-        value =
-          field[
-            index + width
-          ];
-
-        if (
-          value >= 0 &&
-          value === center
-        ) {
-          bestScore += 2;
-        }
-
-        /*
-           Лево
-        */
-
-        value =
-          field[index - 1];
-
-        if (
-          value >= 0 &&
-          value === center
-        ) {
-          bestScore += 2;
-        }
-
-        /*
-           Право
-        */
-
-        value =
-          field[index + 1];
-
-        if (
-          value >= 0 &&
-          value === center
-        ) {
-          bestScore += 2;
-        }
-
-        /*
-           При сильном сглаживании
-           учитываем диагонали.
-        */
-
-        if (
-          useDiagonal
-        ) {
-          const neighbors = [
-            index - width - 1,
-            index - width + 1,
-            index + width - 1,
-            index + width + 1
-          ];
-
-          for (
-            let i = 0;
-            i < neighbors.length;
-            i++
-          ) {
-            value =
-              field[
-                neighbors[i]
-              ];
-
-            if (
-              value === center
-            ) {
-              bestScore += 1;
-            }
-          }
-        }
-
-        /*
-           Ничего не меняем,
-           если соседние данные
-           не подтверждают изменение.
-        */
-
-        result[index] =
-          best;
-      }
-    }
-
-    /*
-       Лёгкое удаление одиночных
-       дыр внутри радарного поля.
-
-       Только если окружающие пиксели
-       имеют тот же класс.
-    */
-
-    if (
-      level >= 30
-    ) {
-      for (
-        let y = 1;
-        y < height - 1;
-        y++
-      ) {
         for (
-          let x = 1;
-          x < width - 1;
-          x++
+          let i = 0;
+          i < 4;
+          i++
         ) {
-          const index =
-            y * width + x;
+          const value =
+            field[
+              neighbors[i]
+            ];
 
           if (
-            field[index] >= 0
+            value < 0
           ) {
             continue;
           }
 
-          const left =
-            field[index - 1];
-
-          const right =
-            field[index + 1];
-
-          const top =
-            field[
-              index - width
-            ];
-
-          const bottom =
-            field[
-              index + width
-            ];
+          total++;
 
           if (
-            left >= 0 &&
-            left === right &&
-            left === top &&
-            left === bottom
+            value === center
           ) {
-            result[index] =
-              left;
+            same++;
           }
+        }
+
+        /*
+           Меняем класс только если
+           соседние данные подтверждают
+           существующий класс.
+
+           Это защищает радар
+           от фейковых цветов.
+        */
+
+        if (
+          total >= 2 &&
+          same >= 2 &&
+          strength > 0.15
+        ) {
+          result[index] =
+            center;
         }
       }
     }
@@ -661,10 +441,10 @@
     height,
     palette
   ) {
-    const outputWidth =
+    const outWidth =
       width * SCALE;
 
-    const outputHeight =
+    const outHeight =
       height * SCALE;
 
     const canvas =
@@ -673,43 +453,27 @@
       );
 
     canvas.width =
-      outputWidth;
+      outWidth;
 
     canvas.height =
-      outputHeight;
+      outHeight;
 
     const ctx =
       canvas.getContext(
         "2d"
       );
 
-    /*
-       Отключаем браузерную
-       интерполяцию.
-
-       Мы сами контролируем
-       радарные классы.
-    */
-
     ctx.imageSmoothingEnabled =
       false;
 
     const imageData =
       ctx.createImageData(
-        outputWidth,
-        outputHeight
+        outWidth,
+        outHeight
       );
 
     const output =
       imageData.data;
-
-    /*
-       Каждый исходный радарный
-       пиксель превращаем в блок 2x2.
-
-       Цвет строго берётся
-       из палитры.
-    */
 
     for (
       let y = 0;
@@ -721,38 +485,26 @@
         x < width;
         x++
       ) {
-        const classIndex =
+        const value =
           field[
             y * width + x
           ];
 
         if (
-          classIndex < 0
+          value < 0
         ) {
           continue;
         }
 
         const color =
-          palette[
-            classIndex
-          ];
+          palette[value];
 
         if (!color) {
           continue;
         }
 
-        const baseX =
-          x * SCALE;
-
-        const baseY =
-          y * SCALE;
-
         /*
-           Определяем, находится ли
-           пиксель на краю.
-
-           Это даёт лёгкое округление
-           без появления нового RGB.
+           Проверяем край.
         */
 
         let neighbours = 0;
@@ -780,7 +532,8 @@
         if (
           y > 0 &&
           field[
-            (y - 1) * width +
+            (y - 1) *
+              width +
             x
           ] >= 0
         ) {
@@ -790,28 +543,25 @@
         if (
           y < height - 1 &&
           field[
-            (y + 1) * width +
+            (y + 1) *
+              width +
             x
           ] >= 0
         ) {
           neighbours++;
         }
 
-        let alpha =
-          255;
-
         /*
-           Только внешние края
-           получают прозрачность.
-
-           Внутри радар полностью
-           непрозрачный.
+           Только альфа.
+           RGB остаётся настоящим.
         */
+
+        let alpha = 255;
 
         if (
           neighbours === 1
         ) {
-          alpha = 190;
+          alpha = 175;
         } else if (
           neighbours === 2
         ) {
@@ -829,33 +579,31 @@
             dx++
           ) {
             const ox =
-              baseX + dx;
+              x * SCALE +
+              dx;
 
             const oy =
-              baseY + dy;
+              y * SCALE +
+              dy;
 
-            const outputIndex =
+            const p =
               (
                 oy *
-                  outputWidth +
+                  outWidth +
                 ox
               ) * 4;
 
-            output[
-              outputIndex
-            ] = color[0];
+            output[p] =
+              color[0];
 
-            output[
-              outputIndex + 1
-            ] = color[1];
+            output[p + 1] =
+              color[1];
 
-            output[
-              outputIndex + 2
-            ] = color[2];
+            output[p + 2] =
+              color[2];
 
-            output[
-              outputIndex + 3
-            ] = alpha;
+            output[p + 3] =
+              alpha;
           }
         }
       }
@@ -871,195 +619,74 @@
   }
 
   /* =======================================================
-     CACHE
+     PROCESS
      ======================================================= */
 
-  function getCacheKey(
-    url,
-    level
-  ) {
-    return (
-      String(url) +
-      "|" +
-      String(level)
-    );
-  }
-
-  function cacheGet(
-    key
-  ) {
-    const value =
-      cache.get(key);
-
-    if (
-      value === undefined
-    ) {
-      return null;
-    }
-
-    /*
-       LRU.
-    */
-
-    cache.delete(key);
-    cache.set(
-      key,
-      value
-    );
-
-    return value;
-  }
-
-  function cacheSet(
-    key,
-    value
-  ) {
-    cache.delete(key);
-
-    cache.set(
-      key,
-      value
-    );
-
-    while (
-      cache.size >
-      MAX_CACHE
-    ) {
-      const first =
-        cache.keys()
-          .next()
-          .value;
-
-      cache.delete(
-        first
-      );
-    }
-  }
-
-  function clearCache() {
-    cache.clear();
-  }
-
-  /* =======================================================
-     RESTORE ORIGINAL
-     ======================================================= */
-
-  function restoreOriginal() {
-    const images =
-      getRadarImages();
-
-    for (
-      const img of images
-    ) {
-      const original =
-        img.dataset
-          .cloradOriginalSrc;
-
-      if (
-        original &&
-        img.src !== original
-      ) {
-        img.src =
-          original;
-      }
-    }
-  }
-
-  /* =======================================================
-     PROCESS CURRENT FRAME
-     ======================================================= */
-
-  async function processCurrentFrame() {
+  async function process() {
     if (
       processing
     ) {
       return;
     }
 
-    /*
-       0% = вообще ничего
-       не делаем.
-    */
-
-    if (
-      smoothingLevel <= 0
-    ) {
-      restoreOriginal();
-      return;
-    }
-
-    const images =
-      getRadarImages();
-
-    if (
-      images.length === 0
-    ) {
-      return;
-    }
-
     const img =
-      images[0];
+      getRadarImage();
+
+    if (!img) {
+      return;
+    }
 
     /*
-       Сохраняем настоящий URL
-       GIF-кадра.
-
-       Если сейчас img.src —
-       уже обработанный PNG,
-       берём сохранённый оригинал.
+       0% = полностью оригинальный GIF.
     */
 
-    const sourceURL =
+    if (
+      level === 0
+    ) {
+      if (
+        img.dataset
+          .cloradOriginalSrc
+      ) {
+        img.src =
+          img.dataset
+            .cloradOriginalSrc;
+      }
+
+      lastResult = null;
+      return;
+    }
+
+    const source =
       img.dataset
         .cloradOriginalSrc ||
       img.src;
 
-    if (!sourceURL) {
+    if (!source) {
       return;
     }
 
     /*
-       Если это тот же кадр
-       и он уже обработан —
-       ничего не делаем.
+       Один и тот же кадр повторно
+       не обрабатываем.
     */
 
-    const key =
-      getCacheKey(
-        sourceURL,
-        smoothingLevel
-      );
-
-    const cached =
-      cacheGet(key);
-
-    if (cached) {
+    if (
+      source === lastSource &&
+      lastResult
+    ) {
       img.src =
-        cached;
-
-      currentFrameURL =
-        sourceURL;
+        lastResult;
 
       return;
     }
 
     processing = true;
 
-    const token =
-      ++processingToken;
-
     try {
       const image =
         await loadImage(
-          sourceURL
+          source
         );
-
-      if (
-        token !==
-        processingToken
-      ) {
-        return;
-      }
 
       const raster =
         readImage(
@@ -1077,36 +704,26 @@
         palette.filter(Boolean)
           .length !== 19
       ) {
+        console.warn(
+          "CLOrad: палитра радара ещё не готова"
+        );
+
         return;
       }
 
       const field =
-        buildField(
+        createField(
           raster,
           palette
         );
-
-      if (
-        token !==
-        processingToken
-      ) {
-        return;
-      }
 
       const smoothed =
         smoothField(
           field,
           raster.width,
           raster.height,
-          smoothingLevel
+          level
         );
-
-      if (
-        token !==
-        processingToken
-      ) {
-        return;
-      }
 
       const canvas =
         render(
@@ -1116,49 +733,38 @@
           palette
         );
 
-      if (
-        token !==
-        processingToken
-      ) {
-        return;
-      }
-
-      const output =
+      const result =
         canvas.toDataURL(
           "image/png"
         );
 
-      cacheSet(
-        key,
-        output
-      );
+      lastSource =
+        source;
+
+      lastResult =
+        result;
 
       /*
          Проверяем, что Leaflet
-         всё ещё показывает тот
-         же кадр.
+         не успел переключить кадр.
       */
 
-      const currentSource =
+      const current =
         img.dataset
           .cloradOriginalSrc ||
         img.src;
 
       if (
-        currentSource ===
-        sourceURL
+        current === source
       ) {
         img.src =
-          output;
-
-        currentFrameURL =
-          sourceURL;
+          result;
       }
 
     } catch (
       error
     ) {
-      console.warn(
+      console.error(
         "CLOrad smoothing:",
         error
       );
@@ -1169,151 +775,45 @@
   }
 
   /* =======================================================
-     DETECT NEW LEAFLET FRAME
+     NEW FRAME
      ======================================================= */
 
-  function watchRadarImage() {
-    const images =
-      getRadarImages();
+  function rememberCurrentFrame() {
+    const img =
+      getRadarImage();
+
+    if (!img) {
+      return;
+    }
+
+    const source =
+      img.src;
+
+    /*
+       Не запоминаем наш PNG.
+    */
 
     if (
-      images.length === 0
+      source.startsWith(
+        "data:image/png"
+      )
     ) {
       return;
     }
 
-    for (
-      const img of images
+    img.dataset
+      .cloradOriginalSrc =
+      source;
+
+    lastSource = null;
+    lastResult = null;
+
+    if (
+      level > 0
     ) {
-      if (
-        img.dataset
-          .cloradSmoothingWatch
-      ) {
-        continue;
-      }
-
-      img.dataset
-        .cloradSmoothingWatch =
-        "1";
-
-      /*
-         Небольшой индивидуальный
-         observer только на самом
-         radar img.
-
-         НЕ на весь body.
-      */
-
-      const observer =
-        new MutationObserver(
-          mutations => {
-            for (
-              const mutation
-                of mutations
-            ) {
-              if (
-                mutation.attributeName !==
-                "src"
-              ) {
-                continue;
-              }
-
-              const src =
-                img.src;
-
-              /*
-                 Если это уже наш
-                 обработанный PNG —
-                 не запускаем обработку.
-              */
-
-              if (
-                src.startsWith(
-                  "data:image/png"
-                )
-              ) {
-                return;
-              }
-
-              /*
-                 Сохраняем настоящий
-                 источник GIF-кадра.
-              */
-
-              img.dataset
-                .cloradOriginalSrc =
-                src;
-
-              if (
-                smoothingLevel > 0
-              ) {
-                processCurrentFrame();
-              }
-            }
-          }
-        );
-
-      observer.observe(
-        img,
-        {
-          attributes: true,
-          attributeFilter: [
-            "src"
-          ]
-        }
-      );
+      process();
     }
   }
-
-  /* =======================================================
-     PUBLIC API
-     ======================================================= */
-
-  window.CLOradRadarSmoothing = {
-    getLevel() {
-      return smoothingLevel;
-    },
-
-    setLevel(value) {
-      const level =
-        Math.round(
-          clamp(
-            Number(value) || 0,
-            MIN_LEVEL,
-            MAX_LEVEL
-          )
-        );
-
-      smoothingLevel =
-        level;
-
-      processingToken++;
-
-      clearCache();
-
-      if (
-        level === 0
-      ) {
-        restoreOriginal();
-        return;
-      }
-
-      processCurrentFrame();
-    },
-
-    refresh() {
-      clearCache();
-      processingToken++;
-
-      if (
-        smoothingLevel > 0
-      ) {
-        processCurrentFrame();
-      }
-    },
-
-    clearCache
-  };
 
   /* =======================================================
      UI
@@ -1322,7 +822,7 @@
   function createUI() {
     if (
       document.getElementById(
-        "cloradSmoothingSetting"
+        "cloradSmoothing"
       )
     ) {
       return;
@@ -1337,66 +837,88 @@
       return;
     }
 
-    const block =
+    const wrapper =
       document.createElement(
         "div"
       );
 
-    block.id =
-      "cloradSmoothingSetting";
+    wrapper.id =
+      "cloradSmoothing";
 
-    block.innerHTML = `
-      <div style="
-        margin-top:12px;
-        padding-top:12px;
-        border-top:1px solid rgba(255,255,255,.12);
-      ">
-        <div style="
+    wrapper.innerHTML = `
+      <div
+        id="cloradSmoothingButton"
+        style="
+          margin-top:10px;
+          padding:10px 12px;
+          border-radius:8px;
+          background:rgba(255,255,255,.07);
+          cursor:pointer;
+          user-select:none;
           font-size:13px;
-          font-weight:600;
-          margin-bottom:8px;
-        ">
-          Сглаживание радара
-        </div>
-
+        "
+      >
         <div style="
           display:flex;
           align-items:center;
-          gap:10px;
+          justify-content:space-between;
         ">
-          <input
-            id="cloradSmoothingRange"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="0"
-            style="
-              flex:1;
-              min-width:0;
-            "
-          >
+          <span>Сглаживание</span>
 
           <span
-            id="cloradSmoothingValue"
+            id="cloradSmoothingArrow"
             style="
-              width:42px;
-              text-align:right;
-              font-variant-numeric:tabular-nums;
+              opacity:.65;
+              font-size:11px;
             "
+          >▼</span>
+        </div>
+      </div>
+
+      <div
+        id="cloradSmoothingPanel"
+        style="
+          display:none;
+          padding:10px 4px 2px;
+        "
+      >
+        <input
+          id="cloradSmoothingRange"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
+          style="
+            width:100%;
+            display:block;
+          "
+        >
+
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          margin-top:5px;
+          font-size:11px;
+          opacity:.7;
+        ">
+          <span>0%</span>
+          <span
+            id="cloradSmoothingValue"
           >0%</span>
+          <span>100%</span>
         </div>
       </div>
     `;
 
+    /*
+       Ставим после настройки кадров,
+       если она существует.
+    */
+
     const framesSetting =
       document.getElementById(
         "framesSetting"
-      );
-
-    const gifResolutionSetting =
-      document.getElementById(
-        "gifResolutionSetting"
       );
 
     if (
@@ -1405,52 +927,85 @@
         settings
     ) {
       framesSetting.after(
-        block
-      );
-    } else if (
-      gifResolutionSetting &&
-      gifResolutionSetting.parentNode ===
-        settings
-    ) {
-      gifResolutionSetting.after(
-        block
+        wrapper
       );
     } else {
       settings.appendChild(
-        block
+        wrapper
       );
     }
+
+    const button =
+      document.getElementById(
+        "cloradSmoothingButton"
+      );
+
+    const panel =
+      document.getElementById(
+        "cloradSmoothingPanel"
+      );
+
+    const arrow =
+      document.getElementById(
+        "cloradSmoothingArrow"
+      );
 
     const range =
       document.getElementById(
         "cloradSmoothingRange"
       );
 
-    if (range) {
-      range.addEventListener(
-        "input",
-        () => {
-          const value =
+    const value =
+      document.getElementById(
+        "cloradSmoothingValue"
+      );
+
+    button.addEventListener(
+      "click",
+      () => {
+        const opened =
+          panel.style.display !==
+          "none";
+
+        panel.style.display =
+          opened
+            ? "none"
+            : "block";
+
+        arrow.textContent =
+          opened
+            ? "▼"
+            : "▲";
+      }
+    );
+
+    range.addEventListener(
+      "input",
+      () => {
+        level =
+          clamp(
             Number(
               range.value
-            );
+            ),
+            0,
+            100
+          );
 
-          const label =
-            document.getElementById(
-              "cloradSmoothingValue"
-            );
+        value.textContent =
+          level + "%";
 
-          if (label) {
-            label.textContent =
-              value + "%";
-          }
+        /*
+           При изменении уровня
+           разрешаем обработать
+           текущий кадр заново.
+        */
 
-          window
-            .CLOradRadarSmoothing
-            .setLevel(value);
-        }
-      );
-    }
+        lastSource = null;
+        lastResult = null;
+
+        process();
+      }
+    );
   }
 
   /* =======================================================
@@ -1459,46 +1014,76 @@
 
   function init() {
     /*
-       По умолчанию ВСЕГДА 0%.
+       Всегда 0% после загрузки.
     */
 
-    smoothingLevel =
+    level =
       DEFAULT_LEVEL;
 
     createUI();
 
     /*
-       Ждём создания Leaflet
-       ImageOverlay.
+       Leaflet создаёт GIF-overlay
+       немного позже.
     */
 
     setTimeout(
       () => {
-        createUI();
-        watchRadarImage();
-
-        /*
-           При 0% здесь ничего
-           не обрабатывается.
-        */
+        rememberCurrentFrame();
       },
-      500
-    );
-
-    /*
-       Ещё одна проверка только
-       при инициализации.
-
-       Это НЕ постоянный observer.
-    */
-
-    setTimeout(
-      () => {
-        watchRadarImage();
-      },
-      1500
+      800
     );
   }
+
+  /* =======================================================
+     PUBLIC API
+     ======================================================= */
+
+  window.CLOradRadarSmoothing = {
+    getLevel() {
+      return level;
+    },
+
+    setLevel(value) {
+      level =
+        clamp(
+          Number(value) || 0,
+          0,
+          100
+        );
+
+      const range =
+        document.getElementById(
+          "cloradSmoothingRange"
+        );
+
+      const label =
+        document.getElementById(
+          "cloradSmoothingValue"
+        );
+
+      if (range) {
+        range.value =
+          String(level);
+      }
+
+      if (label) {
+        label.textContent =
+          level + "%";
+      }
+
+      lastSource = null;
+      lastResult = null;
+
+      process();
+    },
+
+    refresh() {
+      lastSource = null;
+      lastResult = null;
+      process();
+    }
+  };
 
   if (
     document.readyState ===
