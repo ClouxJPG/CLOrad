@@ -1,166 +1,55 @@
 /* =========================================================
-   CLOrad — DMRL Radar Smoothing
-   Отдельный модуль сглаживания ДМРЛ-композита
-
-   0%   — без сглаживания
-   25%  — слабое
-   50%  — среднее
-   75%  — сильное
-   100% — максимальное
-
-   Не изменяет:
-   - палитру
-   - значения радара
-   - разрешение ДМРЛ
-   - ДМРЛ-сетку
-   - GIF
-   - таймлайн
+   CLOrad — Radar Smoothing
+   Интерполяция радарных пикселей
+   Без blur и без изменения географической привязки
    ========================================================= */
 
 (() => {
   "use strict";
 
-  /* =======================================================
-     CONFIG
-     ======================================================= */
-
-  const SETTING_ID =
-    "cloradRadarSmoothingSetting";
-
-  const STYLE_ID =
-    "clorad-radar-smoothing-style";
-
-  const STORAGE_KEY =
-    "cloradRadarSmoothing";
-
-  const DEFAULT_LEVEL = 45;
+  const SETTING_ID = "cloradRadarSmoothingSetting";
+  const STYLE_ID = "cloradRadarSmoothingStyle";
+  const STORAGE_KEY = "cloradRadarSmoothing";
 
   /*
-     Максимальное физическое размытие.
-
-     Значение специально небольшое:
-     нам нужно именно сглаживание
-     радарной сетки, а не эффект
-     сильного Gaussian Blur.
+     0 = исходные квадратные пиксели
+     100 = максимальная интерполяция
   */
-  const MAX_BLUR_PX = 2.4;
+  const DEFAULT_LEVEL = 55;
 
-  let smoothingLevel =
-    DEFAULT_LEVEL;
-
-  /* =======================================================
-     HELPERS
-     ======================================================= */
-
-  const $ = id =>
-    document.getElementById(id);
+  let smoothingLevel = DEFAULT_LEVEL;
+  let processing = false;
+  let processTimer = null;
 
   /* =======================================================
-     LEVEL → BLUR
+     ЗАГРУЗКА НАСТРОЙКИ
      ======================================================= */
 
-  function levelToBlur(level) {
-    const value =
-      Math.max(
-        0,
-        Math.min(
-          100,
-          Number(level) || 0
-        )
-      );
+  function loadLevel() {
+    const value = Number(
+      localStorage.getItem(
+        STORAGE_KEY
+      )
+    );
 
-    /*
-       Нелинейная шкала.
+    if (
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= 100
+    ) {
+      smoothingLevel = value;
+    }
+  }
 
-       На первых значениях изменение
-       очень мягкое, а после 50%
-       сглаживание становится заметнее.
-    */
-    const normalized =
-      value / 100;
-
-    const amount =
-      Math.pow(
-        normalized,
-        1.35
-      );
-
-    return (
-      amount *
-      MAX_BLUR_PX
+  function saveLevel() {
+    localStorage.setItem(
+      STORAGE_KEY,
+      String(smoothingLevel)
     );
   }
 
   /* =======================================================
-     APPLY
-     ======================================================= */
-
-  function applySmoothing() {
-    const blur =
-      levelToBlur(
-        smoothingLevel
-      );
-
-    document.documentElement.style
-      .setProperty(
-        "--clorad-radar-smoothing",
-        `${blur}px`
-      );
-
-    /*
-       Дополнительно выставляем filter
-       непосредственно на существующие
-       радарные изображения.
-
-       Это нужно для уже созданного
-       Leaflet ImageOverlay.
-    */
-    document
-      .querySelectorAll(
-        ".clorad-gif-radar-image"
-      )
-      .forEach(image => {
-        image.style.filter =
-          blur > 0
-            ? `blur(${blur}px)`
-            : "none";
-
-        /*
-           Небольшое увеличение
-           компенсирует визуальное
-           появление пустого края
-           при blur.
-        */
-        image.style.transformOrigin =
-          "center center";
-
-        image.style.transform =
-          blur > 0
-            ? "scale(1.004)"
-            : "none";
-      });
-
-    updateValue();
-  }
-
-  /* =======================================================
-     VALUE LABEL
-     ======================================================= */
-
-  function updateValue() {
-    const value =
-      $("cloradRadarSmoothingValue");
-
-    if (!value) {
-      return;
-    }
-
-    value.textContent =
-      `${smoothingLevel}%`;
-  }
-
-  /* =======================================================
-     STYLE
+     СТИЛЬ
      ======================================================= */
 
   function installStyle() {
@@ -173,60 +62,58 @@
     }
 
     const style =
-      document.createElement(
-        "style"
-      );
+      document.createElement("style");
 
     style.id =
       STYLE_ID;
 
     style.textContent = `
       #${SETTING_ID}
-      .clorad-radar-smoothing-value {
+      .clorad-smoothing-value {
         min-width: 42px;
         text-align: right;
-        color: rgba(255,255,255,.68);
+        color: rgba(255,255,255,.62);
         font-size: 12px;
-        font-weight: 600;
+        font-variant-numeric: tabular-nums;
       }
 
       #${SETTING_ID}
-      .clorad-radar-smoothing-slider {
+      .clorad-smoothing-slider {
         width: 100%;
-        height: 28px;
-        margin: 0;
-        padding: 0;
+        height: 30px;
+        margin: 4px 0 0;
+        accent-color: #72d39b;
         cursor: pointer;
-        accent-color: #65c98a;
       }
 
       #${SETTING_ID}
-      .clorad-radar-smoothing-scale {
+      .clorad-smoothing-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+      }
+
+      #${SETTING_ID}
+      .clorad-smoothing-scale {
         display: flex;
         justify-content: space-between;
-        margin-top: 2px;
+        width: 100%;
+        margin-top: 1px;
         color: rgba(255,255,255,.38);
         font-size: 10px;
       }
 
-      #${SETTING_ID}
-      .clorad-radar-smoothing-head-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-      }
-
       body.light
       #${SETTING_ID}
-      .clorad-radar-smoothing-value {
+      .clorad-smoothing-value {
         color: rgba(0,0,0,.55);
       }
 
       body.light
       #${SETTING_ID}
-      .clorad-radar-smoothing-scale {
-        color: rgba(0,0,0,.40);
+      .clorad-smoothing-scale {
+        color: rgba(0,0,0,.42);
       }
     `;
 
@@ -236,21 +123,493 @@
   }
 
   /* =======================================================
-     SETTING
+     УРОВЕНЬ
      ======================================================= */
 
-  function installSetting() {
-    const settings =
-      $("settings");
+  function getScaleFactor() {
+    /*
+       Чем выше уровень,
+       тем сильнее увеличиваем
+       изображение перед интерполяцией.
 
-    if (!settings) {
-      return false;
+       Само изображение при этом
+       остаётся в тех же GIF_BOUNDS.
+    */
+
+    if (
+      smoothingLevel <= 0
+    ) {
+      return 1;
     }
 
     if (
-      $(SETTING_ID)
+      smoothingLevel < 35
     ) {
-      return true;
+      return 2;
+    }
+
+    if (
+      smoothingLevel < 70
+    ) {
+      return 3;
+    }
+
+    if (
+      smoothingLevel < 90
+    ) {
+      return 4;
+    }
+
+    return 5;
+  }
+
+  /* =======================================================
+     СГЛАЖИВАНИЕ КАДРА
+     ======================================================= */
+
+  async function smoothImage(
+    img
+  ) {
+    if (
+      smoothingLevel <= 0
+    ) {
+      return null;
+    }
+
+    if (
+      !img ||
+      !img.naturalWidth ||
+      !img.naturalHeight
+    ) {
+      return null;
+    }
+
+    const factor =
+      getScaleFactor();
+
+    /*
+       Для получения интерполяции
+       исходный кадр сначала рисуется
+       на увеличенный canvas.
+
+       imageSmoothingEnabled = true
+       заставляет браузер интерполировать
+       соседние радарные пиксели.
+    */
+
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    canvas.width =
+      img.naturalWidth *
+      factor;
+
+    canvas.height =
+      img.naturalHeight *
+      factor;
+
+    const ctx =
+      canvas.getContext(
+        "2d",
+        {
+          alpha: true
+        }
+      );
+
+    if (!ctx) {
+      return null;
+    }
+
+    ctx.imageSmoothingEnabled =
+      true;
+
+    /*
+       На максимальных уровнях
+       используем максимально качественную
+       доступную браузерную интерполяцию.
+    */
+    try {
+      ctx.imageSmoothingQuality =
+        smoothingLevel >= 70
+          ? "high"
+          : "medium";
+    } catch (
+      error
+    ) {}
+
+    ctx.clearRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    ctx.drawImage(
+      img,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    /*
+       Теперь уменьшаем обратно
+       до исходного размера.
+
+       Второй проход дополнительно
+       смешивает соседние пиксели,
+       создавая именно эффект
+       плавной радарной области,
+       а не CSS blur.
+    */
+
+    const resultCanvas =
+      document.createElement(
+        "canvas"
+      );
+
+    resultCanvas.width =
+      img.naturalWidth;
+
+    resultCanvas.height =
+      img.naturalHeight;
+
+    const resultCtx =
+      resultCanvas.getContext(
+        "2d",
+        {
+          alpha: true
+        }
+      );
+
+    if (!resultCtx) {
+      return null;
+    }
+
+    resultCtx.imageSmoothingEnabled =
+      true;
+
+    try {
+      resultCtx.imageSmoothingQuality =
+        smoothingLevel >= 70
+          ? "high"
+          : "medium";
+    } catch (
+      error
+    ) {}
+
+    resultCtx.drawImage(
+      canvas,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+      0,
+      0,
+      resultCanvas.width,
+      resultCanvas.height
+    );
+
+    return resultCanvas.toDataURL(
+      "image/png"
+    );
+  }
+
+  /* =======================================================
+     ОБРАБОТКА LEAFLET IMAGEOVERLAY
+     ======================================================= */
+
+  async function processRadarImage(
+    img
+  ) {
+    if (
+      processing
+    ) {
+      return;
+    }
+
+    if (
+      !img ||
+      !img.classList.contains(
+        "clorad-gif-radar-image"
+      )
+    ) {
+      return;
+    }
+
+    if (
+      smoothingLevel <= 0
+    ) {
+      return;
+    }
+
+    /*
+       Не обрабатываем один и тот же
+       результат повторно.
+    */
+    if (
+      img.dataset.cloradSmoothed ===
+      String(smoothingLevel)
+    ) {
+      return;
+    }
+
+    if (
+      img.dataset.cloradSmoothingBusy ===
+      "1"
+    ) {
+      return;
+    }
+
+    img.dataset.cloradSmoothingBusy =
+      "1";
+
+    try {
+      if (
+        !img.complete ||
+        !img.naturalWidth
+      ) {
+        await new Promise(
+          resolve => {
+            const done =
+              () => {
+                img.removeEventListener(
+                  "load",
+                  done
+                );
+
+                resolve();
+              };
+
+            img.addEventListener(
+              "load",
+              done,
+              {
+                once: true
+              }
+            );
+          }
+        );
+      }
+
+      if (
+        !img.naturalWidth
+      ) {
+        return;
+      }
+
+      const source =
+        img.currentSrc ||
+        img.src;
+
+      const smooth =
+        await smoothImage(
+          img
+        );
+
+      /*
+         Кадр мог смениться,
+         пока canvas обрабатывался.
+      */
+      if (
+        source !==
+        (
+          img.currentSrc ||
+          img.src
+        )
+      ) {
+        return;
+      }
+
+      if (
+        smooth
+      ) {
+        img.src =
+          smooth;
+
+        img.dataset.cloradSmoothed =
+          String(
+            smoothingLevel
+          );
+      }
+
+    } catch (
+      error
+    ) {
+      console.error(
+        "CLOrad radar smoothing:",
+        error
+      );
+
+    } finally {
+      delete img.dataset
+        .cloradSmoothingBusy;
+    }
+  }
+
+  /* =======================================================
+     ПОИСК РАДАРНОГО КАДРА
+     ======================================================= */
+
+  function processCurrentRadarImages() {
+    if (
+      smoothingLevel <= 0
+    ) {
+      return;
+    }
+
+    document
+      .querySelectorAll(
+        "img.clorad-gif-radar-image"
+      )
+      .forEach(
+        img => {
+          processRadarImage(
+            img
+          );
+        }
+      );
+  }
+
+  /* =======================================================
+     НАСТРОЙКА
+     ======================================================= */
+
+  function setSmoothing(
+    value
+  ) {
+    value =
+      Number(value);
+
+    if (
+      !Number.isFinite(value)
+    ) {
+      value =
+        DEFAULT_LEVEL;
+    }
+
+    value =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(value)
+        )
+      );
+
+    smoothingLevel =
+      value;
+
+    saveLevel();
+
+    updateSetting();
+
+    /*
+       Удаляем только обработанный
+       результат сглаживания.
+
+       Географические bounds Leaflet
+       вообще не трогаем.
+    */
+    document
+      .querySelectorAll(
+        "img.clorad-gif-radar-image"
+      )
+      .forEach(
+        img => {
+          delete img.dataset
+            .cloradSmoothed;
+
+          /*
+             Важный момент:
+             нельзя просто вернуть src
+             из dataURL.
+
+             Текущий Leaflet layer сам
+             установит следующий кадр.
+          */
+        }
+      );
+
+    scheduleProcess();
+  }
+
+  function scheduleProcess() {
+    if (
+      processTimer
+    ) {
+      clearTimeout(
+        processTimer
+      );
+    }
+
+    processTimer =
+      setTimeout(
+        () => {
+          processTimer =
+            null;
+
+          processCurrentRadarImages();
+        },
+        40
+      );
+  }
+
+  /* =======================================================
+     UI
+     ======================================================= */
+
+  function updateSetting() {
+    const setting =
+      document.getElementById(
+        SETTING_ID
+      );
+
+    if (!setting) {
+      return;
+    }
+
+    const slider =
+      setting.querySelector(
+        ".clorad-smoothing-slider"
+      );
+
+    const value =
+      setting.querySelector(
+        ".clorad-smoothing-value"
+      );
+
+    if (slider) {
+      slider.value =
+        smoothingLevel;
+    }
+
+    if (value) {
+      value.textContent =
+        smoothingLevel +
+        "%";
+    }
+  }
+
+  function installSetting() {
+    const settings =
+      document.getElementById(
+        "settings"
+      );
+
+    if (!settings) {
+      return;
+    }
+
+    if (
+      document.getElementById(
+        SETTING_ID
+      )
+    ) {
+      updateSetting();
+      return;
     }
 
     const setting =
@@ -267,67 +626,68 @@
     setting.innerHTML = `
       <button
         class="settingHead"
-        id="cloradRadarSmoothingHead"
+        id="cloradSmoothingHead"
         type="button"
       >
-        <span
-          class="clorad-radar-smoothing-head-row"
-        >
-          <span>
-            Сглаживание ДМРЛ
-          </span>
+        <span>
+          Сглаживание радара
+        </span>
 
-          <span
-            class="clorad-radar-smoothing-value"
-            id="cloradRadarSmoothingValue"
-          >
-            ${smoothingLevel}%
-          </span>
-
-          <span class="settingArrow">
-            ›
-          </span>
+        <span class="settingArrow">
+          ›
         </span>
       </button>
 
       <div
         class="settingBody"
-        id="cloradRadarSmoothingBody"
+        id="cloradSmoothingBody"
       >
-        <input
-          class="clorad-radar-smoothing-slider"
-          id="cloradRadarSmoothingSlider"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          value="${smoothingLevel}"
+        <div
+          class="clorad-smoothing-row"
         >
+          <input
+            class="clorad-smoothing-slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="${smoothingLevel}"
+          >
+
+          <span
+            class="clorad-smoothing-value"
+          >
+            ${smoothingLevel}%
+          </span>
+        </div>
 
         <div
-          class="clorad-radar-smoothing-scale"
+          class="clorad-smoothing-scale"
         >
           <span>
-            Резко
+            Исходное
           </span>
 
           <span>
-            Плавно
+            Плавное
           </span>
         </div>
       </div>
     `;
 
     /*
-       Ставим настройку после
-       настройки разрешения ДМРЛ,
-       если она уже существует.
+       Ставим сразу после разрешения ДМРЛ.
     */
+
     const resolution =
-      $("gifResolutionSetting");
+      document.getElementById(
+        "gifResolutionSetting"
+      );
 
     const palette =
-      $("gifPaletteSetting");
+      document.getElementById(
+        "gifPaletteSetting"
+      );
 
     if (resolution) {
       resolution.after(
@@ -343,286 +703,184 @@
       );
     }
 
-    /* =====================================================
-       OPEN / CLOSE
-       ===================================================== */
-
     const head =
-      $("cloradRadarSmoothingHead");
-
-    if (head) {
-      head.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
-
-          const isOpen =
-            setting.classList.contains(
-              "open"
-            );
-
-          document
-            .querySelectorAll(
-              ".setting.open"
-            )
-            .forEach(
-              other => {
-                if (
-                  other !==
-                  setting
-                ) {
-                  other.classList.remove(
-                    "open"
-                  );
-                }
-              }
-            );
-
-          setting.classList.toggle(
-            "open",
-            !isOpen
-          );
-        }
+      document.getElementById(
+        "cloradSmoothingHead"
       );
-    }
 
-    /* =====================================================
-       SLIDER
-       ===================================================== */
+    head?.addEventListener(
+      "click",
+      event => {
+        event.stopPropagation();
+
+        const isOpen =
+          setting.classList.contains(
+            "open"
+          );
+
+        document
+          .querySelectorAll(
+            ".setting.open"
+          )
+          .forEach(
+            other => {
+              if (
+                other !==
+                setting
+              ) {
+                other.classList.remove(
+                  "open"
+                );
+              }
+            }
+          );
+
+        setting.classList.toggle(
+          "open",
+          !isOpen
+        );
+      }
+    );
 
     const slider =
-      $("cloradRadarSmoothingSlider");
-
-    if (slider) {
-      slider.addEventListener(
-        "input",
-        event => {
-          smoothingLevel =
-            Number(
-              event.target.value
-            );
-
-          saveLevel();
-          applySmoothing();
-        }
+      setting.querySelector(
+        ".clorad-smoothing-slider"
       );
-    }
 
-    updateValue();
+    slider?.addEventListener(
+      "input",
+      event => {
+        event.stopPropagation();
 
-    return true;
-  }
-
-  /* =======================================================
-     STORAGE
-     ======================================================= */
-
-  function loadLevel() {
-    try {
-      const saved =
-        localStorage.getItem(
-          STORAGE_KEY
+        setSmoothing(
+          event.target.value
         );
-
-      if (
-        saved === null
-      ) {
-        return;
       }
+    );
 
-      const value =
-        Number(saved);
-
-      if (
-        Number.isFinite(value)
-      ) {
-        smoothingLevel =
-          Math.max(
-            0,
-            Math.min(
-              100,
-              value
-            )
-          );
-      }
-    } catch {
-      /*
-         Если localStorage
-         недоступен — используем
-         значение по умолчанию.
-      */
-    }
-  }
-
-  function saveLevel() {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        String(
-          smoothingLevel
-        )
-      );
-    } catch {
-      /*
-         Ничего не делаем.
-      */
-    }
+    updateSetting();
   }
 
   /* =======================================================
-     WATCH RADAR LAYERS
+     НОВЫЕ КАДРЫ
      ======================================================= */
 
-  function installRadarObserver() {
-    const observer =
-      new MutationObserver(
-        mutations => {
-          let radarChanged =
-            false;
+  const observer =
+    new MutationObserver(
+      mutations => {
+        let radarChanged =
+          false;
 
+        for (
+          const mutation of mutations
+        ) {
           for (
-            const mutation of mutations
+            const node of mutation.addedNodes
           ) {
             if (
-              mutation.type !==
-              "childList"
+              node.nodeType !==
+              Node.ELEMENT_NODE
             ) {
               continue;
             }
 
-            for (
-              const node of mutation.addedNodes
+            if (
+              node.matches?.(
+                "img.clorad-gif-radar-image"
+              ) ||
+              node.querySelector?.(
+                "img.clorad-gif-radar-image"
+              )
             ) {
-              if (
-                node.nodeType !==
-                Node.ELEMENT_NODE
-              ) {
-                continue;
-              }
+              radarChanged =
+                true;
 
-              if (
-                node.matches?.(
-                  ".clorad-gif-radar-image"
-                ) ||
-                node.querySelector?.(
-                  ".clorad-gif-radar-image"
-                )
-              ) {
-                radarChanged =
-                  true;
-              }
+              break;
             }
           }
 
           if (
             radarChanged
           ) {
-            applySmoothing();
+            break;
           }
         }
-      );
 
-    observer.observe(
-      document.body,
-      {
-        childList: true,
-        subtree: true
+        if (
+          radarChanged
+        ) {
+          scheduleProcess();
+        }
       }
     );
-  }
 
   /* =======================================================
      PUBLIC API
      ======================================================= */
 
   window.CLOradSetRadarSmoothing =
-    function(level) {
-      smoothingLevel =
-        Math.max(
-          0,
-          Math.min(
-            100,
-            Number(level) || 0
-          )
-        );
-
-      const slider =
-        $("cloradRadarSmoothingSlider");
-
-      if (slider) {
-        slider.value =
-          smoothingLevel;
-      }
-
-      saveLevel();
-      applySmoothing();
-
-      return smoothingLevel;
-    };
+    setSmoothing;
 
   window.CLOradRadarSmoothing =
-    function() {
-      return smoothingLevel;
-    };
+    () =>
+      smoothingLevel;
 
   /* =======================================================
      INIT
      ======================================================= */
 
-  function init() {
-    loadLevel();
+  loadLevel();
 
-    installStyle();
+  installStyle();
 
-    installSetting();
-
-    applySmoothing();
-
-    installRadarObserver();
-
-    /*
-       Если настройки создаются
-       другими скриптами позже —
-       ждём появления блока.
-    */
-    if (
-      !$(SETTING_ID)
-    ) {
-      const observer =
-        new MutationObserver(
-          () => {
-            if (
-              installSetting()
-            ) {
-              applySmoothing();
-              observer.disconnect();
-            }
-          }
-        );
-
-      observer.observe(
-        document.body,
-        {
-          childList: true,
-          subtree: true
-        }
-      );
-    }
-  }
+  installSetting();
 
   if (
-    document.readyState ===
-    "loading"
+    document.body
   ) {
-    document.addEventListener(
-      "DOMContentLoaded",
-      init,
+    observer.observe(
+      document.body,
       {
-        once: true
+        childList:
+          true,
+        subtree:
+          true
       }
     );
-  } else {
-    init();
+  }
+
+  /*
+     Панель settings может
+     создаваться позже index.html.
+  */
+  const settingsObserver =
+    new MutationObserver(
+      () => {
+        if (
+          document.getElementById(
+            "settings"
+          ) &&
+          !document.getElementById(
+            SETTING_ID
+          )
+        ) {
+          installSetting();
+        }
+      }
+    );
+
+  if (
+    document.body
+  ) {
+    settingsObserver.observe(
+      document.body,
+      {
+        childList:
+          true,
+        subtree:
+          true
+      }
+    );
   }
 
 })();
