@@ -48,6 +48,9 @@
     "#777c91"
   ];
 
+  /*
+     ИРАМ оставляем БЕЗ ИЗМЕНЕНИЙ.
+  */
   const IRAM_COLORS = [
     "#b9c1c7",
     "#a9a9a9",
@@ -111,18 +114,38 @@
       return color.toLowerCase();
     }
 
+    if (
+      /^#[0-9a-fA-F]{3}$/.test(
+        color
+      )
+    ) {
+      return (
+        "#" +
+        color
+          .slice(1)
+          .split("")
+          .map(
+            char =>
+              char + char
+          )
+          .join("")
+          .toLowerCase()
+      );
+    }
+
     return "#000000";
   }
 
   function cloneColors(colors) {
     return Array.from(
       {
-        length: COLOR_COUNT
+        length:
+          COLOR_COUNT
       },
       (_, index) =>
         normalizeColor(
           colors?.[index] ||
-          "#000000"
+            "#000000"
         )
     );
   }
@@ -182,7 +205,9 @@
         JSON.parse(raw);
 
       if (
-        !Array.isArray(parsed)
+        !Array.isArray(
+          parsed
+        )
       ) {
         customPalettes = [];
         return;
@@ -247,21 +272,37 @@
   function getSystemPalette(
     id
   ) {
-    if (id === "rgmc") {
+    if (
+      id === "rgmc"
+    ) {
       return {
-        id: "rgmc",
-        name: "РГМЦ",
-        system: true,
+        id:
+          "rgmc",
+
+        name:
+          "РГМЦ",
+
+        system:
+          true,
+
         colors:
           RGMC_COLORS.slice()
       };
     }
 
-    if (id === "iram") {
+    if (
+      id === "iram"
+    ) {
       return {
-        id: "iram",
-        name: "ИРАМ",
-        system: true,
+        id:
+          "iram",
+
+        name:
+          "ИРАМ",
+
+        system:
+          true,
+
         colors:
           IRAM_COLORS.slice()
       };
@@ -272,7 +313,9 @@
 
   function getPalette(id) {
     const system =
-      getSystemPalette(id);
+      getSystemPalette(
+        id
+      );
 
     if (system) {
       return system;
@@ -282,14 +325,21 @@
       customPalettes.find(
         palette =>
           palette.id === id
-      ) || null
+      ) ||
+      null
     );
   }
 
   function getAllPalettes() {
     return [
-      getSystemPalette("rgmc"),
-      getSystemPalette("iram"),
+      getSystemPalette(
+        "rgmc"
+      ),
+
+      getSystemPalette(
+        "iram"
+      ),
+
       ...customPalettes
     ];
   }
@@ -309,9 +359,28 @@
       palette.id;
 
     /*
-       Основной мост находится
-       в gif-radar.js.
+       ВАЖНО.
+
+       Системные палитры используют
+       свои ID:
+
+       rgmc
+       iram
+
+       А ЛЮБАЯ пользовательская
+       палитра должна передаваться
+       в gif-radar.js именно как:
+
+       custom
+
+       Её настоящий ID нужен только
+       менеджеру для хранения/редактирования.
     */
+
+    const radarPaletteId =
+      palette.system
+        ? palette.id
+        : "custom";
 
     if (
       typeof window.CLOradApplyPalette ===
@@ -319,7 +388,7 @@
     ) {
       const result =
         window.CLOradApplyPalette(
-          palette.id,
+          radarPaletteId,
           palette.colors.slice(),
           palette.name
         );
@@ -329,10 +398,9 @@
       return result !== false;
     }
 
-    /*
-       Совместимость со старой
-       системой.
-    */
+    /* =====================================================
+       СОВМЕСТИМОСТЬ СО СТАРОЙ СИСТЕМОЙ
+       ===================================================== */
 
     if (
       palette.id === "rgmc" ||
@@ -352,9 +420,13 @@
       }
     }
 
+    /*
+       Старый API кастомной палитры.
+    */
     if (
+      !palette.system &&
       typeof window.CLOradSetCustomGIFPalette ===
-      "function"
+        "function"
     ) {
       window.CLOradSetCustomGIFPalette(
         palette.colors.slice(),
@@ -454,7 +526,8 @@
     saveCustomPalettes();
 
     if (
-      selectedPaletteId === id
+      selectedPaletteId ===
+      id
     ) {
       selectedPaletteId =
         "rgmc";
@@ -467,7 +540,8 @@
     }
 
     if (
-      editingPaletteId === id
+      editingPaletteId ===
+      id
     ) {
       editingPaletteId =
         null;
@@ -529,8 +603,7 @@
         ? nameInput.value.trim()
         : "";
 
-    const colors =
-      [];
+    const colors = [];
 
     for (
       let i = 0;
@@ -564,6 +637,13 @@
     selectedPaletteId =
       palette.id;
 
+    /*
+       Здесь palette.id может быть
+       custom_XXXXXXXX.
+
+       applyPalette() сам преобразует
+       его в "custom" для radar API.
+    */
     applyPalette(
       palette
     );
@@ -1102,15 +1182,6 @@
         openManager();
       }
     );
-
-    /*
-       Ставим сразу после блока
-       РГМЦ/ИРАМ.
-
-       Если они находятся в одном
-       контейнере — кнопка окажется
-       непосредственно под ними.
-    */
 
     const anchor =
       iram ||
@@ -1755,6 +1826,7 @@
         getAllPalettes().map(
           palette => ({
             ...palette,
+
             colors:
               palette.colors.slice()
           })
@@ -1771,6 +1843,7 @@
 
         return {
           ...palette,
+
           colors:
             palette.colors.slice()
         };
@@ -1820,8 +1893,11 @@
       observer.observe(
         document.body,
         {
-          childList: true,
-          subtree: true
+          childList:
+            true,
+
+          subtree:
+            true
         }
       );
     }
@@ -1849,7 +1925,8 @@
       "DOMContentLoaded",
       init,
       {
-        once: true
+        once:
+          true
       }
     );
   } else {
