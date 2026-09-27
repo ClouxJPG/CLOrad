@@ -6,9 +6,9 @@
    Без смешивания RGB.
    Без изменения исходных радарных классов.
 
-   UI создаётся независимо от Leaflet.
-   Обработка выполняется только после отпускания
-   ползунка.
+   UI полностью независим от .tools и Leaflet.
+   Кнопка всегда создаётся непосредственно в body.
+   Обработка выполняется только после отпускания ползунка.
 
    Серверная нагрузка:
    отсутствует — всё выполняется на устройстве пользователя.
@@ -17,6 +17,7 @@
 (() => {
 
   "use strict";
+
 
   /* =======================================================
      CONFIG
@@ -58,9 +59,12 @@
   let cache = new Map();
   let cacheOrder = [];
 
-  let uiReady = false;
   let mapHooksReady = false;
   let leafletHookReady = false;
+
+  let uiObserver = null;
+  let uiRepairTimer = null;
+  let uiRepairRunning = false;
 
 
   /* =======================================================
@@ -79,155 +83,229 @@
 
     style.textContent = `
 
+      /* ===================================================
+         SMOOTHING BUTTON
+         Кнопка НЕ зависит от .tools
+      =================================================== */
+
       #cloradSmoothingButton{
-        position:relative;
-        width:44px;
-        height:44px;
-        min-width:44px;
-        min-height:44px;
+        position:fixed !important;
 
-        border:1px solid #35404a;
-        border-radius:9px;
+        left:16px !important;
+        top:110px !important;
 
-        background:#171e24;
-        color:#cbd2d7;
+        width:44px !important;
+        height:44px !important;
 
-        display:grid;
-        place-items:center;
+        min-width:44px !important;
+        min-height:44px !important;
 
-        padding:0;
-        margin:0;
+        max-width:44px !important;
+        max-height:44px !important;
 
-        box-sizing:border-box;
+        margin:0 !important;
+        padding:0 !important;
 
-        cursor:pointer;
+        display:grid !important;
+        place-items:center !important;
 
-        z-index:2147483646;
+        box-sizing:border-box !important;
+
+        border:1px solid #35404a !important;
+        border-radius:9px !important;
+
+        background:#171e24 !important;
+        color:#cbd2d7 !important;
+
+        opacity:1 !important;
+        visibility:visible !important;
+
+        pointer-events:auto !important;
+
+        cursor:pointer !important;
+
+        z-index:2147483646 !important;
+
+        appearance:none !important;
+        -webkit-appearance:none !important;
+
+        transform:none !important;
+
+        overflow:visible !important;
       }
+
+
+      #cloradSmoothingButton:hover{
+        background:#202930 !important;
+      }
+
+
+      #cloradSmoothingButton:active{
+        transform:scale(.96) !important;
+      }
+
 
       #cloradSmoothingButton.active{
-        background:#26332e;
-        border-color:#51e29a;
-        color:#51e29a;
+        background:#26332e !important;
+        border-color:#51e29a !important;
+        color:#51e29a !important;
       }
+
 
       #cloradSmoothingButton svg{
-        width:24px;
-        height:24px;
+        width:24px !important;
+        height:24px !important;
 
-        fill:none;
+        display:block !important;
 
-        stroke:currentColor;
-        stroke-width:1.8;
+        fill:none !important;
 
-        stroke-linecap:round;
-        stroke-linejoin:round;
+        stroke:currentColor !important;
+        stroke-width:1.8 !important;
 
-        pointer-events:none;
+        stroke-linecap:round !important;
+        stroke-linejoin:round !important;
+
+        pointer-events:none !important;
+
+        opacity:1 !important;
+        visibility:visible !important;
       }
 
-      #cloradSmoothingPanel{
-        position:fixed;
 
-        left:50%;
-        bottom:174px;
+      /* ===================================================
+         PANEL
+      =================================================== */
+
+      #cloradSmoothingPanel{
+        position:fixed !important;
+
+        left:50% !important;
+        bottom:174px !important;
 
         transform:
           translateX(-50%)
-          translateY(10px);
+          translateY(10px) !important;
 
-        width:min(520px,calc(100vw - 32px));
-        height:54px;
+        width:min(520px,calc(100vw - 32px)) !important;
+        height:54px !important;
 
-        padding:0 15px;
+        padding:0 15px !important;
 
-        display:flex;
-        align-items:center;
-        gap:12px;
+        display:flex !important;
+        align-items:center !important;
+        gap:12px !important;
 
-        background:#11181e;
+        box-sizing:border-box !important;
 
-        border:1px solid #35404a;
-        border-radius:11px;
+        background:#11181e !important;
 
-        box-shadow:0 8px 30px #0008;
+        border:1px solid #35404a !important;
+        border-radius:11px !important;
 
-        opacity:0;
-        pointer-events:none;
+        box-shadow:0 8px 30px #0008 !important;
+
+        opacity:0 !important;
+        visibility:hidden !important;
+
+        pointer-events:none !important;
 
         transition:
           opacity .16s ease,
-          transform .16s ease;
+          transform .16s ease,
+          visibility .16s ease !important;
 
-        z-index:2147483645;
-
-        box-sizing:border-box;
+        z-index:2147483645 !important;
       }
 
+
       #cloradSmoothingPanel.show{
-        opacity:1;
-        pointer-events:auto;
+        opacity:1 !important;
+
+        visibility:visible !important;
+
+        pointer-events:auto !important;
 
         transform:
           translateX(-50%)
-          translateY(0);
+          translateY(0) !important;
       }
+
 
       #cloradSmoothingValue{
-        width:43px;
+        width:43px !important;
 
-        text-align:center;
+        flex:none !important;
 
-        color:#dce2e6;
+        text-align:center !important;
 
-        font-size:13px;
-        font-weight:600;
+        color:#dce2e6 !important;
 
-        flex:none;
+        font-size:13px !important;
+        font-weight:600 !important;
       }
+
 
       #cloradSmoothingRange{
-        width:100%;
-        margin:0;
+        width:100% !important;
 
-        accent-color:#51e29a;
+        margin:0 !important;
+
+        accent-color:#51e29a !important;
+
+        cursor:pointer !important;
       }
+
+
+      /* ===================================================
+         STATUS
+      =================================================== */
 
       #cloradSmoothingStatus{
-        position:fixed;
+        position:fixed !important;
 
-        left:50%;
-        bottom:235px;
+        left:50% !important;
+        bottom:235px !important;
 
-        transform:translateX(-50%);
+        transform:translateX(-50%) !important;
 
-        background:#151d23;
-        color:#cbd2d7;
+        background:#151d23 !important;
+        color:#cbd2d7 !important;
 
-        border:1px solid #35404a;
-        border-radius:8px;
+        border:1px solid #35404a !important;
+        border-radius:8px !important;
 
-        padding:7px 11px;
+        padding:7px 11px !important;
 
-        font-size:11px;
+        font-size:11px !important;
 
-        opacity:0;
-        pointer-events:none;
+        opacity:0 !important;
+        visibility:hidden !important;
 
-        transition:opacity .15s ease;
+        pointer-events:none !important;
 
-        z-index:2147483647;
+        transition:opacity .15s ease !important;
+
+        z-index:2147483647 !important;
       }
+
 
       #cloradSmoothingStatus.show{
-        opacity:1;
+        opacity:1 !important;
+        visibility:visible !important;
       }
+
 
       @media(max-width:600px){
 
+        #cloradSmoothingButton{
+          left:12px !important;
+          top:108px !important;
+        }
+
         #cloradSmoothingPanel{
-          bottom:168px;
-          width:calc(100vw - 24px);
+          bottom:168px !important;
+          width:calc(100vw - 24px) !important;
         }
 
       }
@@ -240,95 +318,166 @@
 
 
   /* =======================================================
-     FIND TOOLS CONTAINER
+     CREATE BUTTON
   ======================================================= */
 
-  function findTools(){
+  function createButton(){
 
-    const selectors = [
+    let button =
+      document.getElementById(
+        "cloradSmoothingButton"
+      );
 
-      ".tools",
-      ".controls",
-      ".leftTools",
-      "#tools"
 
-    ];
-
-    for(const selector of selectors){
-
-      const node =
-        document.querySelector(selector);
-
-      if(node){
-        return node;
-      }
-
+    if(button){
+      return button;
     }
 
-    return null;
+
+    button =
+      document.createElement("button");
+
+    button.id =
+      "cloradSmoothingButton";
+
+    button.type =
+      "button";
+
+    button.title =
+      "Сглаживание радара";
+
+    button.setAttribute(
+      "aria-label",
+      "Сглаживание радара"
+    );
+
+
+    button.innerHTML = `
+
+      <svg viewBox="0 0 24 24">
+
+        <path
+          d="M4 17
+             C7 17 7 11 10 11
+             C13 11 13 7 16 7
+             C18 7 19 5 20 4"
+        />
+
+        <path
+          d="M4 20
+             C8 20 8 16 11 16
+             C14 16 15 12 18 12
+             C19 12 20 11 20 10"
+        />
+
+      </svg>
+
+    `;
+
+
+    /*
+      КРИТИЧНО:
+
+      Кнопка всегда добавляется непосредственно
+      в body.
+
+      Мы больше НЕ делаем:
+
+        .tools.appendChild(button)
+
+      Поэтому никакая перерисовка .tools
+      не сможет удалить кнопку.
+    */
+
+    document.body.appendChild(button);
+
+
+    return button;
 
   }
 
 
   /* =======================================================
-     ATTACH BUTTON
+     CREATE PANEL
   ======================================================= */
 
-  function attachButton(){
+  function createPanel(){
 
-    const button =
+    let panel =
       document.getElementById(
-        "cloradSmoothingButton"
+        "cloradSmoothingPanel"
       );
 
-    if(!button){
-      return;
+
+    if(panel){
+      return panel;
     }
 
-    const tools =
-      findTools();
 
-    if(tools){
+    panel =
+      document.createElement("div");
 
-      /*
-        Если кнопка уже находится
-        внутри правильного контейнера,
-        ничего не делаем.
-      */
+    panel.id =
+      "cloradSmoothingPanel";
 
-      if(button.parentElement !== tools){
 
-        tools.appendChild(button);
+    panel.innerHTML = `
 
-      }
+      <span id="cloradSmoothingValue">
+        ${strength}%
+      </span>
 
-      /*
-        Возвращаем обычное позиционирование,
-        если ранее использовался fallback.
-      */
+      <input
+        id="cloradSmoothingRange"
+        type="range"
+        min="${CONFIG.min}"
+        max="${CONFIG.max}"
+        step="${CONFIG.step}"
+        value="${strength}"
+      >
 
-      button.style.position = "relative";
-      button.style.left = "";
-      button.style.top = "";
+    `;
 
-      return;
 
+    document.body.appendChild(panel);
+
+
+    return panel;
+
+  }
+
+
+  /* =======================================================
+     CREATE STATUS
+  ======================================================= */
+
+  function createStatus(){
+
+    let status =
+      document.getElementById(
+        "cloradSmoothingStatus"
+      );
+
+
+    if(status){
+      return status;
     }
 
-    /*
-      Если .tools ещё не существует,
-      временно оставляем кнопку в body.
-    */
 
-    if(button.parentElement !== document.body){
+    status =
+      document.createElement("div");
 
-      document.body.appendChild(button);
+    status.id =
+      "cloradSmoothingStatus";
 
-    }
+    status.textContent =
+      "Обработка радара…";
 
-    button.style.position = "fixed";
-    button.style.left = "16px";
-    button.style.top = "110px";
+
+    document.body.appendChild(status);
+
+
+    return status;
 
   }
 
@@ -339,133 +488,21 @@
 
   function createUI(){
 
+    if(!document.body){
+      return;
+    }
+
+
     installStyle();
 
-    let button =
-      document.getElementById(
-        "cloradSmoothingButton"
-      );
 
-    if(!button){
+    const button =
+      createButton();
 
-      button =
-        document.createElement("button");
+    const panel =
+      createPanel();
 
-      button.id =
-        "cloradSmoothingButton";
-
-      button.type =
-        "button";
-
-      button.title =
-        "Сглаживание радара";
-
-      button.setAttribute(
-        "aria-label",
-        "Сглаживание радара"
-      );
-
-      button.innerHTML = `
-
-        <svg viewBox="0 0 24 24">
-
-          <path
-            d="M4 17
-               C7 17 7 11 10 11
-               C13 11 13 7 16 7
-               C18 7 19 5 20 4"
-          />
-
-          <path
-            d="M4 20
-               C8 20 8 16 11 16
-               C14 16 15 12 18 12
-               C19 12 20 11 20 10"
-          />
-
-        </svg>
-
-      `;
-
-      document.body.appendChild(button);
-
-    }
-
-
-    /*
-      Кнопка сначала создаётся в body.
-      Затем переносится в .tools.
-
-      Это важно:
-      если основной CLOrad UI создаётся
-      позже, кнопка больше не теряется.
-    */
-
-    attachButton();
-
-
-    /* =====================================================
-       PANEL
-    ===================================================== */
-
-    let panel =
-      document.getElementById(
-        "cloradSmoothingPanel"
-      );
-
-    if(!panel){
-
-      panel =
-        document.createElement("div");
-
-      panel.id =
-        "cloradSmoothingPanel";
-
-      panel.innerHTML = `
-
-        <span id="cloradSmoothingValue">
-          ${strength}%
-        </span>
-
-        <input
-          id="cloradSmoothingRange"
-          type="range"
-          min="${CONFIG.min}"
-          max="${CONFIG.max}"
-          step="${CONFIG.step}"
-          value="${strength}"
-        >
-
-      `;
-
-      document.body.appendChild(panel);
-
-    }
-
-
-    /* =====================================================
-       STATUS
-    ===================================================== */
-
-    let status =
-      document.getElementById(
-        "cloradSmoothingStatus"
-      );
-
-    if(!status){
-
-      status =
-        document.createElement("div");
-
-      status.id =
-        "cloradSmoothingStatus";
-
-      status.textContent =
-        "Обработка радара…";
-
-      document.body.appendChild(status);
-
-    }
+    createStatus();
 
 
     /* =====================================================
@@ -476,6 +513,7 @@
 
       button.__cloradSmoothingEvents = true;
 
+
       button.addEventListener(
         "click",
         () => {
@@ -483,19 +521,23 @@
           enabled =
             !enabled;
 
+
           button.classList.toggle(
             "active",
             enabled
           );
+
 
           panel.classList.toggle(
             "show",
             enabled
           );
 
+
           if(enabled){
 
             scanLayers();
+
 
             if(currentLayer){
 
@@ -516,7 +558,7 @@
 
 
     /* =====================================================
-       RANGE
+       RANGE EVENTS
     ===================================================== */
 
     const range =
@@ -524,12 +566,15 @@
         "cloradSmoothingRange"
       );
 
+
     if(
       range &&
       !range.__cloradSmoothingEvents
     ){
 
-      range.__cloradSmoothingEvents = true;
+      range.__cloradSmoothingEvents =
+        true;
+
 
       range.addEventListener(
         "input",
@@ -538,10 +583,12 @@
           strength =
             Number(range.value);
 
+
           const value =
             document.getElementById(
               "cloradSmoothingValue"
             );
+
 
           if(value){
 
@@ -555,7 +602,12 @@
 
 
       /*
-        Обработка только после отпускания
+        ВАЖНО:
+
+        input только меняет число.
+
+        Реальная обработка начинается
+        только на change — после отпускания
         ползунка.
       */
 
@@ -574,9 +626,6 @@
 
     }
 
-
-    uiReady = true;
-
   }
 
 
@@ -584,69 +633,153 @@
      UI WATCHER
   ======================================================= */
 
-  function startUIWatcher(){
-
-    /*
-      Если CLOrad позже перерисует .tools,
-      кнопка автоматически вернётся.
-    */
+  function repairUI(){
 
     if(
-      window.__CLOradSmoothingUIObserver
+      uiRepairRunning
     ){
 
       return;
 
     }
 
-    const observer =
-      new MutationObserver(
+
+    uiRepairRunning =
+      true;
+
+
+    try{
+
+      /*
+        Если какой-либо другой код удалил кнопку,
+        создаём её заново.
+      */
+
+      createUI();
+
+
+    }finally{
+
+      uiRepairRunning =
+        false;
+
+    }
+
+  }
+
+
+  function scheduleUIRepair(){
+
+    if(uiRepairTimer){
+      return;
+    }
+
+
+    uiRepairTimer =
+      requestAnimationFrame(
         () => {
 
-          const button =
-            document.getElementById(
-              "cloradSmoothingButton"
-            );
+          uiRepairTimer =
+            null;
 
-          if(!button){
+          repairUI();
 
-            createUI();
+        }
+      );
 
-            return;
+  }
+
+
+  function startUIWatcher(){
+
+    if(uiObserver){
+      return;
+    }
+
+
+    if(!document.body){
+      return;
+    }
+
+
+    uiObserver =
+      new MutationObserver(
+        mutations => {
+
+          let relevant =
+            false;
+
+
+          for(
+            const mutation of mutations
+          ){
+
+            if(
+              mutation.type !==
+              "childList"
+            ){
+
+              continue;
+
+            }
+
+
+            if(
+              mutation.addedNodes.length ||
+              mutation.removedNodes.length
+            ){
+
+              relevant =
+                true;
+
+              break;
+
+            }
 
           }
 
-          const tools =
-            findTools();
 
-          if(
-            tools &&
-            button.parentElement !== tools
-          ){
+          if(relevant){
 
-            tools.appendChild(button);
+            const button =
+              document.getElementById(
+                "cloradSmoothingButton"
+              );
 
-            button.style.position =
-              "relative";
+            const panel =
+              document.getElementById(
+                "cloradSmoothingPanel"
+              );
 
-            button.style.left = "";
-            button.style.top = "";
+            const range =
+              document.getElementById(
+                "cloradSmoothingRange"
+              );
+
+
+            if(
+              !button ||
+              !panel ||
+              !range
+            ){
+
+              scheduleUIRepair();
+
+            }
 
           }
 
         }
       );
 
-    observer.observe(
+
+    uiObserver.observe(
       document.body,
       {
         childList:true,
         subtree:true
       }
     );
-
-    window.__CLOradSmoothingUIObserver =
-      observer;
 
   }
 
@@ -661,6 +794,7 @@
       document.getElementById(
         "cloradSmoothingStatus"
       );
+
 
     if(element){
 
@@ -679,6 +813,7 @@
       document.getElementById(
         "cloradSmoothingStatus"
       );
+
 
     if(element){
 
@@ -703,11 +838,14 @@
         const image =
           new Image();
 
+
         image.crossOrigin =
           "anonymous";
 
+
         image.onload =
           () => resolve(image);
+
 
         image.onerror =
           () => reject(
@@ -715,6 +853,7 @@
               "Не удалось прочитать радарный кадр"
             )
           );
+
 
         image.src =
           source;
@@ -739,11 +878,13 @@
         "canvas"
       );
 
+
     canvas.width =
       width;
 
     canvas.height =
       height;
+
 
     return canvas;
 
@@ -793,6 +934,7 @@
     const counts =
       new Map();
 
+
     for(
       let i = 0;
       i < data.length;
@@ -802,9 +944,11 @@
       const a =
         data[i + 3];
 
+
       if(a < 12){
         continue;
       }
+
 
       const key =
         colorKey(
@@ -814,6 +958,7 @@
           a
         );
 
+
       counts.set(
         key,
         (counts.get(key) || 0) + 1
@@ -821,10 +966,12 @@
 
     }
 
+
     const colors =
       [...counts.entries()]
         .sort(
-          (a,b) => b[1] - a[1]
+          (a,b) =>
+            b[1] - a[1]
         )
         .slice(0,32)
         .map(
@@ -835,15 +982,19 @@
                 .split(",")
                 .map(Number);
 
+
             return {
+
               r:parts[0],
               g:parts[1],
               b:parts[2],
               a:parts[3]
+
             };
 
           }
         );
+
 
     return colors.length
       ? colors
@@ -862,17 +1013,27 @@
     palette
   ){
 
-    const r = data[index];
-    const g = data[index + 1];
-    const b = data[index + 2];
-    const a = data[index + 3];
+    const r =
+      data[index];
+
+    const g =
+      data[index + 1];
+
+    const b =
+      data[index + 2];
+
+    const a =
+      data[index + 3];
+
 
     if(a < 12){
       return -1;
     }
 
+
     let best = 0;
     let bestDistance = Infinity;
+
 
     for(
       let i = 0;
@@ -883,25 +1044,38 @@
       const c =
         palette[i];
 
-      const dr = r - c.r;
-      const dg = g - c.g;
-      const db = b - c.b;
+
+      const dr =
+        r - c.r;
+
+      const dg =
+        g - c.g;
+
+      const db =
+        b - c.b;
+
 
       const distance =
         dr * dr +
         dg * dg +
         db * db;
 
-      if(distance < bestDistance){
+
+      if(
+        distance <
+        bestDistance
+      ){
 
         bestDistance =
           distance;
 
-        best = i;
+        best =
+          i;
 
       }
 
     }
+
 
     return best;
 
@@ -924,7 +1098,9 @@
         width * height
       );
 
+
     map.fill(-1);
+
 
     for(
       let y = 0;
@@ -938,7 +1114,9 @@
         x++
       ){
 
-        map[y * width + x] =
+        map[
+          y * width + x
+        ] =
           nearestColor(
             data,
             pixelIndex(
@@ -952,6 +1130,7 @@
       }
 
     }
+
 
     return map;
 
@@ -981,6 +1160,7 @@
 
     }
 
+
     return classes[
       y * width + x
     ];
@@ -1009,35 +1189,43 @@
         height
       );
 
+
     return (
-      center !== getClass(
-        classes,
-        x - 1,
-        y,
-        width,
-        height
-      ) ||
-      center !== getClass(
-        classes,
-        x + 1,
-        y,
-        width,
-        height
-      ) ||
-      center !== getClass(
-        classes,
-        x,
-        y - 1,
-        width,
-        height
-      ) ||
-      center !== getClass(
-        classes,
-        x,
-        y + 1,
-        width,
-        height
-      )
+      center !==
+        getClass(
+          classes,
+          x - 1,
+          y,
+          width,
+          height
+        ) ||
+
+      center !==
+        getClass(
+          classes,
+          x + 1,
+          y,
+          width,
+          height
+        ) ||
+
+      center !==
+        getClass(
+          classes,
+          x,
+          y - 1,
+          width,
+          height
+        ) ||
+
+      center !==
+        getClass(
+          classes,
+          x,
+          y + 1,
+          width,
+          height
+        )
     );
 
   }
@@ -1065,119 +1253,135 @@
         height
       );
 
+
     if(center < 0){
       return false;
     }
+
 
     let a;
     let b;
     let diagonal;
 
+
     if(corner === 0){
 
-      a = getClass(
-        classes,
-        x - 1,
-        y,
-        width,
-        height
-      );
+      a =
+        getClass(
+          classes,
+          x - 1,
+          y,
+          width,
+          height
+        );
 
-      b = getClass(
-        classes,
-        x,
-        y - 1,
-        width,
-        height
-      );
+      b =
+        getClass(
+          classes,
+          x,
+          y - 1,
+          width,
+          height
+        );
 
-      diagonal = getClass(
-        classes,
-        x - 1,
-        y - 1,
-        width,
-        height
-      );
+      diagonal =
+        getClass(
+          classes,
+          x - 1,
+          y - 1,
+          width,
+          height
+        );
 
     }else if(corner === 1){
 
-      a = getClass(
-        classes,
-        x + 1,
-        y,
-        width,
-        height
-      );
+      a =
+        getClass(
+          classes,
+          x + 1,
+          y,
+          width,
+          height
+        );
 
-      b = getClass(
-        classes,
-        x,
-        y - 1,
-        width,
-        height
-      );
+      b =
+        getClass(
+          classes,
+          x,
+          y - 1,
+          width,
+          height
+        );
 
-      diagonal = getClass(
-        classes,
-        x + 1,
-        y - 1,
-        width,
-        height
-      );
+      diagonal =
+        getClass(
+          classes,
+          x + 1,
+          y - 1,
+          width,
+          height
+        );
 
     }else if(corner === 2){
 
-      a = getClass(
-        classes,
-        x + 1,
-        y,
-        width,
-        height
-      );
+      a =
+        getClass(
+          classes,
+          x + 1,
+          y,
+          width,
+          height
+        );
 
-      b = getClass(
-        classes,
-        x,
-        y + 1,
-        width,
-        height
-      );
+      b =
+        getClass(
+          classes,
+          x,
+          y + 1,
+          width,
+          height
+        );
 
-      diagonal = getClass(
-        classes,
-        x + 1,
-        y + 1,
-        width,
-        height
-      );
+      diagonal =
+        getClass(
+          classes,
+          x + 1,
+          y + 1,
+          width,
+          height
+        );
 
     }else{
 
-      a = getClass(
-        classes,
-        x - 1,
-        y,
-        width,
-        height
-      );
+      a =
+        getClass(
+          classes,
+          x - 1,
+          y,
+          width,
+          height
+        );
 
-      b = getClass(
-        classes,
-        x,
-        y + 1,
-        width,
-        height
-      );
+      b =
+        getClass(
+          classes,
+          x,
+          y + 1,
+          width,
+          height
+        );
 
-      diagonal = getClass(
-        classes,
-        x - 1,
-        y + 1,
-        width,
-        height
-      );
+      diagonal =
+        getClass(
+          classes,
+          x - 1,
+          y + 1,
+          width,
+          height
+        );
 
     }
+
 
     if(
       a !== center &&
@@ -1188,6 +1392,7 @@
 
     }
 
+
     if(
       a === center &&
       b === center
@@ -1197,6 +1402,7 @@
 
     }
 
+
     if(
       diagonal === center
     ){
@@ -1204,6 +1410,7 @@
       return true;
 
     }
+
 
     return true;
 
@@ -1229,8 +1436,10 @@
 
     }
 
+
     let scale =
       CONFIG.resolution;
+
 
     if(
       amount >= 80 &&
@@ -1241,11 +1450,13 @@
 
     }
 
+
     const output =
       createCanvas(
         width * scale,
         height * scale
       );
+
 
     const ctx =
       output.getContext(
@@ -1255,12 +1466,14 @@
         }
       );
 
+
     ctx.clearRect(
       0,
       0,
       output.width,
       output.height
     );
+
 
     ctx.imageSmoothingEnabled =
       false;
@@ -1283,16 +1496,20 @@
             y * width + x
           ];
 
+
         if(classIndex < 0){
           continue;
         }
 
+
         const color =
           palette[classIndex];
+
 
         if(!color){
           continue;
         }
+
 
         const boundary =
           isBoundary(
@@ -1303,11 +1520,13 @@
             height
           );
 
+
         const px =
           x * scale;
 
         const py =
           y * scale;
+
 
         ctx.fillStyle =
           `rgba(
@@ -1339,11 +1558,11 @@
           Math.min(
             scale * 0.5,
             scale *
-              (
-                0.12 +
-                amount / 100 *
-                0.38
-              )
+            (
+              0.12 +
+              amount / 100 *
+              0.38
+            )
           );
 
 
@@ -1357,6 +1576,7 @@
             height
           );
 
+
         const tr =
           cornerFilled(
             classes,
@@ -1367,6 +1587,7 @@
             height
           );
 
+
         const br =
           cornerFilled(
             classes,
@@ -1376,6 +1597,7 @@
             width,
             height
           );
+
 
         const bl =
           cornerFilled(
@@ -1534,6 +1756,7 @@
 
     }
 
+
     return output;
 
   }
@@ -1559,6 +1782,7 @@
         canvas.height
       );
 
+
     const ctx =
       output.getContext(
         "2d",
@@ -1567,8 +1791,10 @@
         }
       );
 
+
     ctx.imageSmoothingEnabled =
       false;
+
 
     ctx.drawImage(
       canvas,
@@ -1601,8 +1827,10 @@
         const index =
           y * width + x;
 
+
         const current =
           classes[index];
+
 
         if(current < 0){
           continue;
@@ -1618,6 +1846,7 @@
             height
           );
 
+
         const right =
           getClass(
             classes,
@@ -1627,6 +1856,7 @@
             height
           );
 
+
         const top =
           getClass(
             classes,
@@ -1635,6 +1865,7 @@
             width,
             height
           );
+
 
         const bottom =
           getClass(
@@ -1652,6 +1883,7 @@
           top < 0 ||
           bottom < 0;
 
+
         if(!outside){
           continue;
         }
@@ -1659,6 +1891,7 @@
 
         const color =
           palette[current];
+
 
         if(!color){
           continue;
@@ -1683,23 +1916,26 @@
 
         ctx.beginPath();
 
+
         ctx.arc(
           px + scale / 2,
           py + scale / 2,
           scale *
-            (
-              0.43 +
-              radius * 0.035
-            ),
+          (
+            0.43 +
+            radius * 0.035
+          ),
           0,
           Math.PI * 2
         );
+
 
         ctx.fill();
 
       }
 
     }
+
 
     return output;
 
@@ -1730,6 +1966,7 @@
 
             }
 
+
             resolve(
               URL.createObjectURL(
                 blob
@@ -1756,15 +1993,19 @@
       return null;
     }
 
+
     const value =
       cache.get(key);
+
 
     cacheOrder =
       cacheOrder.filter(
         x => x !== key
       );
 
+
     cacheOrder.push(key);
+
 
     return value;
 
@@ -1785,10 +2026,12 @@
 
     }
 
+
     cache.set(
       key,
       value
     );
+
 
     cacheOrder.push(key);
 
@@ -1801,10 +2044,15 @@
       const oldKey =
         cacheOrder.shift();
 
+
       const old =
         cache.get(oldKey);
 
-      cache.delete(oldKey);
+
+      cache.delete(
+        oldKey
+      );
+
 
       if(
         old &&
@@ -1845,10 +2093,14 @@
 
 
     const key =
-      makeCacheKey(source);
+      makeCacheKey(
+        source
+      );
+
 
     const cached =
       cacheGet(key);
+
 
     if(cached){
       return cached;
@@ -1863,19 +2115,28 @@
     try{
 
       const image =
-        await loadImage(source);
+        await loadImage(
+          source
+        );
+
 
       const width =
         image.naturalWidth ||
         image.width;
+
 
       const height =
         image.naturalHeight ||
         image.height;
 
 
-      if(!width || !height){
+      if(
+        !width ||
+        !height
+      ){
+
         return source;
+
       }
 
 
@@ -1885,6 +2146,7 @@
           height
         );
 
+
       const sourceCtx =
         sourceCanvas.getContext(
           "2d",
@@ -1893,8 +2155,10 @@
           }
         );
 
+
       sourceCtx.imageSmoothingEnabled =
         false;
+
 
       sourceCtx.drawImage(
         image,
@@ -1918,6 +2182,7 @@
         buildPalette(
           imageData.data
         );
+
 
       if(!palette){
         return source;
@@ -1944,8 +2209,13 @@
         );
 
 
-      if(result === sourceCanvas){
+      if(
+        result ===
+        sourceCanvas
+      ){
+
         return source;
+
       }
 
 
@@ -1954,10 +2224,12 @@
           result
         );
 
+
       cacheSet(
         key,
         url
       );
+
 
       return url;
 
@@ -1973,7 +2245,7 @@
 
 
   /* =======================================================
-     RESTORE
+     RESTORE ORIGINAL
   ======================================================= */
 
   function restoreOriginal(){
@@ -1982,12 +2254,15 @@
       return;
     }
 
+
     const image =
       currentLayer._image;
+
 
     if(!image){
       return;
     }
+
 
     if(currentSource){
 
@@ -1996,6 +2271,7 @@
 
     }
 
+
     currentProcessedURL =
       null;
 
@@ -2003,7 +2279,7 @@
 
 
   /* =======================================================
-     APPLY
+     APPLY TO LAYER
   ======================================================= */
 
   async function applyToLayer(layer){
@@ -2021,6 +2297,7 @@
 
     const image =
       layer._image;
+
 
     if(!image){
       return;
@@ -2045,17 +2322,13 @@
     }
 
 
-    /*
-      Всегда используем оригинальный URL,
-      а не уже обработанный PNG.
-    */
-
     if(
       layer.__cloradSmoothSource
     ){
 
       currentSource =
         layer.__cloradSmoothSource;
+
 
       if(
         image.src !==
@@ -2071,6 +2344,7 @@
 
       layer.__cloradSmoothSource =
         source;
+
 
       currentSource =
         source;
@@ -2107,6 +2381,7 @@
 
             };
 
+
           image.addEventListener(
             "load",
             done,
@@ -2114,6 +2389,7 @@
               once:true
             }
           );
+
 
           image.addEventListener(
             "error",
@@ -2142,26 +2418,35 @@
     const original =
       layer.__cloradSmoothSource;
 
+
     const key =
       makeCacheKey(
         original
       );
 
+
     const cached =
-      cacheGet(key);
+      cacheGet(
+        key
+      );
 
 
     if(cached){
 
-      if(image.src !== cached){
+      if(
+        image.src !==
+        cached
+      ){
 
         image.src =
           cached;
 
       }
 
+
       currentProcessedURL =
         cached;
+
 
       return;
 
@@ -2177,12 +2462,14 @@
 
 
       if(
-        currentLayer !== layer
+        currentLayer !==
+        layer
       ){
 
         return;
 
       }
+
 
       if(!enabled){
         return;
@@ -2196,6 +2483,7 @@
 
         image.src =
           processed;
+
 
         currentProcessedURL =
           processed;
@@ -2215,7 +2503,7 @@
 
 
   /* =======================================================
-     SCHEDULE
+     SCHEDULE PROCESS
   ======================================================= */
 
   function scheduleProcess(){
@@ -2228,12 +2516,14 @@
 
     }
 
+
     processTimer =
       setTimeout(
         () => {
 
           processTimer =
             null;
+
 
           if(
             currentLayer &&
@@ -2274,7 +2564,8 @@
         .__cloradSmoothingInstalled
     ){
 
-      leafletHookReady = true;
+      leafletHookReady =
+        true;
 
       return true;
 
@@ -2313,8 +2604,10 @@
           currentLayer =
             this;
 
+
           const image =
             this._image;
+
 
           if(image){
 
@@ -2330,8 +2623,10 @@
 
                 }
 
+
                 currentSource =
                   this.__cloradSmoothSource;
+
 
                 if(
                   enabled &&
@@ -2367,6 +2662,7 @@
 
         }
 
+
         return result;
 
       };
@@ -2392,11 +2688,14 @@
           this.__cloradSmoothSource =
             url;
 
+
           currentLayer =
             this;
 
+
           currentSource =
             url;
+
 
           currentProcessedURL =
             null;
@@ -2413,6 +2712,7 @@
 
             const image =
               this._image;
+
 
             image.addEventListener(
               "load",
@@ -2436,6 +2736,7 @@
 
           }
 
+
           return result;
 
         }
@@ -2449,7 +2750,9 @@
       };
 
 
-    leafletHookReady = true;
+    leafletHookReady =
+      true;
+
 
     return true;
 
@@ -2479,6 +2782,7 @@
       const layer =
         map._layers[key];
 
+
       if(
         !layer ||
         !layer.options
@@ -2503,8 +2807,10 @@
         currentLayer =
           layer;
 
+
         const image =
           layer._image;
+
 
         if(image){
 
@@ -2516,6 +2822,7 @@
               image.src;
 
           }
+
 
           currentSource =
             layer.__cloradSmoothSource;
@@ -2531,6 +2838,7 @@
           scheduleProcess();
 
         }
+
 
         return;
 
@@ -2569,6 +2877,7 @@
         const layer =
           event.layer;
 
+
         if(
           !layer ||
           !layer.options
@@ -2602,6 +2911,7 @@
         const image =
           layer._image;
 
+
         if(!image){
           return;
         }
@@ -2618,6 +2928,7 @@
                 image.src;
 
             }
+
 
             currentSource =
               layer.__cloradSmoothSource;
@@ -2684,7 +2995,9 @@
     );
 
 
-    mapHooksReady = true;
+    mapHooksReady =
+      true;
+
 
     return true;
 
@@ -2699,17 +3012,21 @@
 
     enable(){
 
-      enabled = true;
+      enabled =
+        true;
+
 
       const button =
         document.getElementById(
           "cloradSmoothingButton"
         );
 
+
       const panel =
         document.getElementById(
           "cloradSmoothingPanel"
         );
+
 
       if(button){
 
@@ -2719,6 +3036,7 @@
 
       }
 
+
       if(panel){
 
         panel.classList.add(
@@ -2726,6 +3044,7 @@
         );
 
       }
+
 
       scanLayers();
 
@@ -2736,19 +3055,24 @@
 
     disable(){
 
-      enabled = false;
+      enabled =
+        false;
+
 
       restoreOriginal();
+
 
       const button =
         document.getElementById(
           "cloradSmoothingButton"
         );
 
+
       const panel =
         document.getElementById(
           "cloradSmoothingPanel"
         );
+
 
       if(button){
 
@@ -2757,6 +3081,7 @@
         );
 
       }
+
 
       if(panel){
 
@@ -2786,6 +3111,7 @@
           "cloradSmoothingRange"
         );
 
+
       const valueElement =
         document.getElementById(
           "cloradSmoothingValue"
@@ -2798,6 +3124,7 @@
           strength;
 
       }
+
 
       if(valueElement){
 
@@ -2823,12 +3150,18 @@
       ){
 
         try{
-          URL.revokeObjectURL(url);
+
+          URL.revokeObjectURL(
+            url
+          );
+
         }catch{}
 
       }
 
+
       cache.clear();
+
       cacheOrder = [];
 
     },
@@ -2852,16 +3185,13 @@
 
   /* =======================================================
      LEAFLET INITIALIZATION
-     ======================================================= */
+  ======================================================= */
 
   function initLeaflet(){
 
-    /*
-      Не блокируем создание UI.
-      Leaflet может появиться позже.
-    */
-
-    if(!installLeafletHook()){
+    if(
+      !installLeafletHook()
+    ){
 
       setTimeout(
         initLeaflet,
@@ -2873,7 +3203,9 @@
     }
 
 
-    if(!installMapHooks()){
+    if(
+      !installMapHooks()
+    ){
 
       setTimeout(
         initLeaflet,
@@ -2890,10 +3222,12 @@
       250
     );
 
+
     setTimeout(
       scanLayers,
       1000
     );
+
 
     setTimeout(
       scanLayers,
@@ -2910,47 +3244,59 @@
   function init(){
 
     /*
-      UI создаётся ПЕРВЫМ.
-      Оно больше не зависит от Leaflet.
+      Сначала полностью создаём UI.
     */
 
     createUI();
 
-    startUIWatcher();
 
     /*
-      Leaflet подключается отдельно.
+      Следим только за существованием
+      наших элементов.
+    */
+
+    startUIWatcher();
+
+
+    /*
+      Leaflet запускается отдельно.
     */
 
     initLeaflet();
 
+
     /*
-      Несколько попыток вернуть кнопку
-      именно в существующую панель инструментов.
+      Дополнительная страховка:
+      если другой код всё-таки удалит
+      элементы сразу после запуска.
     */
 
     setTimeout(
-      attachButton,
+      repairUI,
       100
     );
 
     setTimeout(
-      attachButton,
+      repairUI,
       500
     );
 
     setTimeout(
-      attachButton,
+      repairUI,
       1500
     );
 
     setTimeout(
-      attachButton,
+      repairUI,
       3000
     );
 
   }
 
+
+  /* =======================================================
+     DOM START
+  ======================================================= */
 
   if(
     document.readyState ===
