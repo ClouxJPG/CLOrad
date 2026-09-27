@@ -2,7 +2,7 @@
    CLOrad — Meteoinfo GIF Radar
    ДМРЛ композит
    Разрешение ДМРЛ + сетка данных ДМРЛ
-   Палитры ОЯ: РГМЦ / ИРАМ
+   Палитры ОЯ: РГМЦ / ИРАМ / Пользовательские
    ========================================================= */
 (() => {
   "use strict";
@@ -33,11 +33,8 @@
   /*
      ИСХОДНЫЕ цвета растра Meteoinfo.
 
-     Именно они использовались до появления
-     настройки выбора палитры.
-
-     РГМЦ на самом радарном растре теперь
-     полностью возвращается к этим цветам.
+     Для РГМЦ они используются напрямую:
+     исходный GIF не перекрашивается.
   */
   const SOURCE_OY_COLORS = [
     "#b9c1c7",
@@ -62,15 +59,10 @@
   ];
 
   /*
-     РГМЦ — цвета ЛЕГЕНДЫ.
+     РГМЦ — палитра легенды.
 
-     ВАЖНО:
-
-     Это не перекраска исходного GIF.
-
-     Радар РГМЦ показывает оригинальные цвета
-     Meteoinfo, а легенда показывает эту
-     палитру РГМЦ.
+     Сам GIF РГМЦ не перекрашивается:
+     используется оригинальный радарный растр Meteoinfo.
   */
   const RGMC_OY_PALETTE = [
     "#b9c1c7",
@@ -97,16 +89,7 @@
   /*
      ИРАМ.
 
-     В официальной документации ИРАМ подтверждено,
-     что для отражаемости используются настраиваемые
-     градации (16 или 32), однако конкретная таблица
-     HEX-цветов в доступной документации не указана.
-
-     Поэтому здесь НЕ используется выдуманная
-     "официальная" палитра.
-
-     Пока оставляем исходные классы Meteoinfo как
-     безопасную основу для режима ИРАМ.
+     Пока оставлена существующая таблица.
   */
   const IRAM_OY_PALETTE = [
     "#b9c1c7",
@@ -143,6 +126,23 @@
   };
 
   let gifPalette = "rgmc";
+
+  /*
+     Пользовательская палитра.
+
+     Формат:
+     [
+       "#......",
+       "#......",
+       ...
+     ]
+
+     Всегда 19 цветов.
+  */
+  let gifCustomPalette = null;
+
+  let gifCustomPaletteName =
+    "Пользовательская";
 
   /*
      Кэш уже перекрашенных кадров.
@@ -804,10 +804,11 @@
     hex
   ) {
     const value =
-      hex.replace(
-        "#",
-        ""
-      );
+      String(hex || "")
+        .replace(
+          "#",
+          ""
+        );
 
     return {
       r:
@@ -844,13 +845,46 @@
       hexToRGB
     );
 
-  function getPaletteRGB() {
-    const palette =
-      OY_PALETTES[
-        gifPalette
-      ];
+  /*
+     Возвращает именно активную палитру.
 
-    return palette.colors.map(
+     Для custom используются цвета,
+     переданные менеджером палитр.
+  */
+  function getPaletteRGB() {
+    let colors = null;
+
+    if (
+      gifPalette === "custom" &&
+      Array.isArray(
+        gifCustomPalette
+      ) &&
+      gifCustomPalette.length ===
+        SOURCE_OY_COLORS.length
+    ) {
+      colors =
+        gifCustomPalette;
+    } else {
+      const palette =
+        OY_PALETTES[
+          gifPalette
+        ];
+
+      if (
+        !palette ||
+        !Array.isArray(
+          palette.colors
+        )
+      ) {
+        colors =
+          OY_PALETTES.rgmc.colors;
+      } else {
+        colors =
+          palette.colors;
+      }
+    }
+
+    return colors.map(
       hexToRGB
     );
   }
@@ -992,13 +1026,8 @@
     /*
        РГМЦ:
 
-       ВАЖНО.
-
-       Возвращаем исходный кадр Meteoinfo
-       без абсолютно какой-либо перекраски.
-
-       Это восстанавливает вид, который
-       был до появления настройки палитр.
+       Возвращаем оригинальный GIF Meteoinfo
+       без перекраски.
     */
     if (
       gifPalette === "rgmc"
@@ -1009,19 +1038,25 @@
     }
 
     /*
-       ИРАМ:
-
-       Здесь оставлен механизм перекраски,
-       но сама текущая таблица ИРАМ пока
-       совпадает с исходными классами,
-       поскольку официальная HEX-палитра
-       ИРАМ не подтверждена.
+       Для ИРАМ и custom выполняется
+       реальная перекраска пикселей.
     */
 
     const cacheKey =
       url +
       "|" +
-      gifPalette;
+      gifPalette +
+      "|" +
+      (
+        gifPalette === "custom" &&
+        Array.isArray(
+          gifCustomPalette
+        )
+          ? gifCustomPalette.join(
+              ","
+            )
+          : ""
+      );
 
     if (
       gifPaletteCache.has(
@@ -1231,16 +1266,33 @@
      ======================================================= */
 
   function applyGIFPaletteToLegend() {
-    const palette =
-      OY_PALETTES[
-        gifPalette
-      ];
+    let colors = null;
 
-    if (!palette) {
-      return;
+    if (
+      gifPalette === "custom" &&
+      Array.isArray(
+        gifCustomPalette
+      ) &&
+      gifCustomPalette.length ===
+        SOURCE_OY_COLORS.length
+    ) {
+      colors =
+        gifCustomPalette;
+    } else {
+      const palette =
+        OY_PALETTES[
+          gifPalette
+        ];
+
+      if (!palette) {
+        return;
+      }
+
+      colors =
+        palette.colors;
     }
 
-    palette.colors.forEach(
+    colors.forEach(
       (
         color,
         index
@@ -1263,6 +1315,10 @@
     );
   }
 
+  /* =======================================================
+     PALETTE — SYSTEM / BUILT-IN
+     ======================================================= */
+
   function setGIFPalette(
     value
   ) {
@@ -1274,6 +1330,16 @@
       value =
         "rgmc";
     }
+
+    /*
+       При возврате к встроенной палитре
+       пользовательская палитра отключается.
+    */
+    gifCustomPalette =
+      null;
+
+    gifCustomPaletteName =
+      "Пользовательская";
 
     gifPalette =
       value;
@@ -1299,6 +1365,163 @@
       );
     }
   }
+
+  /* =======================================================
+     PALETTE — PUBLIC CUSTOM BRIDGE
+     ======================================================= */
+
+  /*
+     Этот метод используется radar-palettes.js.
+
+     Он позволяет внешнему менеджеру палитр
+     менять реальные цвета радарного растра,
+     не вытаскивая внутренние переменные
+     gif-radar.js наружу.
+  */
+  window.CLOradApplyPalette =
+    function (
+      value,
+      colors,
+      name
+    ) {
+      /*
+         Встроенная РГМЦ.
+      */
+      if (
+        value === "rgmc"
+      ) {
+        gifCustomPalette =
+          null;
+
+        gifCustomPaletteName =
+          "Пользовательская";
+
+        gifPalette =
+          "rgmc";
+      }
+
+      /*
+         Встроенная ИРАМ.
+      */
+      else if (
+        value === "iram"
+      ) {
+        gifCustomPalette =
+          null;
+
+        gifCustomPaletteName =
+          "Пользовательская";
+
+        gifPalette =
+          "iram";
+      }
+
+      /*
+         Пользовательская палитра.
+      */
+      else if (
+        value === "custom" &&
+        Array.isArray(
+          colors
+        ) &&
+        colors.length ===
+          SOURCE_OY_COLORS.length
+      ) {
+        const normalized =
+          colors.map(
+            color =>
+              String(
+                color
+              ).trim()
+          );
+
+        const valid =
+          normalized.every(
+            color =>
+              /^#[0-9a-fA-F]{6}$/.test(
+                color
+              )
+          );
+
+        if (!valid) {
+          return false;
+        }
+
+        gifCustomPalette =
+          normalized.slice();
+
+        gifCustomPaletteName =
+          String(
+            name ||
+            "Пользовательская"
+          );
+
+        /*
+           Регистрируем custom в общей
+           структуре палитр, чтобы остальные
+           части CLOrad также видели её.
+        */
+        OY_PALETTES.custom = {
+          name:
+            gifCustomPaletteName,
+
+          colors:
+            gifCustomPalette.slice()
+        };
+
+        gifPalette =
+          "custom";
+      }
+
+      else {
+        return false;
+      }
+
+      updateGIFPaletteButtons();
+
+      applyGIFPaletteToLegend();
+
+      /*
+         Очень важно:
+         удаляем старые перекрашенные кадры,
+         чтобы после изменения цветов
+         не показывался старый PNG из кэша.
+      */
+      gifPaletteCache.clear();
+
+      /*
+         Если радар сейчас открыт —
+         сразу перерисовываем текущий кадр.
+      */
+      if (
+        gifActive &&
+        gifFrames.length
+      ) {
+        const index =
+          Number(
+            $("range")?.value ||
+            0
+          );
+
+        showGIFFrame(
+          index
+        );
+      }
+
+      return true;
+    };
+
+  window.CLOradCustomPalette =
+    () =>
+      Array.isArray(
+        gifCustomPalette
+      )
+        ? gifCustomPalette.slice()
+        : null;
+
+  window.CLOradCustomPaletteName =
+    () =>
+      gifCustomPaletteName;
 
   /* =======================================================
      SETTINGS — СЕТКА ДМРЛ
@@ -3388,4 +3611,4 @@
     }
   }
 
-})()
+})();
