@@ -296,7 +296,12 @@ button{
 
 .layers{
   position:fixed;
-  z-index:8;
+
+  /* ИСПРАВЛЕНО:
+     панель теперь гарантированно выше
+     Leaflet / MapLibre на ПК */
+  z-index:1000;
+
   left:17px;
   top:50%;
   transform:translateY(-50%);
@@ -306,7 +311,10 @@ button{
   border-radius:10px;
   padding:5px 8px;
   box-shadow:0 4px 14px #0003;
-  transition:left .25s,opacity .2s
+  transition:left .25s,opacity .2s;
+
+  /* гарантируем получение мыши */
+  pointer-events:auto
 }
 
 .layers.hidden{
@@ -358,7 +366,11 @@ button{
   background:#626a70;
   position:relative;
   padding:0;
-  flex:none
+  flex:none;
+
+  /* переключатель выше содержимого панели */
+  z-index:1001;
+  pointer-events:auto
 }
 
 .switch i{
@@ -369,7 +381,8 @@ button{
   top:3px;
   border-radius:50%;
   background:#f6f7f7;
-  transition:.2s
+  transition:.2s;
+  pointer-events:none
 }
 
 .switch.on{
@@ -950,6 +963,11 @@ body.light .frameInput{
 
   .n:nth-child(7){
     min-width:88px
+  }
+
+  .switch{
+    z-index:1001;
+    pointer-events:auto
   }
 }
 </style>
@@ -3586,6 +3604,7 @@ setTimeout(
 <script src="idarkmeteo-raster.js"></script>
 <script src="idarkmeteo.js"></script>
 <script src="gif-radar.js"></script>
-<script src="radar-palettes.js"></script>  
+<script src="radar-palettes.js"></script>
+
 </body>
 </html>
