@@ -113,22 +113,12 @@
   let gifPalette =
     "rgmc";
 
-  /*
-     Пользовательская палитра.
-
-     В ней всегда должно быть 19 цветов —
-     по одному цвету на каждый исходный
-     класс радарного GIF.
-  */
   let gifCustomPalette =
     null;
 
   let gifCustomPaletteName =
     "Пользовательская";
 
-  /*
-     Кэш перекрашенных кадров.
-  */
   let gifPaletteCache =
     new Map();
 
@@ -155,7 +145,23 @@
 
   let gifPlayTimer = null;
 
-  let gifLayer = null;
+  /*
+     ВАЖНО:
+
+     Теперь оригинальный и перекрашенный
+     кадры имеют РАЗНЫЕ Leaflet layers.
+
+     gifOriginalLayer
+       = оригинальный кадр Meteoinfo
+
+     gifPaintedLayer
+       = кадр после применения палитры
+  */
+  let gifOriginalLayer =
+    null;
+
+  let gifPaintedLayer =
+    null;
 
   let gifResolution = 1;
 
@@ -863,12 +869,6 @@
       hexToRGB
     );
 
-  /*
-     Получение активной палитры.
-
-     ВАЖНО:
-     custom обрабатывается отдельно.
-  */
   function getPaletteRGB() {
     let colors = null;
 
@@ -997,17 +997,6 @@
         4096
       );
 
-    /*
-       ВАЖНО:
-
-       LUT теперь не отбрасывает цвета
-       по расстоянию.
-
-       Любой RGB-пиксель получает
-       ближайший класс исходной
-       палитры Meteoinfo.
-    */
-
     for (
       let key = 0;
       key < 4096;
@@ -1053,7 +1042,7 @@
        РГМЦ:
 
        Оригинальный GIF Meteoinfo
-       оставляем без изменения.
+       вообще не перекрашиваем.
     */
     if (
       gifPalette ===
@@ -1063,21 +1052,6 @@
         url
       );
     }
-
-    /*
-       Для ИРАМ и пользовательской
-       палитры создаём отдельный PNG.
-
-       ВАЖНО:
-
-       Старое ограничение
-       125 * 125 полностью убрано.
-
-       Теперь каждый непрозрачный
-       пиксель классифицируется
-       относительно исходной
-       палитры Meteoinfo.
-    */
 
     const cacheKey =
       url +
@@ -1206,10 +1180,6 @@
             const alpha =
               data[p + 3];
 
-            /*
-               Полностью прозрачный
-               фон не трогаем.
-            */
             if (
               alpha === 0
             ) {
@@ -1225,9 +1195,6 @@
             const b =
               data[p + 2];
 
-            /*
-               12-битный ключ LUT.
-            */
             const key =
               ((r >> 4) << 8) |
               ((g >> 4) << 4) |
@@ -1243,10 +1210,6 @@
               continue;
             }
 
-            /*
-               Прямое назначение
-               цвета активной палитры.
-            */
             const color =
               target[index];
 
@@ -1346,6 +1309,188 @@
   }
 
   /* =======================================================
+     PALETTE — ФИЗИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ СЛОЁВ
+     ======================================================= */
+
+  function removeOriginalGIFLayer() {
+    if (
+      gifOriginalLayer &&
+      window.map &&
+      window.map.hasLayer(
+        gifOriginalLayer
+      )
+    ) {
+      window.map.removeLayer(
+        gifOriginalLayer
+      );
+    }
+
+    gifOriginalLayer =
+      null;
+  }
+
+  function removePaintedGIFLayer() {
+    if (
+      gifPaintedLayer &&
+      window.map &&
+      window.map.hasLayer(
+        gifPaintedLayer
+      )
+    ) {
+      window.map.removeLayer(
+        gifPaintedLayer
+      );
+    }
+
+    gifPaintedLayer =
+      null;
+  }
+
+  function removeAllGIFDisplayLayers() {
+    removeOriginalGIFLayer();
+    removePaintedGIFLayer();
+  }
+
+  function createOriginalGIFLayer(
+    url
+  ) {
+    if (
+      !window.map
+    ) {
+      return null;
+    }
+
+    removePaintedGIFLayer();
+
+    removeOriginalGIFLayer();
+
+    const layer =
+      L.imageOverlay(
+        url,
+        GIF_BOUNDS,
+        {
+          opacity:
+            1,
+          interactive:
+            false,
+          zIndex:
+            6,
+          className:
+            "clorad-gif-radar-image"
+        }
+      );
+
+    layer.addTo(
+      window.map
+    );
+
+    gifOriginalLayer =
+      layer;
+
+    return layer;
+  }
+
+  function createPaintedGIFLayer(
+    url
+  ) {
+    if (
+      !window.map
+    ) {
+      return null;
+    }
+
+    removeOriginalGIFLayer();
+
+    removePaintedGIFLayer();
+
+    const layer =
+      L.imageOverlay(
+        url,
+        GIF_BOUNDS,
+        {
+          opacity:
+            1,
+          interactive:
+            false,
+          zIndex:
+            6,
+          className:
+            "clorad-gif-radar-image"
+        }
+      );
+
+    layer.addTo(
+      window.map
+    );
+
+    gifPaintedLayer =
+      layer;
+
+    return layer;
+  }
+
+  /*
+     Внешняя функция переключения.
+
+     РГМЦ:
+       оригинальный слой
+
+     ИРАМ/custom:
+       перекрашенный слой
+  */
+  function switchGIFDisplayLayer(
+    displayUrl,
+    originalUrl
+  ) {
+    if (
+      gifPalette ===
+      "rgmc"
+    ) {
+      if (
+        gifPaintedLayer
+      ) {
+        removePaintedGIFLayer();
+      }
+
+      if (
+        !gifOriginalLayer
+      ) {
+        return createOriginalGIFLayer(
+          originalUrl ||
+            displayUrl
+        );
+      }
+
+      gifOriginalLayer.setUrl(
+        originalUrl ||
+          displayUrl
+      );
+
+      return gifOriginalLayer;
+    }
+
+    if (
+      gifOriginalLayer
+    ) {
+      removeOriginalGIFLayer();
+    }
+
+    if (
+      !gifPaintedLayer
+    ) {
+      return createPaintedGIFLayer(
+        displayUrl
+      );
+    }
+
+    gifPaintedLayer.setUrl(
+      displayUrl
+    );
+
+    return gifPaintedLayer;
+  }
+
+  /* =======================================================
      PALETTE — STANDARD
      ======================================================= */
 
@@ -1375,6 +1520,16 @@
     applyGIFPaletteToLegend();
 
     gifPaletteCache.clear();
+
+    /*
+       При смене палитры старый слой
+       удаляется СРАЗУ.
+
+       Это важно: оригинальный GIF
+       не может остаться под
+       перекрашенным.
+    */
+    removeAllGIFDisplayLayers();
 
     if (
       gifActive &&
@@ -1484,6 +1639,12 @@
 
     gifPaletteCache.clear();
 
+    /*
+       Физически убираем предыдущий
+       слой до начала создания нового.
+    */
+    removeAllGIFDisplayLayers();
+
     if (
       gifActive &&
       gifFrames.length
@@ -1559,6 +1720,12 @@
       applyGIFPaletteToLegend();
 
       gifPaletteCache.clear();
+
+      /*
+         Обязательно удаляем оба
+         существующих визуальных слоя.
+      */
+      removeAllGIFDisplayLayers();
 
       if (
         gifActive &&
@@ -1848,6 +2015,12 @@
       gifPaletteCache.clear();
 
       rebuildFrameUrls();
+
+      /*
+         При изменении разрешения
+         старый overlay больше не нужен.
+      */
+      removeAllGIFDisplayLayers();
 
       showGIFFrame(
         index
@@ -2915,27 +3088,16 @@
   function createGIFLayer(
     url
   ) {
-    const layer =
-      L.imageOverlay(
-        url,
-        GIF_BOUNDS,
-        {
-          opacity:
-            1,
-          interactive:
-            false,
-          zIndex:
-            6,
-          className:
-            "clorad-gif-radar-image"
-        }
-      );
+    /*
+       Совместимость с прежней
+       внутренней функцией.
 
-    layer.addTo(
-      window.map
+       Теперь она создаёт именно
+       оригинальный слой.
+    */
+    return createOriginalGIFLayer(
+      url
     );
-
-    return layer;
   }
 
   /* =======================================================
@@ -2971,14 +3133,17 @@
       gifFrames[index];
 
     try {
+      /*
+         Сначала загружаем именно
+         исходный кадр.
+
+         Он нужен как для РГМЦ,
+         так и для создания
+         перекрашенного PNG.
+      */
       await loadImage(
         url
       );
-
-      const displayUrl =
-        await prepareGIFFrame(
-          url
-        );
 
       if (
         !gifActive ||
@@ -2988,24 +3153,112 @@
         return;
       }
 
+      /*
+         ==================================================
+         РГМЦ
+         ==================================================
+
+         Физически используем
+         только оригинальный слой.
+      */
       if (
-        !gifLayer
+        gifPalette ===
+        "rgmc"
       ) {
-        gifLayer =
-          createGIFLayer(
-            displayUrl
+        removePaintedGIFLayer();
+
+        if (
+          !gifOriginalLayer
+        ) {
+          createOriginalGIFLayer(
+            url
           );
-      } else {
-        gifLayer.setUrl(
-          displayUrl
+        } else {
+          gifOriginalLayer.setUrl(
+            url
+          );
+        }
+
+        gifOriginalLayer.setOpacity(
+          1
         );
+
+        gifOriginalLayer.bringToFront();
       }
 
-      gifLayer.setOpacity(
-        1
-      );
+      /*
+         ==================================================
+         ИРАМ / CUSTOM
+         ==================================================
 
-      gifLayer.bringToFront();
+         Физически используем
+         только перекрашенный слой.
+      */
+      else {
+        const displayUrl =
+          await prepareGIFFrame(
+            url
+          );
+
+        if (
+          !gifActive ||
+          requestId !==
+            gifFrameRequest
+        ) {
+          return;
+        }
+
+        /*
+           На случай, если палитра
+           была переключена во время
+           генерации PNG.
+        */
+        if (
+          gifPalette ===
+          "rgmc"
+        ) {
+          removePaintedGIFLayer();
+
+          if (
+            !gifOriginalLayer
+          ) {
+            createOriginalGIFLayer(
+              url
+            );
+          } else {
+            gifOriginalLayer.setUrl(
+              url
+            );
+          }
+
+          gifOriginalLayer.setOpacity(
+            1
+          );
+
+          gifOriginalLayer.bringToFront();
+
+        } else {
+          removeOriginalGIFLayer();
+
+          if (
+            !gifPaintedLayer
+          ) {
+            createPaintedGIFLayer(
+              displayUrl
+            );
+          } else {
+            gifPaintedLayer.setUrl(
+              displayUrl
+            );
+          }
+
+          gifPaintedLayer.setOpacity(
+            1
+          );
+
+          gifPaintedLayer.bringToFront();
+        }
+      }
 
       updateGIFTimeline(
         index
@@ -3015,6 +3268,10 @@
         index
       );
 
+      /*
+         Сетка всегда поверх
+         радарного слоя.
+      */
       if (
         dmrlGridEnabled &&
         dmrlGridLayer
@@ -3072,6 +3329,12 @@
     ) {
       window.CLOradStopRadar();
     }
+
+    /*
+       Перед запуском гарантированно
+       удаляем оба старых слоя.
+    */
+    removeAllGIFDisplayLayers();
 
     gifActive =
       true;
@@ -3149,22 +3412,7 @@
       gifActive =
         false;
 
-      if (
-        gifLayer
-      ) {
-        if (
-          window.map.hasLayer(
-            gifLayer
-          )
-        ) {
-          window.map.removeLayer(
-            gifLayer
-          );
-        }
-
-        gifLayer =
-          null;
-      }
+      removeAllGIFDisplayLayers();
 
       $("timeLabel").textContent =
         "Ошибка ДМРЛ композита";
@@ -3200,20 +3448,11 @@
 
     stopGIFPlayback();
 
-    if (
-      gifLayer &&
-      window.map &&
-      window.map.hasLayer(
-        gifLayer
-      )
-    ) {
-      window.map.removeLayer(
-        gifLayer
-      );
-    }
-
-    gifLayer =
-      null;
+    /*
+       Удаляем ОБА возможных
+       визуальных слоя.
+    */
+    removeAllGIFDisplayLayers();
 
     gifFrames =
       [];
@@ -3714,4 +3953,4 @@
     }
   }
 
-})()
+})();
