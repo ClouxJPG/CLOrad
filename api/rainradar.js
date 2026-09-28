@@ -1,20 +1,23 @@
 /* =========================================================
    CLOrad — RainRadar API
-   grayscale RainRadar PNG → РГМЦ PNG
 
-   Вход:
-   /api/rainradar
-     ?timestamp=...
-     &z=...
-     &x=...
-     &y=...
+   Режимы:
 
-   Выход:
-   готовый PNG-тайл с палитрой РГМЦ
+   1. Manifest:
+      /api/rainradar?manifest=1
 
-   Чёрный фон:
-   полностью прозрачный
+   2. Tile:
+      /api/rainradar
+        ?timestamp=...
+        &z=...
+        &x=...
+        &y=...
 
+   RainRadar grayscale PNG
+   →
+   РГМЦ palette PNG
+
+   Чёрный фон → прозрачность
    ========================================================= */
 
 import sharp from "sharp";
@@ -26,9 +29,11 @@ import sharp from "sharp";
 const RR_ROOT =
   "https://rainradar.ru/composite/";
 
+const RR_MANIFEST =
+  RR_ROOT + "manifest.json";
+
 /* =======================================================
-   РГМЦ
-   ТА ЖЕ ПАЛИТРА, ЧТО У ДМРЛ
+   РГМЦ PALETTE
    ======================================================= */
 
 const RGMC_PALETTE = [
@@ -54,46 +59,32 @@ const RGMC_PALETTE = [
 ];
 
 /* =======================================================
-   GRAYSCALE CALIBRATION
-   =======================================================
-
-   RainRadar PNG содержит градации серого.
-
-   0–4:
-     фон → прозрачность
-
-   5–180:
-     радарный диапазон
-
-   >180:
-     максимум РГМЦ
-
-   Это фиксированная шкала:
-   один и тот же оттенок RainRadar всегда означает
-   один и тот же цвет РГМЦ.
+   GRAYSCALE
    ======================================================= */
 
-const TRANSPARENT_MAX =
-  4;
-
-const RADAR_MIN =
-  5;
-
-const RADAR_MAX =
-  180;
+const TRANSPARENT_MAX = 4;
+const RADAR_MIN = 5;
+const RADAR_MAX = 180;
 
 /* =======================================================
-   CACHE
+   TILE CACHE
    ======================================================= */
 
-const TILE_CACHE =
-  new Map();
-
-const TILE_CACHE_LIMIT =
-  250;
+const TILE_CACHE = new Map();
+const TILE_CACHE_LIMIT = 250;
 
 /* =======================================================
-   TILE URL
+   MANIFEST CACHE
+   ======================================================= */
+
+let manifestCache = null;
+let manifestCacheTime = 0;
+
+const MANIFEST_CACHE_MS =
+  30000;
+
+/* =======================================================
+   SOURCE TILE
    ======================================================= */
 
 function sourceTileUrl(
@@ -116,16 +107,18 @@ function sourceTileUrl(
 }
 
 /* =======================================================
-   NUMBER VALIDATION
+   INTEGER
    ======================================================= */
 
 function isInteger(value) {
-  return (
-    Number.isInteger(
-      Number(value)
-    )
+  return Number.isInteger(
+    Number(value)
   );
 }
+
+/* =======================================================
+   TILE VALIDATION
+   ======================================================= */
 
 function validTileCoordinate(
   z,
@@ -157,20 +150,16 @@ function validTileCoordinate(
       z
     );
 
-  if (
-    x < 0 ||
-    x >= max ||
-    y < 0 ||
-    y >= max
-  ) {
-    return false;
-  }
-
-  return true;
+  return (
+    x >= 0 &&
+    x < max &&
+    y >= 0 &&
+    y < max
+  );
 }
 
 /* =======================================================
-   GRAY → РГМЦ
+   GRAY → PALETTE
    ======================================================= */
 
 function grayToPaletteIndex(
@@ -215,7 +204,7 @@ function grayToPaletteIndex(
 }
 
 /* =======================================================
-   PROCESS TILE
+   COLORIZE TILE
    ======================================================= */
 
 async function processTile(
@@ -262,14 +251,8 @@ async function processTile(
     const b =
       source[i + 2];
 
-    const sourceAlpha =
+    const alpha =
       source[i + 3];
-
-    /*
-     * RainRadar сейчас отдаёт
-     * grayscale, поэтому берём
-     * среднюю яркость.
-     */
 
     const gray =
       Math.round(
@@ -285,29 +268,14 @@ async function processTile(
         gray
       );
 
-    const out =
-      i;
-
-    /*
-     * ЧЁРНЫЙ ФОН
-     * → полностью прозрачный.
-     */
-
     if (
       paletteIndex < 0 ||
-      sourceAlpha === 0
+      alpha === 0
     ) {
-      output[out] =
-        0;
-
-      output[out + 1] =
-        0;
-
-      output[out + 2] =
-        0;
-
-      output[out + 3] =
-        0;
+      output[i] = 0;
+      output[i + 1] = 0;
+      output[i + 2] = 0;
+      output[i + 3] = 0;
 
       continue;
     }
@@ -317,17 +285,17 @@ async function processTile(
         paletteIndex
       ];
 
-    output[out] =
+    output[i] =
       color[0];
 
-    output[out + 1] =
+    output[i + 1] =
       color[1];
 
-    output[out + 2] =
+    output[i + 2] =
       color[2];
 
-    output[out + 3] =
-      sourceAlpha;
+    output[i + 3] =
+      alpha;
   }
 
   return sharp(
@@ -349,7 +317,7 @@ async function processTile(
 }
 
 /* =======================================================
-   FETCH SOURCE
+   FETCH SOURCE TILE
    ======================================================= */
 
 async function getSourceTile(
@@ -371,6 +339,7 @@ async function getSourceTile(
       url,
       {
         method: "GET",
+
         headers: {
           "User-Agent":
             "Mozilla/5.0",
@@ -379,6 +348,7 @@ async function getSourceTile(
           "Referer":
             "https://rainradar.ru/"
         },
+
         cache:
           "no-store"
       }
@@ -409,7 +379,117 @@ async function getSourceTile(
 }
 
 /* =======================================================
-   CACHE TILE
+   FETCH MANIFEST
+   ======================================================= */
+
+async function getManifest() {
+  const now =
+    Date.now();
+
+  if (
+    manifestCache &&
+    now -
+      manifestCacheTime <
+      MANIFEST_CACHE_MS
+  ) {
+    return manifestCache;
+  }
+
+  const response =
+    await fetch(
+      RR_MANIFEST,
+      {
+        method: "GET",
+
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0",
+          "Accept":
+            "application/json,*/*",
+          "Referer":
+            "https://rainradar.ru/"
+        },
+
+        cache:
+          "no-store"
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      "RainRadar manifest HTTP " +
+      response.status
+    );
+  }
+
+  const data =
+    await response.json();
+
+  if (
+    !Array.isArray(data)
+  ) {
+    throw new Error(
+      "RainRadar manifest имеет неверный формат"
+    );
+  }
+
+  manifestCache =
+    data;
+
+  manifestCacheTime =
+    now;
+
+  return data;
+}
+
+/* =======================================================
+   NORMALIZE MANIFEST
+   ======================================================= */
+
+function normalizeManifest(
+  data
+) {
+  const frames = [];
+
+  for (
+    const item of data
+  ) {
+    if (
+      !Array.isArray(item) ||
+      item.length < 2
+    ) {
+      continue;
+    }
+
+    const timestamp =
+      Number(
+        item[0]
+      );
+
+    if (
+      !Number.isFinite(
+        timestamp
+      )
+    ) {
+      continue;
+    }
+
+    frames.push({
+      timestamp
+    });
+  }
+
+  frames.sort(
+    (a, b) =>
+      a.timestamp -
+      b.timestamp
+  );
+
+  return frames;
+}
+
+/* =======================================================
+   CACHE
    ======================================================= */
 
 function getCached(
@@ -423,12 +503,6 @@ function getCached(
   if (!value) {
     return null;
   }
-
-  /*
-   * LRU:
-   * недавно использованный
-   * переносим в конец.
-   */
 
   TILE_CACHE.delete(
     key
@@ -482,21 +556,16 @@ function setCached(
 }
 
 /* =======================================================
-   HEADERS
+   IMAGE HEADERS
    ======================================================= */
 
-function setHeaders(
+function setImageHeaders(
   res
 ) {
-  /*
-   * CDN может хранить готовый
-   * перекрашенный тайл.
-   *
-   * Поэтому при повторном просмотре
-   * одного и того же кадра Vercel
-   * не обязан каждый раз запускать
-   * Sharp.
-   */
+  res.setHeader(
+    "Content-Type",
+    "image/png"
+  );
 
   res.setHeader(
     "Cache-Control",
@@ -504,8 +573,26 @@ function setHeaders(
   );
 
   res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+}
+
+/* =======================================================
+   JSON HEADERS
+   ======================================================= */
+
+function setJsonHeaders(
+  res
+) {
+  res.setHeader(
     "Content-Type",
-    "image/png"
+    "application/json; charset=utf-8"
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "public, max-age=20, s-maxage=30, stale-while-revalidate=60"
   );
 
   res.setHeader(
@@ -523,6 +610,39 @@ export default async function handler(
   res
 ) {
   try {
+
+    /* ===================================================
+       MANIFEST
+       =================================================== */
+
+    if (
+      String(
+        req.query?.manifest
+      ) === "1"
+    ) {
+      const data =
+        await getManifest();
+
+      const frames =
+        normalizeManifest(
+          data
+        );
+
+      setJsonHeaders(
+        res
+      );
+
+      return res
+        .status(200)
+        .json({
+          frames
+        });
+    }
+
+    /* ===================================================
+       TILE
+       =================================================== */
+
     const timestamp =
       Number(
         req.query?.timestamp
@@ -542,10 +662,6 @@ export default async function handler(
       Number(
         req.query?.y
       );
-
-    /* ---------------------------------------------------
-       VALIDATION
-       --------------------------------------------------- */
 
     if (
       !Number.isFinite(
@@ -575,10 +691,6 @@ export default async function handler(
         });
     }
 
-    /* ---------------------------------------------------
-       CACHE KEY
-       --------------------------------------------------- */
-
     const cacheKey =
       [
         timestamp,
@@ -587,17 +699,15 @@ export default async function handler(
         y
       ].join("/");
 
-    /* ---------------------------------------------------
-       MEMORY CACHE
-       --------------------------------------------------- */
-
     const cached =
       getCached(
         cacheKey
       );
 
     if (cached) {
-      setHeaders(res);
+      setImageHeaders(
+        res
+      );
 
       res.setHeader(
         "Content-Length",
@@ -611,10 +721,6 @@ export default async function handler(
         .send(cached);
     }
 
-    /* ---------------------------------------------------
-       SOURCE
-       --------------------------------------------------- */
-
     const source =
       await getSourceTile(
         timestamp,
@@ -623,29 +729,19 @@ export default async function handler(
         y
       );
 
-    /* ---------------------------------------------------
-       COLORIZE
-       --------------------------------------------------- */
-
     const output =
       await processTile(
         source
       );
-
-    /* ---------------------------------------------------
-       CACHE
-       --------------------------------------------------- */
 
     setCached(
       cacheKey,
       output
     );
 
-    /* ---------------------------------------------------
-       RESPONSE
-       --------------------------------------------------- */
-
-    setHeaders(res);
+    setImageHeaders(
+      res
+    );
 
     res.setHeader(
       "Content-Length",
@@ -659,6 +755,7 @@ export default async function handler(
       .send(output);
 
   } catch (error) {
+
     console.error(
       "CLOrad RainRadar API:",
       error
