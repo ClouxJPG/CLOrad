@@ -1,18 +1,17 @@
 /* =========================================================
-   CLOrad — RADAR INTERPOLATION
+   CLOrad — RADAR PIXEL INTERPOLATION
    ---------------------------------------------------------
-   • Кнопка внутри «Настройки»
-   • После «Кол. кадров»
-   • 0% = оригинальный радар
-   • 1–100% = интерполяция радарного поля
+   • Только интерполяция пикселей
+   • Без морфологии
+   • Без marching squares
+   • Без контурной векторизации
    • Без CSS blur
-   • Без RGB-размытия
-   • Без новых цветов
-   • Без удаления слоистой облачности
-   • Исходные радарные пиксели не удаляются намеренно
-   • Интерполируется именно поле классов радара
-   • Результат имеет те же географические bounds
-   • Обработка только после отпускания ползунка
+   • Без изменения gif-radar.js
+   • 0% = оригинальный радар
+   • 1–100% = интерполяция
+   • GIF не исчезает во время обработки
+   • Другие слои CLOrad не затрагиваются
+   • Обработка после отпускания ползунка
    ========================================================= */
 
 (() => {
@@ -28,7 +27,7 @@
   ];
 
   /* =======================================================
-     SETTINGS IDS
+     SETTINGS
      ======================================================= */
 
   const SETTING_ID =
@@ -47,74 +46,12 @@
     "cloradSmoothingValue";
 
   /* =======================================================
-     RADAR PALETTE
-     ======================================================= */
-
-  const SOURCE_CLASS_START = 2;
-
-  const SOURCE_OY_COLORS = [
-    "#b9c1c7",
-    "#a9a9a9",
-    "#00ff00",
-    "#00cc00",
-    "#009900",
-    "#00ffff",
-    "#4da6ff",
-    "#3366ff",
-    "#0000cc",
-    "#ff66cc",
-    "#ff00ff",
-    "#cc0099",
-    "#ffff00",
-    "#ff9900",
-    "#ff0000",
-    "#cc99ff",
-    "#cc33ff",
-    "#9900cc",
-    "#000000"
-  ];
-
-  const DEFAULT_TARGET_COLORS = [
-    "#b9c1c7",
-    "#a9c7f4",
-    "#63eda5",
-    "#43cf89",
-    "#4db84e",
-    "#fff89c",
-    "#75a6ef",
-    "#5279ed",
-    "#504a9b",
-    "#ffc0a8",
-    "#fa82a0",
-    "#ff4d4d",
-    "#db9248",
-    "#ad7544",
-    "#f2aaf0",
-    "#e85ae7",
-    "#ca3cc7",
-    "#777c91"
-  ];
-
-  /*
-     Небольшой допуск нужен только для
-     определения уже существующих цветов.
-
-     Цвета между классами НЕ создаются.
-  */
-
-  const MAX_COLOR_DISTANCE = 28;
-
-  /* =======================================================
      STATE
      ======================================================= */
 
   let smoothingValue = 0;
 
   let smoothingLayer = null;
-
-  let sourceImageElement = null;
-
-  let sourceOriginalOpacity = "1";
 
   let processing = false;
 
@@ -124,7 +61,9 @@
 
   let installed = false;
 
-  let frameObserver = null;
+  let observerStarted = false;
+
+  let lastSource = null;
 
   /* =======================================================
      HELPERS
@@ -141,107 +80,10 @@
     );
   }
 
-  function hexToRGB(hex) {
-    if (typeof hex !== "string") {
-      return null;
-    }
-
-    let value = hex.trim();
-
-    if (value[0] === "#") {
-      value = value.slice(1);
-    }
-
-    if (value.length === 3) {
-      value = value
-        .split("")
-        .map(x => x + x)
-        .join("");
-    }
-
-    if (value.length !== 6) {
-      return null;
-    }
-
-    const number = parseInt(
-      value,
-      16
-    );
-
-    if (!Number.isFinite(number)) {
-      return null;
-    }
-
-    return {
-      r: (number >> 16) & 255,
-      g: (number >> 8) & 255,
-      b: number & 255
-    };
-  }
-
-  function rgbDistance(
-    r,
-    g,
-    b,
-    color
-  ) {
-    const dr = r - color.r;
-    const dg = g - color.g;
-    const db = b - color.b;
-
-    return Math.sqrt(
-      dr * dr +
-      dg * dg +
-      db * db
-    );
-  }
-
   /* =======================================================
-     CURRENT PALETTE
-     ======================================================= */
-
-  function getCurrentPalette() {
-    try {
-      if (
-        typeof window.CLOradGetCurrentPalette ===
-        "function"
-      ) {
-        const result =
-          window.CLOradGetCurrentPalette();
-
-        if (
-          result &&
-          Array.isArray(result.colors) &&
-          result.colors.length >= 19
-        ) {
-          const colors =
-            result.colors
-              .slice(0, 19)
-              .map(hexToRGB);
-
-          if (
-            colors.every(
-              color => color
-            )
-          ) {
-            return colors;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(
-        "CLOrad interpolation palette:",
-        error
-      );
-    }
-
-    return DEFAULT_TARGET_COLORS.map(
-      hexToRGB
-    );
-  }
-
-  /* =======================================================
-     SOURCE IMAGE
+     FIND ONLY RADAR GIF
+     -------------------------------------------------------
+     Никакие другие слои здесь не ищутся.
      ======================================================= */
 
   function getSourceImage() {
@@ -256,27 +98,57 @@
       return null;
     }
 
-    for (
-      let i = images.length - 1;
-      i >= 0;
-      i--
-    ) {
+    for (let i = images.length - 1; i >= 0; i--) {
       const image = images[i];
 
       if (
         image &&
-        image.dataset &&
-        image.dataset.cloradSmoothing !== "1"
+        image.complete &&
+        image.naturalWidth > 0 &&
+        image.naturalHeight > 0
       ) {
         return image;
       }
     }
 
-    return null;
+    return images[images.length - 1] || null;
   }
 
   /* =======================================================
-     IMAGE LOADER
+     REMOVE ONLY OUR INTERPOLATION LAYER
+     ======================================================= */
+
+  function removeSmoothedLayer() {
+    if (
+      smoothingLayer &&
+      window.map &&
+      window.map.hasLayer &&
+      window.map.hasLayer(
+        smoothingLayer
+      )
+    ) {
+      window.map.removeLayer(
+        smoothingLayer
+      );
+    }
+
+    smoothingLayer = null;
+  }
+
+  /* =======================================================
+     RESTORE ORIGINAL
+     ======================================================= */
+
+  function restoreOriginal() {
+    processToken++;
+
+    removeSmoothedLayer();
+
+    processing = false;
+  }
+
+  /* =======================================================
+     LOAD IMAGE
      ======================================================= */
 
   function loadImage(url) {
@@ -305,868 +177,73 @@
   }
 
   /* =======================================================
-     COLOR CLASSIFICATION
-     ======================================================= */
-
-  function buildLabelMap(
-    imageData,
-    width,
-    height,
-    palette
-  ) {
-    const data =
-      imageData.data;
-
-    const labels =
-      new Int16Array(
-        width * height
-      );
-
-    /*
-       -1 = прозрачный / фон
-       0–1 = служебные серые классы
-       2–18 = радар
-    */
-
-    labels.fill(-1);
-
-    const paletteCache =
-      new Map();
-
-    let radarPixels = 0;
-
-    for (
-      let y = 0;
-      y < height;
-      y++
-    ) {
-      const row =
-        y * width;
-
-      for (
-        let x = 0;
-        x < width;
-        x++
-      ) {
-        const index =
-          row + x;
-
-        const p =
-          index * 4;
-
-        const alpha =
-          data[p + 3];
-
-        if (alpha < 32) {
-          continue;
-        }
-
-        const r =
-          data[p];
-
-        const g =
-          data[p + 1];
-
-        const b =
-          data[p + 2];
-
-        const key =
-          (r << 16) |
-          (g << 8) |
-          b;
-
-        let classIndex;
-
-        if (
-          paletteCache.has(key)
-        ) {
-          classIndex =
-            paletteCache.get(key);
-        } else {
-          let best =
-            -1;
-
-          let bestDistance =
-            Infinity;
-
-          /*
-             Ищем ближайший цвет
-             ТОЛЬКО среди радарных
-             классов.
-
-             Серый фон сюда не попадает.
-          */
-
-          for (
-            let i =
-              SOURCE_CLASS_START;
-            i < palette.length;
-            i++
-          ) {
-            const color =
-              palette[i];
-
-            if (!color) {
-              continue;
-            }
-
-            const distance =
-              rgbDistance(
-                r,
-                g,
-                b,
-                color
-              );
-
-            if (
-              distance <
-              bestDistance
-            ) {
-              bestDistance =
-                distance;
-
-              best =
-                i;
-            }
-          }
-
-          if (
-            best <
-              SOURCE_CLASS_START ||
-            bestDistance >
-              MAX_COLOR_DISTANCE
-          ) {
-            best = -1;
-          }
-
-          paletteCache.set(
-            key,
-            best
-          );
-
-          classIndex =
-            best;
-        }
-
-        labels[index] =
-          classIndex;
-
-        if (
-          classIndex >=
-          SOURCE_CLASS_START
-        ) {
-          radarPixels++;
-        }
-      }
-    }
-
-    return {
-      labels,
-      radarPixels
-    };
-  }
-
-  /* =======================================================
-     INTERPOLATION
+     INTERPOLATION STRENGTH
      -------------------------------------------------------
-     Здесь НЕТ morphology,
-     НЕТ marching squares,
-     НЕТ Chaikin.
+     Мы НЕ используем blur.
 
-     Это обычная пространственная
-     интерполяция числового поля классов.
+     Метод:
 
-     После интерполяции значение
-     снова переводится в существующий
-     цвет палитры.
+       исходник
+          ↓
+       увеличение
+          ↓
+       imageSmoothingQuality = high
+          ↓
+       уменьшение обратно
+
+     Именно уменьшение большого изображения
+     обратно в исходный размер заставляет Canvas
+     интерполировать соседние пиксели.
+
+     Максимум намеренно ограничен 3x,
+     чтобы iPhone не получил огромный canvas.
      ======================================================= */
 
-  function interpolateClass(
-    labels,
-    width,
-    height,
-    x,
-    y,
-    radius
-  ) {
-    /*
-       Базовая точка.
-    */
-
-    const x0 =
-      Math.floor(x);
-
-    const y0 =
-      Math.floor(y);
-
-    const x1 =
-      Math.min(
-        width - 1,
-        x0 + 1
-      );
-
-    const y1 =
-      Math.min(
-        height - 1,
-        y0 + 1
-      );
-
-    const fx =
-      x - x0;
-
-    const fy =
-      y - y0;
-
-    function value(
-      px,
-      py
-    ) {
-      if (
-        px < 0 ||
-        py < 0 ||
-        px >= width ||
-        py >= height
-      ) {
-        return -1;
-      }
-
-      return labels[
-        py * width + px
-      ];
-    }
-
-    /*
-       Сначала обычная bilinear
-       interpolation.
-
-       Она работает только если
-       вокруг точки действительно
-       есть радар.
-    */
-
-    const a =
-      value(x0, y0);
-
-    const b =
-      value(x1, y0);
-
-    const c =
-      value(x0, y1);
-
-    const d =
-      value(x1, y1);
-
-    const values = [];
-
-    if (a >= SOURCE_CLASS_START) {
-      values.push([
-        a,
-        (1 - fx) *
-          (1 - fy)
-      ]);
-    }
-
-    if (b >= SOURCE_CLASS_START) {
-      values.push([
-        b,
-        fx *
-          (1 - fy)
-      ]);
-    }
-
-    if (c >= SOURCE_CLASS_START) {
-      values.push([
-        c,
-        (1 - fx) *
-          fy
-      ]);
-    }
-
-    if (d >= SOURCE_CLASS_START) {
-      values.push([
-        d,
-        fx * fy
-      ]);
-    }
-
-    /*
-       Если локальная bilinear-точка
-       полностью оказалась в фоне,
-       проверяем ближайшее
-       интерполяционное окружение.
-
-       Это не позволяет маленьким
-       радарным участкам исчезать.
-    */
-
-    if (
-      !values.length
-    ) {
-      let weighted =
-        0;
-
-      let weightSum =
-        0;
-
-      const r =
-        Math.max(
-          1,
-          radius
-        );
-
-      for (
-        let dy = -r;
-        dy <= r;
-        dy++
-      ) {
-        for (
-          let dx = -r;
-          dx <= r;
-          dx++
-        ) {
-          const px =
-            Math.round(x) + dx;
-
-          const py =
-            Math.round(y) + dy;
-
-          const v =
-            value(px, py);
-
-          if (
-            v <
-            SOURCE_CLASS_START
-          ) {
-            continue;
-          }
-
-          const distance =
-            Math.sqrt(
-              dx * dx +
-              dy * dy
-            );
-
-          if (
-            distance >
-            r
-          ) {
-            continue;
-          }
-
-          const weight =
-            1 /
-            (
-              1 +
-              distance
-            );
-
-          weighted +=
-            v *
-            weight;
-
-          weightSum +=
-            weight;
-        }
-      }
-
-      if (
-        weightSum <= 0
-      ) {
-        return -1;
-      }
-
-      return (
-        weighted /
-        weightSum
-      );
-    }
-
-    let weighted =
-      0;
-
-    let weightSum =
-      0;
-
-    for (
-      const item of values
-    ) {
-      weighted +=
-        item[0] *
-        item[1];
-
-      weightSum +=
-        item[1];
-    }
-
-    if (
-      weightSum <= 0
-    ) {
-      return -1;
-    }
-
-    return (
-      weighted /
-      weightSum
-    );
-  }
-
-  /* =======================================================
-     INTERPOLATED RADAR
-     ======================================================= */
-
-  function createInterpolatedRadar(
-    labels,
-    width,
-    height,
-    palette,
-    strength
-  ) {
-    const canvas =
-      document.createElement(
-        "canvas"
-      );
-
-    canvas.width =
-      width;
-
-    canvas.height =
-      height;
-
-    const ctx =
-      canvas.getContext(
-        "2d",
-        {
-          willReadFrequently:
-            false
-        }
-      );
-
-    if (!ctx) {
-      return null;
-    }
-
-    /*
-       Прозрачный canvas.
-
-       Поэтому:
-       • карта остаётся снизу;
-       • слоистая облачность остаётся;
-       • фон GIF не закрашивается.
-    */
-
-    ctx.clearRect(
-      0,
-      0,
-      width,
-      height
-    );
-
-    /*
-       Сила интерполяции.
-
-       1–10%:
-       практически исходная форма.
-
-       100%:
-       более широкая интерполяция
-       соседних значений.
-    */
-
+  function getInterpolationScale(strength) {
     const s =
       clamp(
-        strength,
+        Number(strength) || 0,
         0,
         100
       ) / 100;
 
-    const radius =
-      Math.max(
-        1,
-        Math.min(
-          4,
-          1 +
-            Math.floor(
-              s * 3
-            )
-        )
-      );
-
     /*
-       ВАЖНО:
+       0% не обрабатывается вообще.
 
-       Мы не рисуем каждый пиксель
-       отдельным прямоугольником.
+       При 1% уже есть минимальная
+       интерполяция.
 
-       Сначала создаётся интерполированное
-       поле, затем оно окрашивается
-       существующими цветами.
+       100% = 3x supersampling.
     */
 
-    const output =
-      new Uint8ClampedArray(
-        width *
-        height
-      );
-
-    /*
-       0 = прозрачный
-       1 = радар
-    */
-
-    const outputClass =
-      new Int16Array(
-        width *
-        height
-      );
-
-    outputClass.fill(-1);
-
-    /*
-       Чтобы не перегружать iPhone,
-       обрабатываем строками.
-    */
-
-    for (
-      let y = 0;
-      y < height;
-      y++
-    ) {
-      for (
-        let x = 0;
-        x < width;
-        x++
-      ) {
-        const index =
-          y * width + x;
-
-        /*
-           Исходный класс.
-        */
-
-        const original =
-          labels[index];
-
-        /*
-           Если это радарный пиксель,
-           он обязательно остаётся
-           представленным в результате.
-        */
-
-        if (
-          original >=
-          SOURCE_CLASS_START
-        ) {
-          const interpolated =
-            interpolateClass(
-              labels,
-              width,
-              height,
-              x,
-              y,
-              radius
-            );
-
-          if (
-            interpolated >=
-            SOURCE_CLASS_START
-          ) {
-            /*
-               Привязываем результат
-               обратно к существующим
-               дискретным классам.
-
-               НОВЫХ RGB-ЦВЕТОВ НЕТ.
-            */
-
-            const nearest =
-              clamp(
-                Math.round(
-                  interpolated
-                ),
-                SOURCE_CLASS_START,
-                palette.length - 1
-              );
-
-            outputClass[index] =
-              nearest;
-          } else {
-            /*
-               Если интерполяция около
-               границы потеряла значение,
-               оставляем оригинал.
-            */
-
-            outputClass[index] =
-              original;
-          }
-
-          continue;
-        }
-
-        /*
-           Для фона пытаемся аккуратно
-           продолжить интерполированную
-           область только если рядом
-           есть радар.
-
-           Это позволяет сглаживать
-           границу, не удаляя исходные
-           радарные пиксели.
-        */
-
-        if (
-          strength <= 0
-        ) {
-          continue;
-        }
-
-        const interpolated =
-          interpolateClass(
-            labels,
-            width,
-            height,
-            x,
-            y,
-            radius
-          );
-
-        if (
-          interpolated <
-          SOURCE_CLASS_START
-        ) {
-          continue;
-        }
-
-        /*
-           Чем выше сила,
-           тем больше допускаем
-           интерполяционное продолжение
-           границы.
-
-           Но максимум — радиус
-           самого интерполяционного
-           окна.
-        */
-
-        const distance =
-          Math.abs(
-            interpolated -
-            Math.round(
-              interpolated
-            )
-          );
-
-        /*
-           На границе используем только
-           достаточно уверенные значения.
-        */
-
-        if (
-          distance <=
-          0.48
-        ) {
-          outputClass[index] =
-            clamp(
-              Math.round(
-                interpolated
-              ),
-              SOURCE_CLASS_START,
-              palette.length - 1
-            );
-        }
-      }
-    }
-
-    /*
-       Рисуем только радар.
-
-       Каждый класс получает
-       СУЩЕСТВУЮЩИЙ цвет палитры.
-    */
-
-    const data =
-      ctx.createImageData(
-        width,
-        height
-      );
-
-    const rgba =
-      data.data;
-
-    for (
-      let i = 0;
-      i < outputClass.length;
-      i++
-    ) {
-      const classIndex =
-        outputClass[i];
-
-      if (
-        classIndex <
-        SOURCE_CLASS_START
-      ) {
-        continue;
-      }
-
-      const color =
-        palette[
-          classIndex
-        ];
-
-      if (!color) {
-        continue;
-      }
-
-      const p =
-        i * 4;
-
-      rgba[p] =
-        color.r;
-
-      rgba[p + 1] =
-        color.g;
-
-      rgba[p + 2] =
-        color.b;
-
-      rgba[p + 3] =
-        255;
-    }
-
-    ctx.putImageData(
-      data,
-      0,
-      0
+    return (
+      1.08 +
+      s * 1.92
     );
-
-    return canvas;
   }
 
   /* =======================================================
-     REMOVE INTERPOLATION
+     INTERPOLATE FRAME
      ======================================================= */
 
-  function removeSmoothedLayer() {
-    if (
-      smoothingLayer &&
-      window.map &&
-      window.map.hasLayer(
-        smoothingLayer
-      )
-    ) {
-      window.map.removeLayer(
-        smoothingLayer
-      );
-    }
-
-    smoothingLayer =
-      null;
-  }
-
-  /* =======================================================
-     RESTORE ORIGINAL RADAR
-     ======================================================= */
-
-  function restoreOriginal() {
-    processToken++;
-
-    removeSmoothedLayer();
-
-    const source =
-      getSourceImage();
-
-    if (source) {
-      source.style.opacity =
-        sourceOriginalOpacity ||
-        "1";
-    }
-
-    sourceImageElement =
-      source;
-
-    processing =
-      false;
-  }
-
-  /* =======================================================
-     INSTALL RESULT
-     ======================================================= */
-
-  function installInterpolatedLayer(
-    dataURL
-  ) {
-    if (
-      !window.map ||
-      !dataURL
-    ) {
-      return false;
-    }
-
-    /*
-       Сначала добавляем результат.
-
-       Только после успешного добавления
-       скрываем оригинальный радар.
-    */
-
-    const layer =
-      L.imageOverlay(
-        dataURL,
-        GIF_BOUNDS,
-        {
-          opacity: 1,
-          interactive: false,
-          zIndex: 7,
-          className:
-            "clorad-gif-radar-smoothed"
-        }
-      );
-
-    layer.addTo(
-      window.map
-    );
-
-    smoothingLayer =
-      layer;
-
-    const source =
-      getSourceImage();
-
-    if (source) {
-      sourceImageElement =
-        source;
-
-      sourceOriginalOpacity =
-        source.style.opacity ||
-        "1";
-
-      source.style.opacity =
-        "0";
-    }
-
-    if (
-      typeof layer.bringToFront ===
-      "function"
-    ) {
-      layer.bringToFront();
-    }
-
-    return true;
-  }
-
-  /* =======================================================
-     PROCESS FRAME
-     ======================================================= */
-
-  async function processCurrentFrame(
+  async function interpolateFrame(
     strength
   ) {
     const token =
       ++processToken;
 
-    if (
-      strength <= 0
-    ) {
+    strength =
+      clamp(
+        Number(strength) || 0,
+        0,
+        100
+      );
+
+    /* -----------------------------------------------------
+       0% = вообще ничего не рисуем.
+       ----------------------------------------------------- */
+
+    if (strength <= 0) {
       restoreOriginal();
       return;
     }
@@ -1186,10 +263,9 @@
       setTimeout(
         () => {
           if (
-            token ===
-            processToken
+            token === processToken
           ) {
-            processCurrentFrame(
+            interpolateFrame(
               strength
             );
           }
@@ -1204,37 +280,26 @@
       return;
     }
 
-    processing =
-      true;
-
-    /*
-       Пока вычисляем,
-       оригинал НЕ скрываем.
-
-       Это важно: если canvas
-       или кадр не загрузится,
-       радар не пропадёт.
-    */
+    processing = true;
 
     try {
-      const url =
+      const sourceURL =
         source.currentSrc ||
         source.src;
 
-      if (!url) {
+      if (!sourceURL) {
         throw new Error(
-          "Нет URL текущего кадра"
+          "У радара отсутствует src"
         );
       }
 
       const image =
         await loadImage(
-          url
+          sourceURL
         );
 
       if (
-        token !==
-        processToken
+        token !== processToken
       ) {
         return;
       }
@@ -1251,45 +316,54 @@
         !width ||
         !height
       ) {
-        throw new Error(
-          "Некорректный размер кадра"
-        );
+        return;
       }
 
-      const canvas =
+      /* ---------------------------------------------------
+         ORIGINAL CANVAS
+         --------------------------------------------------- */
+
+      const sourceCanvas =
         document.createElement(
           "canvas"
         );
 
-      canvas.width =
+      sourceCanvas.width =
         width;
 
-      canvas.height =
+      sourceCanvas.height =
         height;
 
-      const ctx =
-        canvas.getContext(
-          "2d",
-          {
-            willReadFrequently:
-              true
-          }
+      const sourceContext =
+        sourceCanvas.getContext(
+          "2d"
         );
 
-      if (!ctx) {
+      if (!sourceContext) {
         throw new Error(
           "Canvas недоступен"
         );
       }
 
-      ctx.clearRect(
+      /*
+         Очень важно:
+
+         не меняем альфа-канал,
+         не перекрашиваем изображение,
+         не классифицируем цвета.
+      */
+
+      sourceContext.clearRect(
         0,
         0,
         width,
         height
       );
 
-      ctx.drawImage(
+      sourceContext.imageSmoothingEnabled =
+        false;
+
+      sourceContext.drawImage(
         image,
         0,
         0,
@@ -1297,90 +371,162 @@
         height
       );
 
-      let imageData;
-
-      try {
-        imageData =
-          ctx.getImageData(
-            0,
-            0,
-            width,
-            height
-          );
-      } catch (error) {
-        throw new Error(
-          "Canvas заблокирован"
-        );
-      }
-
       if (
-        token !==
-        processToken
+        token !== processToken
       ) {
         return;
       }
 
-      const palette =
-        getCurrentPalette();
+      /* ---------------------------------------------------
+         UPSCALE
+         --------------------------------------------------- */
 
-      if (
-        !palette ||
-        palette.length < 19
-      ) {
-        throw new Error(
-          "Палитра радара недоступна"
-        );
-      }
-
-      const mapData =
-        buildLabelMap(
-          imageData,
-          width,
-          height,
-          palette
-        );
-
-      if (
-        token !==
-        processToken
-      ) {
-        return;
-      }
-
-      /*
-         Защита от пустого результата.
-      */
-
-      if (
-        mapData.radarPixels <
-        20
-      ) {
-        throw new Error(
-          "Радарные пиксели не найдены"
-        );
-      }
-
-      const resultCanvas =
-        createInterpolatedRadar(
-          mapData.labels,
-          width,
-          height,
-          palette,
+      const scale =
+        getInterpolationScale(
           strength
         );
 
-      if (!resultCanvas) {
+      const largeWidth =
+        Math.max(
+          width,
+          Math.ceil(
+            width * scale
+          )
+        );
+
+      const largeHeight =
+        Math.max(
+          height,
+          Math.ceil(
+            height * scale
+          )
+        );
+
+      const largeCanvas =
+        document.createElement(
+          "canvas"
+        );
+
+      largeCanvas.width =
+        largeWidth;
+
+      largeCanvas.height =
+        largeHeight;
+
+      const largeContext =
+        largeCanvas.getContext(
+          "2d"
+        );
+
+      if (!largeContext) {
         throw new Error(
-          "Не удалось создать интерполированный слой"
+          "Большой Canvas недоступен"
         );
       }
 
+      largeContext.clearRect(
+        0,
+        0,
+        largeWidth,
+        largeHeight
+      );
+
+      /*
+         Первый этап интерполяции.
+      */
+
+      largeContext.imageSmoothingEnabled =
+        true;
+
+      largeContext.imageSmoothingQuality =
+        "high";
+
+      largeContext.drawImage(
+        sourceCanvas,
+        0,
+        0,
+        width,
+        height,
+        0,
+        0,
+        largeWidth,
+        largeHeight
+      );
+
       if (
-        token !==
-        processToken
+        token !== processToken
       ) {
         return;
       }
+
+      /* ---------------------------------------------------
+         DOWNSCALE
+         ---------------------------------------------------
+         Главное место интерполяции.
+
+         Большое изображение возвращается
+         в исходные 1122×1136.
+
+         Canvas смешивает соседние
+         значения пикселей.
+         --------------------------------------------------- */
+
+      const resultCanvas =
+        document.createElement(
+          "canvas"
+        );
+
+      resultCanvas.width =
+        width;
+
+      resultCanvas.height =
+        height;
+
+      const resultContext =
+        resultCanvas.getContext(
+          "2d"
+        );
+
+      if (!resultContext) {
+        throw new Error(
+          "Result Canvas недоступен"
+        );
+      }
+
+      resultContext.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      resultContext.imageSmoothingEnabled =
+        true;
+
+      resultContext.imageSmoothingQuality =
+        "high";
+
+      resultContext.drawImage(
+        largeCanvas,
+        0,
+        0,
+        largeWidth,
+        largeHeight,
+        0,
+        0,
+        width,
+        height
+      );
+
+      if (
+        token !== processToken
+      ) {
+        return;
+      }
+
+      /* ---------------------------------------------------
+         RESULT
+         --------------------------------------------------- */
 
       const result =
         resultCanvas.toDataURL(
@@ -1392,38 +538,28 @@
         result === "data:,"
       ) {
         throw new Error(
-          "Пустой результат интерполяции"
+          "Canvas вернул пустой результат"
         );
       }
 
       if (
-        token !==
-        processToken
+        token !== processToken
       ) {
         return;
       }
 
-      /*
-         Старый результат удаляем
-         только когда новый уже готов.
-      */
+      /* ---------------------------------------------------
+         НОВЫЙ СЛОЙ ДОБАВЛЯЕМ ПЕРЕД УДАЛЕНИЕМ
+         СТАРОГО.
 
-      removeSmoothedLayer();
+         Поэтому GIF не исчезает во время
+         обработки.
+         --------------------------------------------------- */
 
-      /*
-         Оригинальный радар пока виден.
-      */
+      installInterpolatedLayer(
+        result
+      );
 
-      const installedResult =
-        installInterpolatedLayer(
-          result
-        );
-
-      if (!installedResult) {
-        throw new Error(
-          "Не удалось установить слой"
-        );
-      }
     } catch (error) {
       console.error(
         "CLOrad radar interpolation:",
@@ -1431,30 +567,83 @@
       );
 
       /*
-         При любой ошибке оригинальный
-         радар остаётся видимым.
+         Если интерполяция не удалась,
+         оригинальный GIF остаётся видимым.
       */
 
-      removeSmoothedLayer();
-
-      const sourceAfterError =
-        getSourceImage();
-
-      if (
-        sourceAfterError
-      ) {
-        sourceAfterError.style.opacity =
-          sourceOriginalOpacity ||
-          "1";
-      }
     } finally {
       if (
-        token ===
-        processToken
+        token === processToken
       ) {
-        processing =
-          false;
+        processing = false;
       }
+    }
+  }
+
+  /* =======================================================
+     INSTALL RESULT
+     ======================================================= */
+
+  function installInterpolatedLayer(
+    dataURL
+  ) {
+    if (
+      !window.map
+    ) {
+      return;
+    }
+
+    const newLayer =
+      L.imageOverlay(
+        dataURL,
+        GIF_BOUNDS,
+        {
+          opacity: 1,
+          interactive: false,
+          zIndex: 7,
+          className:
+            "clorad-gif-radar-interpolated"
+        }
+      );
+
+    /*
+       Сначала добавляем новый слой.
+       Старый остаётся под ним.
+    */
+
+    newLayer.addTo(
+      window.map
+    );
+
+    /*
+       Только после добавления
+       результата убираем предыдущий
+       интерполированный слой.
+    */
+
+    const oldLayer =
+      smoothingLayer;
+
+    smoothingLayer =
+      newLayer;
+
+    if (
+      oldLayer &&
+      window.map.hasLayer &&
+      window.map.hasLayer(
+        oldLayer
+      )
+    ) {
+      window.map.removeLayer(
+        oldLayer
+      );
+    }
+
+    if (
+      typeof newLayer.bringToFront ===
+      "function"
+    ) {
+      newLayer.bringToFront();
     }
   }
 
@@ -1481,9 +670,7 @@
         SETTING_ID
       )
     ) {
-      installed =
-        true;
-
+      installed = true;
       return;
     }
 
@@ -1513,56 +700,38 @@
         id="${PANEL_ID}"
       >
         <div
-          class="cloradInterpolationTitle"
           style="
             font-size:12px;
             color:#9da7ad;
-            margin-bottom:8px;
+            margin-bottom:10px;
           "
         >
-          Интерполяция радарного поля
+          Интерполяция пикселей
         </div>
 
-        <div
-          class="cloradInterpolationSlider"
+        <input
+          id="${RANGE_ID}"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
           style="
             width:100%;
-            height:32px;
-            display:flex;
-            align-items:center;
+            display:block;
+            margin:0;
+            accent-color:#53e39b;
             touch-action:none;
-            user-select:none;
-            -webkit-user-select:none;
           "
         >
-          <input
-            id="${RANGE_ID}"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="0"
-            style="
-              display:block;
-              width:100%;
-              height:28px;
-              margin:0;
-              padding:0;
-              cursor:pointer;
-              touch-action:pan-x;
-              accent-color:#53e39b;
-            "
-          >
-        </div>
 
         <div
           id="${VALUE_ID}"
           style="
-            margin-top:4px;
+            margin-top:7px;
             font-size:13px;
             color:#dfe4e7;
             text-align:right;
-            line-height:18px;
           "
         >
           0%
@@ -1570,10 +739,9 @@
       </div>
     `;
 
-    /*
-       Ставим строго после
-       «Кол. кадров».
-    */
+    /* -----------------------------------------------------
+       ПОСЛЕ «КОЛ. КАДРОВ»
+       ----------------------------------------------------- */
 
     const framesSetting =
       document.getElementById(
@@ -1626,57 +794,50 @@
       }
     );
 
-    /*
-       Ничего внутри панели
-       не должно закрывать
-       «Настройки».
-    */
+    /* =====================================================
+       НЕ ПЕРЕДАЁМ КЛИКИ ПОЛЗУНКА
+       НАРУЖУ НАСТРОЕК
+       ===================================================== */
 
-    panel?.addEventListener(
-      "click",
-      event => {
-        event.stopPropagation();
-      }
-    );
+    [
+      panel,
+      range
+    ].forEach(
+      element => {
+        if (!element) {
+          return;
+        }
 
-    panel?.addEventListener(
-      "pointerdown",
-      event => {
-        event.stopPropagation();
-      }
-    );
-
-    panel?.addEventListener(
-      "pointerup",
-      event => {
-        event.stopPropagation();
-      }
-    );
-
-    panel?.addEventListener(
-      "touchstart",
-      event => {
-        event.stopPropagation();
-      },
-      {
-        passive: true
-      }
-    );
-
-    panel?.addEventListener(
-      "touchend",
-      event => {
-        event.stopPropagation();
-      },
-      {
-        passive: true
+        [
+          "pointerdown",
+          "pointermove",
+          "pointerup",
+          "touchstart",
+          "touchmove",
+          "touchend",
+          "mousedown",
+          "mousemove",
+          "mouseup",
+          "click"
+        ].forEach(
+          eventName => {
+            element.addEventListener(
+              eventName,
+              event => {
+                event.stopPropagation();
+              }
+            );
+          }
+        );
       }
     );
 
     /* =====================================================
-       SLIDER INPUT
+       INPUT
        -----------------------------------------------------
-       Здесь НИЧЕГО не пересчитывается.
+       Только меняем значение.
+
+       Интерполяция НЕ запускается здесь.
        ===================================================== */
 
     range?.addEventListener(
@@ -1698,46 +859,6 @@
             smoothingValue +
             "%";
         }
-
-        /*
-           Старый результат убираем,
-           но оригинальный радар
-           оставляем.
-
-           Поэтому GIF никогда
-           не исчезает при движении
-           ползунка.
-        */
-
-        if (
-          smoothingLayer
-        ) {
-          removeSmoothedLayer();
-        }
-
-        const source =
-          getSourceImage();
-
-        if (source) {
-          source.style.opacity =
-            sourceOriginalOpacity ||
-            "1";
-        }
-
-        /*
-           0% — сразу оригинал.
-        */
-
-        if (
-          smoothingValue ===
-          0
-        ) {
-          clearTimeout(
-            releaseTimer
-          );
-
-          restoreOriginal();
-        }
       }
     );
 
@@ -1745,85 +866,61 @@
        RELEASE
        ===================================================== */
 
-    const scheduleRelease =
-      event => {
-        if (event) {
-          event.stopPropagation();
-        }
+    function release() {
+      clearTimeout(
+        releaseTimer
+      );
 
-        clearTimeout(
-          releaseTimer
+      releaseTimer =
+        setTimeout(
+          () => {
+            interpolateFrame(
+              smoothingValue
+            );
+          },
+          180
         );
-
-        releaseTimer =
-          setTimeout(
-            () => {
-              processCurrentFrame(
-                smoothingValue
-              );
-            },
-            220
-          );
-      };
+    }
 
     range?.addEventListener(
       "pointerup",
-      scheduleRelease
+      event => {
+        event.stopPropagation();
+        release();
+      }
     );
 
     range?.addEventListener(
       "touchend",
-      scheduleRelease,
-      {
-        passive: false
+      event => {
+        event.stopPropagation();
+        release();
       }
     );
 
     range?.addEventListener(
       "mouseup",
-      scheduleRelease
-    );
-
-    /*
-       Если пользователь закончил
-       движение за пределами элемента.
-    */
-
-    range?.addEventListener(
-      "pointercancel",
       event => {
         event.stopPropagation();
-
-        clearTimeout(
-          releaseTimer
-        );
-
-        releaseTimer =
-          setTimeout(
-            () => {
-              processCurrentFrame(
-                smoothingValue
-              );
-            },
-            220
-          );
+        release();
       }
     );
 
-    installed =
-      true;
+    installed = true;
   }
 
   /* =======================================================
-     WATCH GIF FRAME
+     FRAME CHANGE
      ======================================================= */
 
   function watchGIFFrame() {
-    if (frameObserver) {
+    if (observerStarted) {
       return;
     }
 
-    frameObserver =
+    observerStarted = true;
+
+    const observer =
       new MutationObserver(
         mutations => {
           for (
@@ -1857,36 +954,23 @@
             /*
                Новый кадр.
 
-               Старый интерполированный
-               слой больше не соответствует
-               GIF.
+               Старый результат больше
+               нельзя использовать.
             */
 
             processToken++;
 
             removeSmoothedLayer();
 
-            processing =
-              false;
+            processing = false;
 
-            /*
-               Новый GIF всегда сначала
-               показываем оригинальным.
-            */
-
-            target.style.opacity =
-              "1";
-
-            sourceImageElement =
+            lastSource =
               target;
 
-            sourceOriginalOpacity =
-              "1";
-
             /*
-               Если интерполяция включена,
+               Если сглаживание включено,
                после загрузки нового кадра
-               строим её заново.
+               снова интерполируем его.
             */
 
             if (
@@ -1899,18 +983,18 @@
               releaseTimer =
                 setTimeout(
                   () => {
-                    processCurrentFrame(
+                    interpolateFrame(
                       smoothingValue
                     );
                   },
-                  180
+                  140
                 );
             }
           }
         }
       );
 
-    frameObserver.observe(
+    observer.observe(
       document.body,
       {
         subtree: true,
@@ -1961,6 +1045,7 @@
      ======================================================= */
 
   window.CLOradRadarSmoothing = {
+
     getValue() {
       return smoothingValue;
     },
@@ -2002,15 +1087,14 @@
       ) {
         restoreOriginal();
       } else {
-        processCurrentFrame(
+        interpolateFrame(
           smoothingValue
         );
       }
     },
 
     restore() {
-      smoothingValue =
-        0;
+      smoothingValue = 0;
 
       const range =
         document.getElementById(
@@ -2035,4 +1119,5 @@
       restoreOriginal();
     }
   };
+
 })();
