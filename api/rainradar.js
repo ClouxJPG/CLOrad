@@ -1,23 +1,20 @@
 /* =========================================================
    CLOrad — RainRadar API
 
-   Режимы:
+   RainRadar grayscale
+        ↓
+   РГМЦ ОЯ palette
+        ↓
+   жёсткий дискретный RGBA PNG
 
-   1. Manifest:
-      /api/rainradar?manifest=1
+   Чёрный фон → прозрачный
 
-   2. Tile:
-      /api/rainradar
-        ?timestamp=...
-        &z=...
-        &x=...
-        &y=...
-
-   RainRadar grayscale PNG
-   →
-   РГМЦ palette PNG
-
-   Чёрный фон → прозрачность
+   ВАЖНО:
+   - исходное разрешение PNG не меняется
+   - никакого resize
+   - никакого blur
+   - никакой интерполяции
+   - каждый исходный пиксель = один квадратный пиксель
    ========================================================= */
 
 import sharp from "sharp";
@@ -35,10 +32,11 @@ const RR_MANIFEST =
 
 
 /* =========================================================
-   РГМЦ PALETTE
+   РГМЦ ОПАСНЫЕ ЯВЛЕНИЯ
+   ТА ЖЕ ПАЛИТРА, ЧТО И В CLOrad
    ========================================================= */
 
-const RGMC_PALETTE = [
+const RGMC_OY_PALETTE = [
   [185, 193, 199], // #b9c1c7
   [169, 199, 244], // #a9c7f4
   [99, 237, 165],  // #63eda5
@@ -62,152 +60,101 @@ const RGMC_PALETTE = [
 
 
 /* =========================================================
-   GRAYSCALE → RADAR
+   TRANSPARENCY
    ========================================================= */
 
 /*
-   RainRadar PNG хранит отражаемость в grayscale.
+   Нижние значения RainRadar являются фоном.
 
-   Старый вариант:
+   Всё 0–4:
+      полностью прозрачно.
 
-      5 → 180
-
-   слишком сильно растягивал диапазон и давал
-   неправильное визуальное распределение цветов.
-
-   Теперь используем несколько диапазонов.
-
-   0–4:
-      прозрачный фон
-
-   5–8:
-      самый слабый сигнал
-
-   9–16:
-      слабый/умеренный
-
-   17–32:
-      умеренный
-
-   33–64:
-      сильный
-
-   65–96:
-      очень сильный
-
-   97–160:
-      экстремально сильный
-
-   >160:
-      верхняя часть шкалы
+   Начиная с 5:
+      настоящий радарный пиксель.
 */
-
 
 const TRANSPARENT_MAX = 4;
 
 
-/*
-   Контрольные точки.
-
-   x = исходный grayscale
-   y = положение в палитре 0..1
-
-   Они позволяют намного лучше использовать
-   всю RGMC-палитру на реальном диапазоне RainRadar.
-*/
-
-const SCALE_POINTS = [
-  [5,   0.00],
-  [7,   0.08],
-  [9,   0.16],
-  [12,  0.25],
-  [16,  0.34],
-  [22,  0.43],
-  [30,  0.52],
-  [42,  0.61],
-  [58,  0.70],
-  [78,  0.78],
-  [100, 0.85],
-  [125, 0.91],
-  [150, 0.96],
-  [180, 1.00]
-];
-
-
 /* =========================================================
-   GRAYSCALE → PALETTE INDEX
+   GRAYSCALE → RGMC
    ========================================================= */
+
+/*
+   НИКАКОЙ НЕЛИНЕЙНОЙ КОРРЕКЦИИ.
+
+   Весь диапазон 5–255 распределяется
+   непосредственно на 19 цветов.
+
+   Это означает:
+
+      5 ... 17   → цвет 0
+      18 ... 30  → цвет 1
+      31 ... 43  → цвет 2
+      ...
+      верхние значения → верхние цвета.
+
+   Важное отличие от предыдущего варианта:
+   мы НЕ усиливаем слабые значения
+   и НЕ превращаем их искусственно
+   в более сильные цвета.
+*/
 
 function grayToPaletteIndex(gray) {
 
-  /*
-     Чёрный фон RainRadar.
-  */
-
-  if (gray <= TRANSPARENT_MAX) {
+  if (
+    !Number.isFinite(gray) ||
+    gray <= TRANSPARENT_MAX
+  ) {
     return -1;
   }
 
 
   /*
-     Ниже первой точки —
-     самый первый цвет.
+     Нормализуем только настоящий
+     диапазон данных 5–255.
   */
 
-  if (gray <= SCALE_POINTS[0][0]) {
-    return 0;
-  }
+  const normalized =
+    (gray - (TRANSPARENT_MAX + 1)) /
+    (255 - (TRANSPARENT_MAX + 1));
 
 
   /*
-     Ищем диапазон между двумя контрольными точками.
+     Жёсткое ограничение 0..1.
   */
 
-  for (let i = 0; i < SCALE_POINTS.length - 1; i++) {
-
-    const x1 = SCALE_POINTS[i][0];
-    const y1 = SCALE_POINTS[i][1];
-
-    const x2 = SCALE_POINTS[i + 1][0];
-    const y2 = SCALE_POINTS[i + 1][1];
-
-
-    if (gray <= x2) {
-
-      const t =
-        (gray - x1) /
-        (x2 - x1);
-
-
-      const position =
-        y1 +
-        (y2 - y1) * t;
-
-
-      const index =
-        Math.floor(
-          position *
-          RGMC_PALETTE.length
-        );
-
-
-      return Math.max(
-        0,
-        Math.min(
-          RGMC_PALETTE.length - 1,
-          index
-        )
-      );
-    }
-  }
+  const value =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        normalized
+      )
+    );
 
 
   /*
-     Всё выше последней точки —
-     последний цвет.
+     19 дискретных уровней.
+
+     Никакого округления цвета,
+     никакого смешивания соседних цветов.
   */
 
-  return RGMC_PALETTE.length - 1;
+  const index =
+    Math.floor(
+      value *
+      RGMC_OY_PALETTE.length
+    );
+
+
+  return Math.max(
+    0,
+    Math.min(
+      RGMC_OY_PALETTE.length - 1,
+      index
+    )
+  );
 }
 
 
@@ -290,12 +237,24 @@ function validTileCoordinate(
 
 
 /* =========================================================
-   TILE PROCESSING
+   PROCESS TILE
    ========================================================= */
 
 async function processTile(
   sourceBuffer
 ) {
+
+  /*
+     Получаем RAW RGBA.
+
+     Здесь НЕТ resize.
+     НЕТ sharpen.
+     НЕТ blur.
+     НЕТ interpolation.
+
+     Размер изображения остаётся
+     абсолютно таким же, как у исходного PNG.
+  */
 
   const decoded =
     await sharp(sourceBuffer)
@@ -317,7 +276,8 @@ async function processTile(
 
 
   /*
-     RGBA output.
+     Каждый исходный пиксель =
+     один выходной RGBA-пиксель.
   */
 
   const output =
@@ -348,10 +308,11 @@ async function processTile(
 
 
     /*
-       RainRadar PNG grayscale.
+       RainRadar — grayscale.
 
-       Среднее RGB используется специально,
-       чтобы обработка не зависела от канала.
+       Используем среднее RGB,
+       чтобы корректно обработать
+       даже PNG с RGB/RGBA.
     */
 
     const gray =
@@ -366,10 +327,9 @@ async function processTile(
       );
 
 
-    /*
-       Чёрный фон →
-       полностью прозрачный.
-    */
+    /* ================================================
+       ПРОЗРАЧНЫЙ ФОН
+       ================================================ */
 
     if (
       paletteIndex < 0 ||
@@ -385,8 +345,12 @@ async function processTile(
     }
 
 
+    /* ================================================
+       РГМЦ ЦВЕТ
+       ================================================ */
+
     const color =
-      RGMC_PALETTE[
+      RGMC_OY_PALETTE[
         paletteIndex
       ];
 
@@ -401,13 +365,22 @@ async function processTile(
       color[2];
 
     output[i + 3] =
-      alpha;
+      255;
   }
 
 
-  /*
-     PNG без потери качества.
-  */
+  /* =====================================================
+     СОЗДАНИЕ PNG
+     =====================================================
+
+     ВАЖНО:
+
+     - compressionLevel влияет только на размер PNG
+     - adaptiveFiltering выключен
+     - palette выключен
+     - resize отсутствует
+     - интерполяции нет
+     ===================================================== */
 
   return sharp(
     output,
@@ -429,7 +402,7 @@ async function processTile(
 
 
 /* =========================================================
-   SOURCE TILE
+   DOWNLOAD SOURCE TILE
    ========================================================= */
 
 async function getSourceTile(
@@ -465,7 +438,8 @@ async function getSourceTile(
             "https://rainradar.ru/"
         },
 
-        cache: "no-store"
+        cache:
+          "no-store"
       }
     );
 
@@ -505,6 +479,16 @@ async function getSourceTile(
    MANIFEST
    ========================================================= */
 
+let manifestCache =
+  null;
+
+let manifestCacheTime =
+  0;
+
+const MANIFEST_CACHE_MS =
+  30000;
+
+
 async function getManifest() {
 
   const now =
@@ -538,7 +522,8 @@ async function getManifest() {
             "https://rainradar.ru/"
         },
 
-        cache: "no-store"
+        cache:
+          "no-store"
       }
     );
 
@@ -601,11 +586,15 @@ function normalizeManifest(
 
 
     const timestamp =
-      Number(item[0]);
+      Number(
+        item[0]
+      );
 
 
     if (
-      !Number.isFinite(timestamp)
+      !Number.isFinite(
+        timestamp
+      )
     ) {
       continue;
     }
@@ -653,12 +642,12 @@ function getCached(
 
 
   /*
-     LRU:
-     недавно использованный
-     элемент переносим в конец.
+     LRU.
   */
 
-  TILE_CACHE.delete(key);
+  TILE_CACHE.delete(
+    key
+  );
 
   TILE_CACHE.set(
     key,
@@ -679,7 +668,9 @@ function setCached(
     TILE_CACHE.has(key)
   ) {
 
-    TILE_CACHE.delete(key);
+    TILE_CACHE.delete(
+      key
+    );
   }
 
 
@@ -713,20 +704,6 @@ function setCached(
     );
   }
 }
-
-
-/* =========================================================
-   CACHE VARIABLES
-   ========================================================= */
-
-let manifestCache =
-  null;
-
-let manifestCacheTime =
-  0;
-
-const MANIFEST_CACHE_MS =
-  30000;
 
 
 /* =========================================================
@@ -921,7 +898,7 @@ export default async function handler(
 
 
     /* =====================================================
-       DOWNLOAD SOURCE TILE
+       SOURCE
        ===================================================== */
 
     const source =
@@ -944,7 +921,7 @@ export default async function handler(
 
 
     /* =====================================================
-       CACHE RESULT
+       CACHE
        ===================================================== */
 
     setCached(
@@ -954,7 +931,7 @@ export default async function handler(
 
 
     /* =====================================================
-       SEND PNG
+       RESPONSE
        ===================================================== */
 
     setImageHeaders(
