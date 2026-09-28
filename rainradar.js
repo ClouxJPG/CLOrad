@@ -1,16 +1,21 @@
 /* =========================================================
    CLOrad — RainRadar
    ---------------------------------------------------------
+   Отдельный верхний продукт:
+
    Осадки-мм/ч
    ДМРЛ композит
    RainRadar
    Слои
 
    Источник:
-   RainRadar composite
+   https://rainradar.ru
 
-   API:
+   Сервер:
    /api/rainradar
+
+   ВАЖНО:
+   index.html НЕ изменяется.
    ========================================================= */
 
 (() => {
@@ -38,14 +43,13 @@
 
   let playing = false;
   let playTimer = null;
+
   let refreshTimer = null;
 
-  let initialized = false;
   let loading = false;
-  let visible = false;
 
   /* =======================================================
-     ОЯ PALETTE
+     PALETTE
      ======================================================= */
 
   const RGMC_OY_PALETTE = [
@@ -74,8 +78,7 @@
      STYLE
      ======================================================= */
 
-  const style =
-    document.createElement("style");
+  const style = document.createElement("style");
 
   style.textContent = `
 
@@ -98,12 +101,70 @@
       color: #fff;
     }
 
+    .rr-status {
+      position: fixed;
+      z-index: 2147483646;
+      left: 50%;
+      bottom: 125px;
+      transform: translateX(-50%);
+      background: #202930;
+      color: #fff;
+      padding: 9px 14px;
+      border-radius: 8px;
+      border: 1px solid #3d4850;
+      white-space: nowrap;
+      max-width: calc(100% - 30px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .rr-legend {
+      position: absolute;
+      left: 50%;
+      bottom: 94px;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: none;
+      padding: 8px 10px;
+      background: rgba(10,15,20,.92);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.35);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 10px;
+      pointer-events: none;
+    }
+
+    .rr-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+
+    .rr-color {
+      width: 17px;
+      height: 9px;
+      display: block;
+    }
+
+    .rr-legend-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 9px;
+      opacity: .82;
+    }
+
   `;
 
   document.head.appendChild(style);
 
   /* =======================================================
-     MAP
+     HELPERS
      ======================================================= */
 
   function getMap() {
@@ -123,6 +184,52 @@
     }
 
     return null;
+  }
+
+  function status(text) {
+
+    const old = document.querySelector(".rr-status");
+
+    if (old) {
+      old.remove();
+    }
+
+    if (!text) {
+      return;
+    }
+
+    const box = document.createElement("div");
+
+    box.className = "rr-status";
+    box.textContent = text;
+
+    document.body.appendChild(box);
+
+    setTimeout(() => {
+
+      if (box.parentNode) {
+        box.remove();
+      }
+
+    }, 2500);
+  }
+
+  function errorStatus(error) {
+
+    console.error(
+      "CLOrad RainRadar:",
+      error
+    );
+
+    const message =
+      error &&
+      error.message
+        ? error.message
+        : String(error);
+
+    status(
+      "RainRadar: " + message
+    );
   }
 
   /* =======================================================
@@ -154,11 +261,8 @@
     button =
       document.createElement("button");
 
-    button.id =
-      "rainRadarNav";
-
-    button.className =
-      "n";
+    button.id = "rainRadarNav";
+    button.className = "n";
 
     button.innerHTML = `
       <svg viewBox="0 0 24 24">
@@ -190,28 +294,26 @@
     } else {
 
       nav.appendChild(button);
+
     }
 
     button.addEventListener(
       "click",
-      () => {
+      event => {
 
-        console.log(
-          "CLOrad RainRadar: button clicked"
-        );
+        event.preventDefault();
+        event.stopPropagation();
 
         setActiveButton();
 
         showRainRadar();
-      }
+
+      },
+      false
     );
 
     return button;
   }
-
-  /* =======================================================
-     ACTIVE BUTTON
-     ======================================================= */
 
   function setActiveButton() {
 
@@ -227,16 +329,40 @@
     document
       .querySelectorAll(".nav .n")
       .forEach(el => {
-
-        el.classList.remove(
-          "active"
-        );
-
+        el.classList.remove("active");
       });
 
-    button.classList.add(
-      "active"
-    );
+    button.classList.add("active");
+  }
+
+  /* =======================================================
+     DEACTIVATE OTHER RADARS
+     ======================================================= */
+
+  function stopOtherRadarLayers() {
+
+    try {
+
+      if (
+        window.CLOradStopRadar &&
+        typeof window.CLOradStopRadar === "function"
+      ) {
+        window.CLOradStopRadar();
+      }
+
+    } catch (_) {}
+
+    try {
+
+      if (
+        window.CLOradDeactivateGIF &&
+        typeof window.CLOradDeactivateGIF === "function"
+      ) {
+        window.CLOradDeactivateGIF();
+      }
+
+    } catch (_) {}
+
   }
 
   /* =======================================================
@@ -256,49 +382,62 @@
   }
 
   /* =======================================================
-     MANIFEST NORMALIZATION
+     MANIFEST
      ======================================================= */
 
   function normalizeManifest(data) {
 
     let result = [];
 
-    if (
-      Array.isArray(data)
-    ) {
+    function add(value) {
 
-      result =
-        data
-          .map(item => {
+      if (
+        typeof value === "string" ||
+        typeof value === "number"
+      ) {
 
-            if (
-              typeof item === "string" ||
-              typeof item === "number"
-            ) {
-              return String(item);
-            }
+        const s =
+          String(value).trim();
 
-            if (
-              item &&
-              typeof item === "object"
-            ) {
+        if (s) {
+          result.push(s);
+        }
 
-              return String(
-                item.timestamp ??
-                item.time ??
-                item.ts ??
-                item.datetime ??
-                item.id ??
-                ""
-              );
-            }
+        return;
+      }
 
-            return "";
-          })
-          .filter(Boolean);
+      if (
+        value &&
+        typeof value === "object"
+      ) {
+
+        const valueTimestamp =
+          value.timestamp ??
+          value.time ??
+          value.ts ??
+          value.datetime ??
+          value.date ??
+          value.id;
+
+        if (
+          typeof valueTimestamp === "string" ||
+          typeof valueTimestamp === "number"
+        ) {
+
+          result.push(
+            String(valueTimestamp)
+          );
+
+          return;
+        }
+      }
     }
 
-    else if (
+    if (Array.isArray(data)) {
+
+      data.forEach(add);
+
+    } else if (
       data &&
       typeof data === "object"
     ) {
@@ -309,8 +448,8 @@
         data.times,
         data.timestamps,
         data.images,
-        data.data,
-        data.items
+        data.items,
+        data.data
 
       ];
 
@@ -323,147 +462,123 @@
           arr.length
         ) {
 
-          result =
-            arr
-              .map(item => {
+          arr.forEach(add);
 
-                if (
-                  typeof item === "string" ||
-                  typeof item === "number"
-                ) {
-                  return String(item);
-                }
-
-                if (
-                  item &&
-                  typeof item === "object"
-                ) {
-
-                  return String(
-                    item.timestamp ??
-                    item.time ??
-                    item.ts ??
-                    item.datetime ??
-                    item.id ??
-                    ""
-                  );
-                }
-
-                return "";
-              })
-              .filter(Boolean);
-
-          if (
-            result.length
-          ) {
-            break;
-          }
         }
+
       }
 
-      if (
-        !result.length
-      ) {
+      add(data.timestamp);
+      add(data.time);
+      add(data.latest);
+      add(data.current);
 
-        const value =
-          data.timestamp ??
-          data.time ??
-          data.latest ??
-          data.current;
-
-        if (
-          value != null
-        ) {
-
-          result = [
-            String(value)
-          ];
-        }
-      }
     }
 
-    return [
-      ...new Set(result)
-    ];
-  }
+    result =
+      result
+        .map(x => String(x).trim())
+        .filter(Boolean);
 
-  /* =======================================================
-     LOAD MANIFEST
-     ======================================================= */
+    result =
+      [...new Set(result)];
+
+    return result;
+  }
 
   async function loadManifest() {
 
-    console.log(
-      "CLOrad RainRadar: loading manifest"
-    );
+    const controller =
+      new AbortController();
 
-    const response =
-      await fetch(
-        API + "?manifest=1&_=" +
-        Date.now(),
-        {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            "Accept":
-              "application/json"
+    const timeout =
+      setTimeout(
+        () => controller.abort(),
+        12000
+      );
+
+    try {
+
+      const response =
+        await fetch(
+          API + "?manifest=1",
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              "Accept":
+                "application/json"
+            },
+            signal:
+              controller.signal
           }
-        }
-      );
+        );
 
-    console.log(
-      "CLOrad RainRadar: manifest HTTP",
-      response.status
-    );
+      if (!response.ok) {
 
-    if (
-      !response.ok
-    ) {
+        throw new Error(
+          "manifest HTTP " +
+          response.status
+        );
 
-      throw new Error(
-        "Manifest HTTP " +
-        response.status
-      );
+      }
+
+      const data =
+        await response.json();
+
+      const next =
+        normalizeManifest(data);
+
+      if (!next.length) {
+
+        throw new Error(
+          "manifest не содержит кадров"
+        );
+
+      }
+
+      timestamps = next;
+
+      /*
+       * Сервер уже отдаёт кадры
+       * в хронологическом порядке.
+       *
+       * На всякий случай сортируем
+       * только если значения похожи
+       * на Unix timestamps.
+       */
+
+      const numeric =
+        timestamps.every(
+          x =>
+            /^\d+$/.test(x)
+        );
+
+      if (numeric) {
+
+        timestamps.sort(
+          (a, b) =>
+            Number(a) - Number(b)
+        );
+
+      }
+
+      currentIndex =
+        timestamps.length - 1;
+
+      updateTimeline();
+
+      return timestamps;
+
+    } finally {
+
+      clearTimeout(timeout);
+
     }
-
-    const data =
-      await response.json();
-
-    console.log(
-      "CLOrad RainRadar: manifest",
-      data
-    );
-
-    const next =
-      normalizeManifest(data);
-
-    console.log(
-      "CLOrad RainRadar: frames",
-      next
-    );
-
-    if (
-      !next.length
-    ) {
-
-      throw new Error(
-        "Manifest contains no frames"
-      );
-    }
-
-    timestamps =
-      next;
-
-    currentIndex =
-      timestamps.length - 1;
-
-    updateTimeline();
-
-    return timestamps;
   }
 
   /* =======================================================
-     CREATE LAYER
+     LEAFLET LAYER
      ======================================================= */
 
   function createLayer(timestamp) {
@@ -474,14 +589,18 @@
     if (!map) {
 
       throw new Error(
-        "Leaflet map is not available"
+        "Leaflet map не найден"
       );
+
     }
 
-    console.log(
-      "CLOrad RainRadar: creating layer",
-      timestamp
-    );
+    if (!timestamp) {
+
+      throw new Error(
+        "RainRadar timestamp отсутствует"
+      );
+
+    }
 
     if (layer) {
 
@@ -545,16 +664,45 @@
         }
       );
 
-    layer.addTo(map);
+    layer.on(
+      "loading",
+      () => {
+        status(
+          "Загрузка RainRadar..."
+        );
+      }
+    );
 
-    visible =
-      true;
+    layer.on(
+      "load",
+      () => {
+        status(
+          "RainRadar загружен"
+        );
+      }
+    );
+
+    layer.on(
+      "tileerror",
+      event => {
+
+        console.error(
+          "RainRadar tile error:",
+          event
+        );
+
+        status(
+          "Ошибка загрузки RainRadar-тайла"
+        );
+
+      }
+    );
+
+    layer.addTo(map);
 
     updateTimeLabel();
 
-    console.log(
-      "CLOrad RainRadar: layer added"
-    );
+    return layer;
   }
 
   /* =======================================================
@@ -563,80 +711,61 @@
 
   async function showRainRadar() {
 
+    if (loading) {
+      return;
+    }
+
     const map =
       getMap();
 
     if (!map) {
 
-      console.error(
-        "CLOrad RainRadar: map not found"
+      errorStatus(
+        new Error(
+          "Карта ещё не готова"
+        )
       );
 
       return;
     }
 
-    visible =
-      true;
-
-    if (loading) {
-      return;
-    }
-
-    loading =
-      true;
+    loading = true;
 
     try {
 
-      /*
-       * СНАЧАЛА всегда получаем
-       * актуальный manifest.
-       */
+      stopOtherRadarLayers();
+
+      status(
+        "Загрузка RainRadar..."
+      );
 
       await loadManifest();
 
-      /*
-       * Теперь timestamp точно существует.
-       */
+      if (!timestamps.length) {
 
-      if (
-        timestamps.length &&
-        currentIndex >= 0
-      ) {
-
-        createLayer(
-          timestamps[currentIndex]
+        throw new Error(
+          "Нет доступных кадров"
         );
+
       }
+
+      currentIndex =
+        timestamps.length - 1;
+
+      createLayer(
+        timestamps[currentIndex]
+      );
 
       updateTimeline();
 
     } catch (error) {
 
-      console.error(
-        "CLOrad RainRadar ERROR:",
-        error
-      );
-
-      /*
-       * Не оставляем пользователя
-       * с молчаливым "ничего".
-       */
-
-      if (
-        typeof window !== "undefined"
-      ) {
-
-        window.CLOradRainRadarError =
-          String(
-            error?.message ||
-            error
-          );
-      }
+      errorStatus(error);
 
     } finally {
 
-      loading =
-        false;
+      loading = false;
+
     }
   }
 
@@ -649,9 +778,6 @@
     const map =
       getMap();
 
-    visible =
-      false;
-
     if (
       map &&
       layer
@@ -661,9 +787,10 @@
         map.removeLayer(layer);
       } catch (_) {}
 
-      layer =
-        null;
+      layer = null;
     }
+
+    stopPlay();
   }
 
   /* =======================================================
@@ -672,9 +799,7 @@
 
   function setFrame(index) {
 
-    if (
-      !timestamps.length
-    ) {
+    if (!timestamps.length) {
       return;
     }
 
@@ -683,7 +808,7 @@
         0,
         Math.min(
           timestamps.length - 1,
-          index
+          Number(index)
         )
       );
 
@@ -701,19 +826,16 @@
 
       layer.setUrl(
         tileUrl(
-          timestamps[
-            currentIndex
-          ]
+          timestamps[currentIndex]
         )
       );
 
     } else {
 
       createLayer(
-        timestamps[
-          currentIndex
-        ]
+        timestamps[currentIndex]
       );
+
     }
 
     updateTimeline();
@@ -744,9 +866,8 @@
         );
 
       range.value =
-        String(
-          currentIndex
-        );
+        String(currentIndex);
+
     }
 
     updateTimeLabel();
@@ -767,12 +888,33 @@
     }
 
     const value =
-      timestamps[
-        currentIndex
-      ];
+      timestamps[currentIndex];
 
-    const date =
-      new Date(value);
+    const numeric =
+      /^\d+$/.test(
+        String(value)
+      );
+
+    let date;
+
+    if (numeric) {
+
+      const n =
+        Number(value);
+
+      date =
+        new Date(
+          n < 100000000000
+            ? n * 1000
+            : n
+        );
+
+    } else {
+
+      date =
+        new Date(value);
+
+    }
 
     if (
       !Number.isNaN(
@@ -802,12 +944,9 @@
 
       label.textContent =
         String(value);
+
     }
   }
-
-  /* =======================================================
-     RANGE
-     ======================================================= */
 
   function hookRange() {
 
@@ -834,10 +973,9 @@
       () => {
 
         setFrame(
-          Number(
-            range.value
-          )
+          Number(range.value)
         );
+
       }
     );
   }
@@ -952,17 +1090,18 @@
           .querySelectorAll(
             selector
           )
-          .forEach(el => {
+          .forEach(
+            el => {
 
-            if (
-              el.id !==
-              "rainRadarNav"
-            ) {
+              if (
+                el.id !==
+                "rainRadarNav"
+              ) {
+                el.remove();
+              }
 
-              el.remove();
             }
-
-          });
+          );
 
       }
     );
@@ -1000,10 +1139,7 @@
         currentIndex =
           timestamps.length - 1;
 
-        if (
-          layer &&
-          visible
-        ) {
+        if (layer) {
 
           layer.setUrl(
             tileUrl(
@@ -1014,7 +1150,9 @@
           );
 
           updateTimeline();
+
         }
+
       }
 
     } catch (error) {
@@ -1023,6 +1161,7 @@
         "CLOrad RainRadar refresh:",
         error
       );
+
     }
   }
 
@@ -1030,18 +1169,14 @@
      INIT
      ======================================================= */
 
-  function init() {
-
-    if (initialized) {
-      return;
-    }
+  async function init() {
 
     let tries =
       0;
 
     const wait =
       setInterval(
-        () => {
+        async () => {
 
           tries++;
 
@@ -1062,13 +1197,6 @@
               wait
             );
 
-            initialized =
-              true;
-
-            console.log(
-              "CLOrad RainRadar: initialized"
-            );
-
             createNavButton();
 
             hookRange();
@@ -1078,10 +1206,9 @@
             removeOldSidebarControl();
 
             /*
-             * Manifest здесь НЕ грузим.
-             *
-             * Он грузится именно при
-             * нажатии RainRadar.
+             * Не грузим тайлы при старте.
+             * Загружаем RainRadar только
+             * после нажатия кнопки.
              */
 
             refreshTimer =
@@ -1102,8 +1229,9 @@
             );
 
             console.error(
-              "CLOrad RainRadar: initialization timeout"
+              "CLOrad RainRadar: init timeout"
             );
+
           }
 
         },
@@ -1141,12 +1269,8 @@
 
     getLayer:
       () =>
-        layer,
+        layer
 
-    getError:
-      () =>
-        window.CLOradRainRadarError ||
-        null
   };
 
   init();
