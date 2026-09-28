@@ -327,9 +327,38 @@
       );
     }
 
+    /*
+     * API возвращает:
+     *
+     * {
+     *   timestamp: 1790617200,
+     *   time: "2026-09-28T17:40:00.000Z"
+     * }
+     *
+     * Поэтому нельзя делать просто
+     * .map(Number), поскольку Number(object)
+     * даёт NaN.
+     *
+     * Поддерживаем также старый формат,
+     * если API когда-нибудь вернёт
+     * обычные числа или строки.
+     */
+
     timestamps =
       frames
-        .map(Number)
+        .map(frame => {
+
+          if (
+            typeof frame === "number" ||
+            typeof frame === "string"
+          ) {
+            return Number(frame);
+          }
+
+          return Number(
+            frame?.timestamp
+          );
+        })
         .filter(
           value =>
             Number.isFinite(value)
@@ -393,7 +422,9 @@
       showMessage(
         "RainRadar загружен"
       );
+
     } catch (error) {
+
       console.error(
         "RainRadar:",
         error
@@ -403,8 +434,11 @@
         error?.message ||
         "Ошибка загрузки RainRadar"
       );
+
     } finally {
+
       loading = false;
+
     }
   }
 
@@ -500,6 +534,7 @@
     range.addEventListener(
       "input",
       () => {
+
         if (!active) {
           return;
         }
@@ -509,6 +544,7 @@
             range.value
           )
         );
+
       }
     );
   }
@@ -523,11 +559,13 @@
     refreshTimer =
       setInterval(
         async () => {
+
           if (!active) {
             return;
           }
 
           try {
+
             const oldLatest =
               timestamps[
                 timestamps.length - 1
@@ -549,6 +587,7 @@
               newLatest !==
               oldLatest
             ) {
+
               currentIndex =
                 timestamps.length - 1;
 
@@ -562,14 +601,18 @@
                 "RainRadar: новый кадр"
               );
             }
+
           } catch (
             error
           ) {
+
             console.warn(
               "RainRadar refresh:",
               error
             );
+
           }
+
         },
         REFRESH_TIME
       );
@@ -604,11 +647,13 @@
       map &&
       rainRadarLayer
     ) {
+
       try {
         map.removeLayer(
           rainRadarLayer
         );
       } catch {}
+
     }
 
     rainRadarLayer =
@@ -620,6 +665,7 @@
      ======================================================= */
 
   function init() {
+
     createNav();
 
     hookTimeline();
@@ -644,12 +690,16 @@
     document.readyState ===
     "loading"
   ) {
+
     document.addEventListener(
       "DOMContentLoaded",
       init
     );
+
   } else {
+
     init();
+
   }
 
   /* =======================================================
@@ -657,6 +707,7 @@
      ======================================================= */
 
   window.CLOradRainRadar = {
+
     show:
       showRainRadar,
 
@@ -666,13 +717,15 @@
       showRainRadar,
 
     getFrames:
-      () => timestamps.slice(),
+      () =>
+        timestamps.slice(),
 
     getCurrent:
       () =>
         timestamps[
           currentIndex
         ] || null
+
   };
 
 })();
