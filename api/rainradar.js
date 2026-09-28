@@ -7,11 +7,12 @@
    /composite/{timestamp}/{z}/{x}_{y}.png
 
    ВАЖНО:
+   - ES Module, совместимо с package.json "type": "module"
    - без sharp
    - без тяжёлых библиотек
    - без HEAD
    - без перебора 18 запросов
-   - один внешний запрос за проверку
+   - короткие таймауты
    ========================================================= */
 
 "use strict";
@@ -137,23 +138,12 @@ async function checkTile(
         ) || ""
       ).toLowerCase();
 
-    /*
-      RainRadar должен вернуть PNG.
-    */
-
     if (
       type.includes("image") ||
       type.includes("png")
     ) {
       return true;
     }
-
-    /*
-      Иногда CDN может не отдавать
-      нормальный Content-Type.
-      Успешный ответ без HTML/JSON
-      тоже считаем допустимым.
-    */
 
     if (
       !type.includes("text/html") &&
@@ -176,17 +166,17 @@ async function checkTile(
 
 async function findLatest() {
 
-  /*
-    Сначала проверяем текущее
-    десятиминутное время.
-  */
-
   const current =
     currentTimestamp();
 
   if (!current) {
     return null;
   }
+
+
+  /* -------------------------------------------------------
+     Текущий кадр
+     ------------------------------------------------------- */
 
   if (
     await checkTile(
@@ -197,10 +187,9 @@ async function findLatest() {
   }
 
 
-  /*
-    Если текущего кадра ещё нет,
-    проверяем только предыдущий.
-  */
+  /* -------------------------------------------------------
+     Предыдущий кадр
+     ------------------------------------------------------- */
 
   const previous =
     current -
@@ -215,9 +204,9 @@ async function findLatest() {
   }
 
 
-  /*
-    Ещё один предыдущий.
-  */
+  /* -------------------------------------------------------
+     Ещё один предыдущий
+     ------------------------------------------------------- */
 
   const previous2 =
     current -
@@ -263,234 +252,228 @@ function tileUrl(
    HANDLER
    ========================================================= */
 
-module.exports =
-  async function handler(
-    req,
-    res
-  ) {
+export default async function handler(
+  req,
+  res
+) {
 
-    try {
+  try {
 
-      const query =
-        req.query || {};
-
-
-      /* ===================================================
-         MANIFEST
-         =================================================== */
-
-      if (
-        String(
-          query.manifest
-        ) === "1"
-      ) {
-
-        const latest =
-          await findLatest();
-
-        if (!latest) {
-
-          return res
-            .status(503)
-            .json({
-              ok: false,
-              error:
-                "RainRadar сейчас не отдал доступный кадр"
-            });
-        }
+    const query =
+      req.query || {};
 
 
-        /*
-          Пока отдаём один гарантированно
-          существующий кадр.
-        */
+    /* =====================================================
+       MANIFEST
+       ===================================================== */
+
+    if (
+      String(
+        query.manifest
+      ) === "1"
+    ) {
+
+      const latest =
+        await findLatest();
+
+      if (!latest) {
 
         return res
-          .status(200)
-          .setHeader(
-            "Cache-Control",
-            "no-store"
-          )
-          .json({
-
-            ok: true,
-
-            source:
-              "rainradar.ru/composite",
-
-            frames: [
-              {
-                timestamp:
-                  latest,
-
-                time:
-                  new Date(
-                    latest * 1000
-                  ).toISOString()
-              }
-            ]
-
-          });
-      }
-
-
-      /* ===================================================
-         TIMESTAMP
-         =================================================== */
-
-      const timestamp =
-        normalizeTimestamp(
-          query.timestamp
-        );
-
-      if (!timestamp) {
-
-        return res
-          .status(400)
+          .status(503)
           .json({
             ok: false,
             error:
-              "Не указан timestamp"
+              "RainRadar сейчас не отдал доступный кадр"
           });
       }
 
-
-      /* ===================================================
-         COORDINATES
-         =================================================== */
-
-      const z =
-        Number(query.z);
-
-      const x =
-        Number(query.x);
-
-      const y =
-        Number(query.y);
-
-
-      if (
-        !Number.isInteger(z) ||
-        !Number.isInteger(x) ||
-        !Number.isInteger(y) ||
-        z < 0 ||
-        z > 20 ||
-        x < 0 ||
-        y < 0
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            ok: false,
-            error:
-              "Некорректные координаты тайла"
-          });
-      }
-
-
-      /* ===================================================
-         REQUEST RAINRADAR TILE
-         =================================================== */
-
-      const url =
-        tileUrl(
-          timestamp,
-          z,
-          x,
-          y
-        );
-
-
-      const response =
-        await fetchWithTimeout(
-          url,
-          {
-            method: "GET",
-            cache: "no-store",
-
-            headers: {
-              "Accept":
-                "image/png,image/*,*/*;q=0.8"
-            }
-          }
-        );
-
-
-      /* ===================================================
-         ERROR FROM RAINRADAR
-         =================================================== */
-
-      if (
-        !response.ok
-      ) {
-
-        return res
-          .status(
-            response.status
-          )
-          .json({
-            ok: false,
-            error:
-              "RainRadar tile unavailable",
-            status:
-              response.status
-          });
-      }
-
-
-      /* ===================================================
-         GET PNG
-         =================================================== */
-
-      const buffer =
-        await response.arrayBuffer();
-
-
-      /* ===================================================
-         RESPONSE
-         =================================================== */
-
-      res.status(200);
-
-      res.setHeader(
-        "Content-Type",
-        "image/png"
-      );
-
-      res.setHeader(
-        "Cache-Control",
-        "public, max-age=30, s-maxage=30"
-      );
-
-      res.setHeader(
-        "Access-Control-Allow-Origin",
-        "*"
-      );
-
-
-      return res.end(
-        Buffer.from(
-          buffer
-        )
-      );
-
-    } catch (error) {
-
-      console.error(
-        "CLOrad RainRadar:",
-        error
-      );
 
       return res
-        .status(500)
+        .status(200)
+        .setHeader(
+          "Cache-Control",
+          "no-store"
+        )
+        .json({
+
+          ok: true,
+
+          source:
+            "rainradar.ru/composite",
+
+          frames: [
+            {
+              timestamp:
+                latest,
+
+              time:
+                new Date(
+                  latest * 1000
+                ).toISOString()
+            }
+          ]
+
+        });
+    }
+
+
+    /* =====================================================
+       TIMESTAMP
+       ===================================================== */
+
+    const timestamp =
+      normalizeTimestamp(
+        query.timestamp
+      );
+
+    if (!timestamp) {
+
+      return res
+        .status(400)
         .json({
           ok: false,
           error:
-            "RainRadar API error",
-          message:
-            error?.message ||
-            String(error)
+            "Не указан timestamp"
         });
     }
-  };
+
+
+    /* =====================================================
+       COORDINATES
+       ===================================================== */
+
+    const z =
+      Number(query.z);
+
+    const x =
+      Number(query.x);
+
+    const y =
+      Number(query.y);
+
+
+    if (
+      !Number.isInteger(z) ||
+      !Number.isInteger(x) ||
+      !Number.isInteger(y) ||
+      z < 0 ||
+      z > 20 ||
+      x < 0 ||
+      y < 0
+    ) {
+
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "Некорректные координаты тайла"
+        });
+    }
+
+
+    /* =====================================================
+       REQUEST RAINRADAR TILE
+       ===================================================== */
+
+    const url =
+      tileUrl(
+        timestamp,
+        z,
+        x,
+        y
+      );
+
+
+    const response =
+      await fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          cache: "no-store",
+
+          headers: {
+            "Accept":
+              "image/png,image/*,*/*;q=0.8"
+          }
+        }
+      );
+
+
+    /* =====================================================
+       RAINRADAR ERROR
+       ===================================================== */
+
+    if (
+      !response.ok
+    ) {
+
+      return res
+        .status(
+          response.status
+        )
+        .json({
+          ok: false,
+          error:
+            "RainRadar tile unavailable",
+          status:
+            response.status
+        });
+    }
+
+
+    /* =====================================================
+       PNG
+       ===================================================== */
+
+    const buffer =
+      await response.arrayBuffer();
+
+
+    /* =====================================================
+       RESPONSE
+       ===================================================== */
+
+    res.status(200);
+
+    res.setHeader(
+      "Content-Type",
+      "image/png"
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=30, s-maxage=30"
+    );
+
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      "*"
+    );
+
+
+    return res.end(
+      Buffer.from(
+        buffer
+      )
+    );
+
+  } catch (error) {
+
+    console.error(
+      "CLOrad RainRadar:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error:
+          "RainRadar API error",
+        message:
+          error?.message ||
+          String(error)
+      });
+  }
+}
