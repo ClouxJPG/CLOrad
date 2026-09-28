@@ -1,19 +1,16 @@
 /* =========================================================
    CLOrad — RainRadar
-   RainRadar grayscale → РГМЦ
+   RainRadar → РГМЦ
 
    ВАЖНО:
-   - исходные RainRadar PNG остаются grayscale
-   - цветизация выполняется прямо в браузере
-   - палитра ТОЛЬКО РГМЦ
-   - чёрный фон становится прозрачным
-   - Canvas НЕ используется
-   - CORS для чтения пикселей НЕ нужен
+   - Обычные Leaflet PNG-тайлы
+   - Никаких SVG-фильтров
+   - Никакого Canvas в браузере
+   - Цветизация выполняется на API Vercel
+   - Палитра = РГМЦ, как у ДМРЛ
+   - Чёрный фон = прозрачность
+   - Качество исходного тайла сохраняется
    - index.html НЕ изменяется
-
-   Верхняя панель:
-
-   Осадки-мм/ч | ДМРЛ композит | RainRadar | Слои
    ========================================================= */
 
 (() => {
@@ -29,6 +26,9 @@
   const RR_MANIFEST =
     RR_ROOT + "manifest.json";
 
+  const RR_API =
+    "/api/rainradar";
+
   const RR_MIN_ZOOM = 3;
   const RR_MAX_NATIVE_ZOOM = 5;
 
@@ -38,49 +38,19 @@
   ];
 
   /* =======================================================
-     РГМЦ — ТОЧНО ТА ЖЕ ПАЛИТРА, ЧТО У ДМРЛ
-     ======================================================= */
-
-  const RGMC_PALETTE = [
-    "#b9c1c7",
-    "#a9c7f4",
-    "#63eda5",
-    "#43cf89",
-    "#4db84e",
-    "#fff89c",
-    "#75a6ef",
-    "#5279ed",
-    "#504a9b",
-    "#ffc0a8",
-    "#fa82a0",
-    "#ff4d4d",
-    "#db9248",
-    "#ad7544",
-    "#924b48",
-    "#f2aaf0",
-    "#e85ae7",
-    "#ca3cc7",
-    "#777c91"
-  ];
-
-  /* =======================================================
      STATE
      ======================================================= */
 
   let rainRadarButton = null;
-
   let rainRadarLayer = null;
 
   let rainRadarEnabled = false;
-
   let rainRadarTimestamp = null;
 
   let rainRadarManifest = null;
-
   let rainRadarFrames = [];
 
   let rainRadarLoading = false;
-
   let manifestLoadedAt = 0;
 
   let refreshTimer = null;
@@ -147,507 +117,125 @@
   }
 
   /* =======================================================
-     SVG FILTER
+     OLD SIDEBAR CONTROL
      ======================================================= */
 
-  function createRainRadarFilter() {
-    if (
+  function removeOldLayersButton() {
+    const oldLayer =
       document.getElementById(
-        "cloradRainRadarFilterSvg"
-      )
-    ) {
-      return;
+        "rainradarLayerControl"
+      );
+
+    if (oldLayer) {
+      oldLayer.remove();
     }
 
-    const svg =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "svg"
+    const oldSwitch =
+      document.getElementById(
+        "rainradarSwitch"
       );
 
-    svg.id =
-      "cloradRainRadarFilterSvg";
+    if (oldSwitch) {
+      const parent =
+        oldSwitch.closest(".layer");
 
-    svg.setAttribute(
-      "width",
-      "0"
-    );
-
-    svg.setAttribute(
-      "height",
-      "0"
-    );
-
-    svg.setAttribute(
-      "aria-hidden",
-      "true"
-    );
-
-    svg.style.position =
-      "absolute";
-
-    svg.style.width =
-      "0";
-
-    svg.style.height =
-      "0";
-
-    svg.style.overflow =
-      "hidden";
-
-    /* -----------------------------------------------------
-       FILTER
-       ----------------------------------------------------- */
-
-    const filter =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "filter"
-      );
-
-    filter.id =
-      "cloradRainRadarColorize";
-
-    filter.setAttribute(
-      "x",
-      "0%"
-    );
-
-    filter.setAttribute(
-      "y",
-      "0%"
-    );
-
-    filter.setAttribute(
-      "width",
-      "100%"
-    );
-
-    filter.setAttribute(
-      "height",
-      "100%"
-    );
-
-    filter.setAttribute(
-      "color-interpolation-filters",
-      "sRGB"
-    );
-
-    /* -----------------------------------------------------
-       1. Получаем яркость исходного grayscale PNG
-       и записываем её в alpha.
-
-       RGB при этом сохраняются.
-       ----------------------------------------------------- */
-
-    const luminance =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feColorMatrix"
-      );
-
-    luminance.setAttribute(
-      "type",
-      "matrix"
-    );
-
-    luminance.setAttribute(
-      "values",
-      [
-        "1 0 0 0 0",
-        "0 1 0 0 0",
-        "0 0 1 0 0",
-        "0.2126 0.7152 0.0722 0 0"
-      ].join(" ")
-    );
-
-    filter.appendChild(
-      luminance
-    );
-
-    /* -----------------------------------------------------
-       2. РГМЦ — RED
-       ----------------------------------------------------- */
-
-    const red =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feComponentTransfer"
-      );
-
-    const redFunc =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feFuncR"
-      );
-
-    redFunc.setAttribute(
-      "type",
-      "table"
-    );
-
-    redFunc.setAttribute(
-      "tableValues",
-      [
-        "0.725",
-        "0.663",
-        "0.388",
-        "0.263",
-        "0.302",
-        "1.000",
-        "0.459",
-        "0.322",
-        "0.314",
-        "1.000",
-        "0.980",
-        "1.000",
-        "0.859",
-        "0.678",
-        "0.573",
-        "0.949",
-        "0.910",
-        "0.792",
-        "0.467"
-      ].join(" ")
-    );
-
-    red.appendChild(
-      redFunc
-    );
-
-    /* -----------------------------------------------------
-       3. РГМЦ — GREEN
-       ----------------------------------------------------- */
-
-    const greenFunc =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feFuncG"
-      );
-
-    greenFunc.setAttribute(
-      "type",
-      "table"
-    );
-
-    greenFunc.setAttribute(
-      "tableValues",
-      [
-        "0.757",
-        "0.780",
-        "0.929",
-        "0.812",
-        "0.722",
-        "0.976",
-        "0.651",
-        "0.475",
-        "0.290",
-        "0.753",
-        "0.510",
-        "0.302",
-        "0.573",
-        "0.459",
-        "0.294",
-        "0.667",
-        "0.353",
-        "0.235",
-        "0.486"
-      ].join(" ")
-    );
-
-    red.appendChild(
-      greenFunc
-    );
-
-    /* -----------------------------------------------------
-       4. РГМЦ — BLUE
-       ----------------------------------------------------- */
-
-    const blueFunc =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feFuncB"
-      );
-
-    blueFunc.setAttribute(
-      "type",
-      "table"
-    );
-
-    blueFunc.setAttribute(
-      "tableValues",
-      [
-        "0.780",
-        "0.957",
-        "0.647",
-        "0.537",
-        "0.306",
-        "0.612",
-        "0.937",
-        "0.929",
-        "0.608",
-        "0.659",
-        "0.627",
-        "0.302",
-        "0.282",
-        "0.267",
-        "0.282",
-        "0.941",
-        "0.906",
-        "0.780",
-        "0.569"
-      ].join(" ")
-    );
-
-    red.appendChild(
-      blueFunc
-    );
-
-    filter.appendChild(
-      red
-    );
-
-    /* -----------------------------------------------------
-       5. ЧЁРНЫЙ ФОН → ПРОЗРАЧНЫЙ
-       -----------------------------------------------------
-
-       Alpha уже содержит яркость.
-
-       Первые значения:
-       0
-       0
-       0
-       1
-
-       Поэтому самый тёмный фон исчезает.
-       ----------------------------------------------------- */
-
-    const alphaFunc =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "feFuncA"
-      );
-
-    alphaFunc.setAttribute(
-      "type",
-      "table"
-    );
-
-    alphaFunc.setAttribute(
-      "tableValues",
-      [
-        "0",
-        "0",
-        "0",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1",
-        "1"
-      ].join(" ")
-    );
-
-    red.appendChild(
-      alphaFunc
-    );
-
-    document.body.appendChild(
-      svg
-    );
-
-    svg.appendChild(
-      filter
-    );
+      if (parent) {
+        parent.remove();
+      } else {
+        oldSwitch.remove();
+      }
+    }
   }
 
   /* =======================================================
-     CSS
+     TOP NAV BUTTON
      ======================================================= */
 
-  function createRainRadarCSS() {
-    if (
+  function createRainRadarButton() {
+    const existing =
       document.getElementById(
-        "cloradRainRadarCSS"
-      )
-    ) {
-      return;
-    }
-
-    const style =
-      document.createElement(
-        "style"
+        "rainRadarNav"
       );
 
-    style.id =
-      "cloradRainRadarCSS";
+    if (existing) {
+      rainRadarButton =
+        existing;
 
-    style.textContent = `
-      .clorad-rainradar
-        .leaflet-tile,
-      .clorad-rainradar-canvas-tile {
+      return existing;
+    }
 
-        filter:
-          url("#cloradRainRadarColorize");
+    const nav =
+      document.querySelector(".nav");
 
-        -webkit-filter:
-          url("#cloradRainRadarColorize");
+    if (!nav) {
+      return null;
+    }
 
-        transform-origin:
-          center center;
-      }
+    const button =
+      document.createElement("button");
 
-      .clorad-rainradar {
-        pointer-events:
-          none;
-      }
+    button.className = "n";
+    button.id = "rainRadarNav";
+    button.type = "button";
+
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24">
+        <path d="M5 19V11"/>
+        <path d="M12 19V7"/>
+        <path d="M19 19V4"/>
+      </svg>
+      RainRadar
     `;
 
-    document.head.appendChild(
-      style
-    );
-  }
+    const gifButton =
+      document.getElementById(
+        "gifRadarNav"
+      );
 
-  /* =======================================================
-     TILE URL
-     ======================================================= */
+    const rainButton =
+      document.getElementById(
+        "rainProduct"
+      );
 
-  function getTileUrl(
-    timestamp,
-    coords
-  ) {
-    return (
-      RR_ROOT +
-      timestamp +
-      "/" +
-      coords.z +
-      "/" +
-      coords.x +
-      "_" +
-      coords.y +
-      ".png"
-    );
-  }
+    if (gifButton) {
+      gifButton.after(button);
+    } else if (rainButton) {
+      rainButton.after(button);
+    } else {
+      nav.appendChild(button);
+    }
 
-  /* =======================================================
-     CUSTOM GRID LAYER
-     ======================================================= */
+    rainRadarButton =
+      button;
 
-  const RainRadarLayer =
-    L.GridLayer.extend({
+    button.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
 
-      initialize:
-        function(
-          timestamp,
-          options
-        ) {
-
-          this.timestamp =
-            timestamp;
-
-          L.GridLayer.prototype
-            .initialize.call(
-              this,
-              options
-            );
-        },
-
-      _initTile:
-        function(tile) {
-
-          L.GridLayer.prototype
-            ._initTile.call(
-              this,
-              tile
-            );
-
-          tile.classList.add(
-            "clorad-rainradar-tile"
-          );
-        },
-
-      createTile:
-        function(
-          coords,
-          done
-        ) {
-
-          const tile =
-            document.createElement(
-              "img"
-            );
-
-          tile.alt = "";
-
-          tile.setAttribute(
-            "role",
-            "presentation"
-          );
-
-          tile.width = 256;
-          tile.height = 256;
-
-          tile.className =
-            "clorad-rainradar-tile";
-
-          tile.crossOrigin =
-            "anonymous";
-
-          const url =
-            getTileUrl(
-              this.timestamp,
-              coords
-            );
-
-          let finished =
-            false;
-
-          const finish =
-            (error) => {
-
-              if (finished) {
-                return;
-              }
-
-              finished =
-                true;
-
-              done(
-                error,
-                tile
-              );
-            };
-
-          tile.onload =
-            () => {
-              finish(null);
-            };
-
-          tile.onerror =
-            () => {
-              finish(
-                new Error(
-                  "RainRadar tile error"
-                )
-              );
-            };
-
-          tile.src =
-            url;
-
-          return tile;
+        if (rainRadarEnabled) {
+          disableRainRadar();
+        } else {
+          enableRainRadar();
         }
-    });
+      }
+    );
+
+    return button;
+  }
+
+  function setActiveNav(button) {
+    document
+      .querySelectorAll(".n")
+      .forEach(item => {
+        item.classList.remove("active");
+      });
+
+    if (button) {
+      button.classList.add("active");
+    }
+  }
 
   /* =======================================================
      MANIFEST
@@ -656,16 +244,13 @@
   async function loadManifest(
     force = false
   ) {
-
     const now =
       Date.now();
 
     if (
       !force &&
       rainRadarManifest &&
-      now -
-        manifestLoadedAt <
-        60000
+      now - manifestLoadedAt < 60000
     ) {
       return rainRadarManifest;
     }
@@ -674,11 +259,8 @@
       await fetch(
         RR_MANIFEST,
         {
-          method:
-            "GET",
-
-          cache:
-            "no-store"
+          method: "GET",
+          cache: "no-store"
         }
       );
 
@@ -692,9 +274,7 @@
     const data =
       await response.json();
 
-    if (
-      !Array.isArray(data)
-    ) {
+    if (!Array.isArray(data)) {
       throw new Error(
         "Неверный формат manifest.json"
       );
@@ -706,27 +286,15 @@
     manifestLoadedAt =
       now;
 
-    parseManifest(
-      data
-    );
+    parseManifest(data);
 
     return data;
   }
 
-  /* =======================================================
-     PARSE MANIFEST
-     ======================================================= */
-
-  function parseManifest(
-    data
-  ) {
-
+  function parseManifest(data) {
     const frames = [];
 
-    for (
-      const item of data
-    ) {
-
+    for (const item of data) {
       if (
         !Array.isArray(item) ||
         item.length < 2
@@ -735,27 +303,20 @@
       }
 
       const timestamp =
-        Number(
-          item[0]
-        );
+        Number(item[0]);
 
       const groups =
         item[1];
 
       if (
-        !Number.isFinite(
-          timestamp
-        ) ||
-        !Array.isArray(
-          groups
-        )
+        !Number.isFinite(timestamp) ||
+        !Array.isArray(groups)
       ) {
         continue;
       }
 
       frames.push({
-        timestamp:
-          timestamp
+        timestamp
       });
     }
 
@@ -769,15 +330,8 @@
       frames;
   }
 
-  /* =======================================================
-     LATEST FRAME
-     ======================================================= */
-
   function getLatestFrame() {
-
-    if (
-      !rainRadarFrames.length
-    ) {
+    if (!rainRadarFrames.length) {
       return null;
     }
 
@@ -787,11 +341,31 @@
   }
 
   /* =======================================================
+     COLORED TILE URL
+     ======================================================= */
+
+  function getTileUrl(
+    timestamp,
+    coords
+  ) {
+    return (
+      RR_API +
+      "?timestamp=" +
+      encodeURIComponent(timestamp) +
+      "&z=" +
+      encodeURIComponent(coords.z) +
+      "&x=" +
+      encodeURIComponent(coords.x) +
+      "&y=" +
+      encodeURIComponent(coords.y)
+    );
+  }
+
+  /* =======================================================
      REMOVE LAYER
      ======================================================= */
 
   function removeRainRadarLayer() {
-
     const map =
       getMap();
 
@@ -802,7 +376,6 @@
         rainRadarLayer
       )
     ) {
-
       map.removeLayer(
         rainRadarLayer
       );
@@ -822,7 +395,6 @@
   function createRainRadarLayer(
     timestamp
   ) {
-
     const map =
       getMap();
 
@@ -834,9 +406,23 @@
 
     removeRainRadarLayer();
 
+    /*
+     * Обычный Leaflet TileLayer.
+     *
+     * Никаких CSS-фильтров.
+     * Никакого Canvas.
+     */
+
     rainRadarLayer =
-      new RainRadarLayer(
-        timestamp,
+      L.tileLayer(
+        getTileUrl(
+          timestamp,
+          {
+            z: "{z}",
+            x: "{x}",
+            y: "{y}"
+          }
+        ),
         {
           minZoom:
             RR_MIN_ZOOM,
@@ -884,7 +470,6 @@
       typeof rainRadarLayer.bringToFront ===
       "function"
     ) {
-
       rainRadarLayer.bringToFront();
     }
 
@@ -897,10 +482,7 @@
      ======================================================= */
 
   async function enableRainRadar() {
-
-    if (
-      rainRadarLoading
-    ) {
+    if (rainRadarLoading) {
       return;
     }
 
@@ -908,20 +490,16 @@
       true;
 
     try {
-
       message(
         "Загрузка RainRadar…"
       );
 
-      await loadManifest(
-        false
-      );
+      await loadManifest(false);
 
       const latest =
         getLatestFrame();
 
       if (!latest) {
-
         throw new Error(
           "Нет доступных кадров RainRadar"
         );
@@ -934,10 +512,7 @@
       rainRadarEnabled =
         true;
 
-      if (
-        rainRadarButton
-      ) {
-
+      if (rainRadarButton) {
         rainRadarButton.classList.add(
           "active"
         );
@@ -955,7 +530,6 @@
       );
 
     } catch (error) {
-
       console.error(
         "CLOrad RainRadar:",
         error
@@ -966,10 +540,7 @@
 
       removeRainRadarLayer();
 
-      if (
-        rainRadarButton
-      ) {
-
+      if (rainRadarButton) {
         rainRadarButton.classList.remove(
           "active"
         );
@@ -981,7 +552,6 @@
       );
 
     } finally {
-
       rainRadarLoading =
         false;
     }
@@ -992,16 +562,12 @@
      ======================================================= */
 
   function disableRainRadar() {
-
     rainRadarEnabled =
       false;
 
     removeRainRadarLayer();
 
-    if (
-      rainRadarButton
-    ) {
-
+    if (rainRadarButton) {
       rainRadarButton.classList.remove(
         "active"
       );
@@ -1013,174 +579,10 @@
   }
 
   /* =======================================================
-     NAV
-     ======================================================= */
-
-  function setActiveNav(
-    button
-  ) {
-
-    document
-      .querySelectorAll(
-        ".n"
-      )
-      .forEach(
-        item => {
-
-          item.classList.remove(
-            "active"
-          );
-        }
-      );
-
-    if (button) {
-
-      button.classList.add(
-        "active"
-      );
-    }
-  }
-
-  function removeOldLayersButton() {
-
-    const oldLayer =
-      document.getElementById(
-        "rainradarLayerControl"
-      );
-
-    if (oldLayer) {
-      oldLayer.remove();
-    }
-
-    const oldSwitch =
-      document.getElementById(
-        "rainradarSwitch"
-      );
-
-    if (oldSwitch) {
-
-      const parent =
-        oldSwitch.closest(
-          ".layer"
-        );
-
-      if (parent) {
-        parent.remove();
-      } else {
-        oldSwitch.remove();
-      }
-    }
-  }
-
-  function createRainRadarButton() {
-
-    const existing =
-      document.getElementById(
-        "rainRadarNav"
-      );
-
-    if (existing) {
-
-      rainRadarButton =
-        existing;
-
-      return existing;
-    }
-
-    const nav =
-      document.querySelector(
-        ".nav"
-      );
-
-    if (!nav) {
-      return null;
-    }
-
-    const button =
-      document.createElement(
-        "button"
-      );
-
-    button.className =
-      "n";
-
-    button.id =
-      "rainRadarNav";
-
-    button.type =
-      "button";
-
-    button.innerHTML = `
-      <svg viewBox="0 0 24 24">
-        <path d="M5 19V11"/>
-        <path d="M12 19V7"/>
-        <path d="M19 19V4"/>
-      </svg>
-      RainRadar
-    `;
-
-    const gifButton =
-      document.getElementById(
-        "gifRadarNav"
-      );
-
-    const rainButton =
-      document.getElementById(
-        "rainProduct"
-      );
-
-    if (gifButton) {
-
-      gifButton.after(
-        button
-      );
-
-    } else if (rainButton) {
-
-      rainButton.after(
-        button
-      );
-
-    } else {
-
-      nav.appendChild(
-        button
-      );
-    }
-
-    rainRadarButton =
-      button;
-
-    button.addEventListener(
-      "click",
-      event => {
-
-        event.preventDefault();
-
-        event.stopPropagation();
-
-        if (
-          rainRadarEnabled
-        ) {
-
-          disableRainRadar();
-
-        } else {
-
-          enableRainRadar();
-        }
-      }
-    );
-
-    return button;
-  }
-
-  /* =======================================================
-     AUTO REFRESH
+     REFRESH
      ======================================================= */
 
   async function refreshRainRadar() {
-
     if (
       !rainRadarEnabled ||
       rainRadarLoading
@@ -1189,10 +591,7 @@
     }
 
     try {
-
-      await loadManifest(
-        true
-      );
+      await loadManifest(true);
 
       const latest =
         getLatestFrame();
@@ -1205,7 +604,6 @@
         latest.timestamp !==
         rainRadarTimestamp
       ) {
-
         createRainRadarLayer(
           latest.timestamp
         );
@@ -1219,7 +617,6 @@
       }
 
     } catch (error) {
-
       console.error(
         "RainRadar refresh:",
         error
@@ -1232,11 +629,8 @@
      ======================================================= */
 
   function setupNavigation() {
-
     const nav =
-      document.querySelector(
-        ".nav"
-      );
+      document.querySelector(".nav");
 
     if (!nav) {
       return;
@@ -1245,11 +639,8 @@
     nav.addEventListener(
       "click",
       event => {
-
         const button =
-          event.target.closest(
-            ".n"
-          );
+          event.target.closest(".n");
 
         if (!button) {
           return;
@@ -1262,10 +653,7 @@
           return;
         }
 
-        if (
-          rainRadarEnabled
-        ) {
-
+        if (rainRadarEnabled) {
           disableRainRadar();
         }
       },
@@ -1277,10 +665,7 @@
      TIME
      ======================================================= */
 
-  function formatTime(
-    timestamp
-  ) {
-
+  function formatTime(timestamp) {
     const date =
       new Date(
         timestamp * 1000
@@ -1291,7 +676,6 @@
         date.getTime()
       )
     ) {
-
       return "—";
     }
 
@@ -1321,15 +705,6 @@
      ======================================================= */
 
   function init() {
-
-    /*
-     * Создаём SVG-фильтр ДО появления тайлов.
-     */
-
-    createRainRadarFilter();
-
-    createRainRadarCSS();
-
     removeOldLayersButton();
 
     createRainRadarButton();
@@ -1337,7 +712,6 @@
     setupNavigation();
 
     if (refreshTimer) {
-
       clearInterval(
         refreshTimer
       );
@@ -1355,42 +729,31 @@
      ======================================================= */
 
   window.CLOradRainRadar = {
-
     enable:
       enableRainRadar,
 
     disable:
       disableRainRadar,
 
-    toggle:
-      () => {
-
-        if (
-          rainRadarEnabled
-        ) {
-
-          disableRainRadar();
-
-        } else {
-
-          enableRainRadar();
-        }
-      },
+    toggle: () => {
+      if (rainRadarEnabled) {
+        disableRainRadar();
+      } else {
+        enableRainRadar();
+      }
+    },
 
     refresh:
       refreshRainRadar,
 
     getLayer:
-      () =>
-        rainRadarLayer,
+      () => rainRadarLayer,
 
     getTimestamp:
-      () =>
-        rainRadarTimestamp,
+      () => rainRadarTimestamp,
 
     isEnabled:
-      () =>
-        rainRadarEnabled,
+      () => rainRadarEnabled,
 
     palette:
       "rgmc"
@@ -1404,18 +767,14 @@
     document.readyState ===
     "loading"
   ) {
-
     document.addEventListener(
       "DOMContentLoaded",
       init,
       {
-        once:
-          true
+        once: true
       }
     );
-
   } else {
-
     init();
   }
 
