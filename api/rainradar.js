@@ -26,7 +26,8 @@ const MANIFEST_URL =
 const TILE_BASE =
   "https://rainradar.ru/composite/";
 
-const CACHE_TIME = 30 * 1000;
+const CACHE_TIME =
+  30 * 1000;
 
 /* =========================================================
    ОЯ PALETTE
@@ -73,195 +74,347 @@ const PALETTE_RGB =
 /* =========================================================
    GRAYSCALE → ОЯ LEVEL
    ---------------------------------------------------------
-   Значения подобраны под фактическое распределение
-   RainRadar grayscale raster.
+   Умеренная нелинейная шкала.
 
-   0–4      = фон
-   дальше   = 19 цветовых уровней
+   Важно:
+   0–4 = прозрачный фон.
 
-   Это НЕ линейная шкала 0–255.
+   Значения RainRadar в районе 5–30
+   не должны всё время оставаться
+   на самом слабом уровне.
+
+   При этом верхние значения не
+   искусственно загоняются в максимум.
    ========================================================= */
 
 function grayToLevel(v) {
 
-  if (v <= 4)   return -1;
+  if (v <= 4) {
+    return -1;
+  }
 
-  if (v <= 7)   return 0;
-  if (v <= 10)  return 1;
-  if (v <= 13)  return 2;
-  if (v <= 16)  return 3;
-  if (v <= 20)  return 4;
-  if (v <= 24)  return 5;
-  if (v <= 29)  return 6;
-  if (v <= 35)  return 7;
-  if (v <= 43)  return 8;
-  if (v <= 53)  return 9;
-  if (v <= 66)  return 10;
-  if (v <= 82)  return 11;
-  if (v <= 101) return 12;
-  if (v <= 122) return 13;
-  if (v <= 143) return 14;
-  if (v <= 158) return 15;
-  if (v <= 171) return 16;
-  if (v <= 185) return 17;
+  if (v <= 6) {
+    return 0;
+  }
+
+  if (v <= 8) {
+    return 1;
+  }
+
+  if (v <= 10) {
+    return 2;
+  }
+
+  if (v <= 12) {
+    return 3;
+  }
+
+  if (v <= 15) {
+    return 4;
+  }
+
+  if (v <= 18) {
+    return 5;
+  }
+
+  if (v <= 22) {
+    return 6;
+  }
+
+  if (v <= 27) {
+    return 7;
+  }
+
+  if (v <= 33) {
+    return 8;
+  }
+
+  if (v <= 41) {
+    return 9;
+  }
+
+  if (v <= 51) {
+    return 10;
+  }
+
+  if (v <= 64) {
+    return 11;
+  }
+
+  if (v <= 80) {
+    return 12;
+  }
+
+  if (v <= 100) {
+    return 13;
+  }
+
+  if (v <= 122) {
+    return 14;
+  }
+
+  if (v <= 143) {
+    return 15;
+  }
+
+  if (v <= 160) {
+    return 16;
+  }
+
+  if (v <= 176) {
+    return 17;
+  }
 
   return 18;
 }
 
 /* =========================================================
-   PREBUILT LOOKUP TABLE
-   ---------------------------------------------------------
-   Не вычисляем шкалу для каждого пикселя.
+   LOOKUP TABLE
    ========================================================= */
 
-const LUT = new Int16Array(256);
+const LUT =
+  new Int16Array(256);
 
-for (let i = 0; i < 256; i++) {
-  LUT[i] = grayToLevel(i);
+for (
+  let i = 0;
+  i < 256;
+  i++
+) {
+  LUT[i] =
+    grayToLevel(i);
 }
 
 /* =========================================================
-   MEMORY CACHE
+   TILE CACHE
    ========================================================= */
 
-const cache = new Map();
+const cache =
+  new Map();
 
 /* =========================================================
    MANIFEST CACHE
    ========================================================= */
 
-let manifestCache = null;
-let manifestTime = 0;
+let manifestCache =
+  null;
+
+let manifestTime =
+  0;
 
 /* =========================================================
-   GET MANIFEST
+   FETCH MANIFEST
    ========================================================= */
 
 async function getManifest() {
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
   if (
     manifestCache &&
-    now - manifestTime < CACHE_TIME
+    now - manifestTime <
+      CACHE_TIME
   ) {
     return manifestCache;
   }
 
-  const response = await fetch(MANIFEST_URL, {
-    headers: {
-      "User-Agent": "CLOrad/1.0"
-    }
-  });
+  const response =
+    await fetch(
+      MANIFEST_URL,
+      {
+        method: "GET",
+
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 CLOrad/1.0",
+
+          "Accept":
+            "application/json,text/plain,*/*"
+        },
+
+        cache: "no-store"
+      }
+    );
 
   if (!response.ok) {
+
     throw new Error(
       `RainRadar manifest HTTP ${response.status}`
     );
   }
 
-  const data = await response.json();
+  const text =
+    await response.text();
 
-  manifestCache = data;
-  manifestTime = now;
+  if (!text) {
+
+    throw new Error(
+      "RainRadar manifest is empty"
+    );
+  }
+
+  let data;
+
+  try {
+
+    data =
+      JSON.parse(text);
+
+  } catch (error) {
+
+    throw new Error(
+      "RainRadar manifest is not valid JSON"
+    );
+  }
+
+  manifestCache =
+    data;
+
+  manifestTime =
+    now;
 
   return data;
 }
 
 /* =========================================================
-   FIND TIMESTAMP
-   ---------------------------------------------------------
-   Manifest у RainRadar может иметь немного разную структуру,
-   поэтому ищем timestamp достаточно гибко.
+   TIMESTAMP EXTRACTION
    ========================================================= */
 
-function extractTimestamp(manifest) {
+function itemToTimestamp(item) {
 
-  if (!manifest) {
-    return null;
+  if (
+    typeof item === "string" ||
+    typeof item === "number"
+  ) {
+    return String(item);
   }
 
-  if (typeof manifest === "string") {
-    return manifest;
+  if (
+    !item ||
+    typeof item !== "object"
+  ) {
+    return "";
   }
 
-  if (Array.isArray(manifest)) {
+  const value =
+    item.timestamp ??
+    item.time ??
+    item.ts ??
+    item.datetime ??
+    item.date ??
+    item.id ??
+    "";
 
-    for (const item of manifest) {
+  return value == null
+    ? ""
+    : String(value);
+}
 
-      if (typeof item === "string") {
-        return item;
-      }
+/* =========================================================
+   NORMALIZE MANIFEST
+   ========================================================= */
 
-      if (item && typeof item === "object") {
+function normalizeManifest(data) {
 
-        const value =
-          item.timestamp ??
-          item.time ??
-          item.ts ??
-          item.id;
+  let result = [];
 
-        if (value != null) {
-          return String(value);
-        }
-      }
-    }
+  /* -------------------------------------------------------
+     ARRAY
+     ------------------------------------------------------- */
+
+  if (
+    Array.isArray(data)
+  ) {
+
+    result =
+      data
+        .map(itemToTimestamp)
+        .filter(Boolean);
+
   }
 
-  if (typeof manifest === "object") {
+  /* -------------------------------------------------------
+     OBJECT
+     ------------------------------------------------------- */
 
-    const direct =
-      manifest.timestamp ??
-      manifest.time ??
-      manifest.latest ??
-      manifest.current;
+  else if (
+    data &&
+    typeof data === "object"
+  ) {
 
-    if (direct != null) {
-      return String(direct);
-    }
-
-    const arrays = [
-      manifest.frames,
-      manifest.times,
-      manifest.timestamps,
-      manifest.images
+    const directKeys = [
+      "frames",
+      "times",
+      "timestamps",
+      "images",
+      "data",
+      "items"
     ];
 
-    for (const arr of arrays) {
+    for (
+      const key of directKeys
+    ) {
 
-      if (!Array.isArray(arr) || !arr.length) {
-        continue;
-      }
+      const value =
+        data[key];
 
-      const last = arr[arr.length - 1];
+      if (
+        Array.isArray(value) &&
+        value.length
+      ) {
 
-      if (typeof last === "string") {
-        return last;
-      }
+        result =
+          value
+            .map(itemToTimestamp)
+            .filter(Boolean);
 
-      if (last && typeof last === "object") {
-
-        const value =
-          last.timestamp ??
-          last.time ??
-          last.ts ??
-          last.id;
-
-        if (value != null) {
-          return String(value);
+        if (
+          result.length
+        ) {
+          break;
         }
+      }
+    }
+
+    /* -----------------------------------------------------
+       Один timestamp
+       ----------------------------------------------------- */
+
+    if (
+      !result.length
+    ) {
+
+      const single =
+        itemToTimestamp(data);
+
+      if (single) {
+        result = [single];
       }
     }
   }
 
-  return null;
+  /* -------------------------------------------------------
+     UNIQUE
+     ------------------------------------------------------- */
+
+  result =
+    [
+      ...new Set(result)
+    ];
+
+  return result;
 }
 
 /* =========================================================
    SOURCE TILE URL
    ========================================================= */
 
-function sourceTileUrl(timestamp, z, x, y) {
+function sourceTileUrl(
+  timestamp,
+  z,
+  x,
+  y
+) {
 
   return (
     TILE_BASE +
@@ -277,50 +430,83 @@ function sourceTileUrl(timestamp, z, x, y) {
 }
 
 /* =========================================================
-   COLORIZE TILE
+   COLORIZE
    ========================================================= */
 
 async function colorize(buffer) {
 
-  const image = sharp(buffer, {
-    failOn: "none"
-  });
+  const image =
+    sharp(
+      buffer,
+      {
+        failOn: "none"
+      }
+    );
 
-  const { data, info } = await image
-    .ensureAlpha()
-    .raw()
-    .toBuffer({
-      resolveWithObject: true
-    });
+  const {
+    data,
+    info
+  } =
+    await image
+      .ensureAlpha()
+      .raw()
+      .toBuffer({
+        resolveWithObject:
+          true
+      });
 
-  const out = Buffer.allocUnsafe(
+  const pixelCount =
     info.width *
-    info.height *
-    4
-  );
+    info.height;
+
+  const out =
+    Buffer.allocUnsafe(
+      pixelCount * 4
+    );
 
   let p = 0;
 
-  for (let i = 0; i < data.length; i += 4) {
+  for (
+    let i = 0;
+    i < data.length;
+    i += 4
+  ) {
+
+    const r =
+      data[i];
+
+    const g =
+      data[i + 1];
+
+    const b =
+      data[i + 2];
 
     /*
-      RainRadar source is grayscale.
+      Исходный RainRadar raster —
+      grayscale.
 
-      Берём red channel.
-      Для защиты от случайных цветных PNG
-      также можно использовать максимум каналов.
+      Берём максимальный канал,
+      чтобы случайный небольшой
+      цветовой шум не занижал значение.
     */
 
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-
     const gray =
-      Math.max(r, g, b);
+      Math.max(
+        r,
+        g,
+        b
+      );
 
-    const level = LUT[gray];
+    const level =
+      LUT[gray];
 
-    if (level < 0) {
+    /* -----------------------------------------------------
+       TRANSPARENT BACKGROUND
+       ----------------------------------------------------- */
+
+    if (
+      level < 0
+    ) {
 
       out[p++] = 0;
       out[p++] = 0;
@@ -330,78 +516,210 @@ async function colorize(buffer) {
       continue;
     }
 
+    /* -----------------------------------------------------
+       PALETTE
+       ----------------------------------------------------- */
+
     const color =
       PALETTE_RGB[level];
 
-    out[p++] = color[0];
-    out[p++] = color[1];
-    out[p++] = color[2];
+    out[p++] =
+      color[0];
 
-    /*
-      Полностью непрозрачный радар.
-      Никакого смешивания цветов.
-    */
+    out[p++] =
+      color[1];
 
-    out[p++] = 255;
+    out[p++] =
+      color[2];
+
+    out[p++] =
+      255;
+  }
+
+  /* -------------------------------------------------------
+     ВАЖНО:
+
+     width / height исходного PNG
+     остаются абсолютно такими же.
+
+     resize НЕТ.
+     blur НЕТ.
+     interpolation НЕТ.
+     ------------------------------------------------------- */
+
+  return (
+    sharp(
+      out,
+      {
+        raw: {
+          width:
+            info.width,
+
+          height:
+            info.height,
+
+          channels:
+            4
+        }
+      }
+    )
+      .png({
+        compressionLevel: 6,
+
+        adaptiveFiltering:
+          false
+      })
+      .toBuffer()
+  );
+}
+
+/* =========================================================
+   CACHE
+   ========================================================= */
+
+function getCached(
+  key
+) {
+
+  const item =
+    cache.get(key);
+
+  if (!item) {
+    return null;
   }
 
   /*
-    ВАЖНО:
-    размеры исходного PNG сохраняются 1:1.
-    Никакого resize / blur / interpolation на сервере.
+    Небольшой TTL.
   */
 
-  return sharp(out, {
-    raw: {
-      width: info.width,
-      height: info.height,
-      channels: 4
+  if (
+    Date.now() -
+      item.time >
+    30 * 1000
+  ) {
+
+    cache.delete(key);
+
+    return null;
+  }
+
+  return item.buffer;
+}
+
+function setCached(
+  key,
+  buffer
+) {
+
+  cache.set(
+    key,
+    {
+      buffer,
+      time: Date.now()
     }
-  })
-    .png({
-      compressionLevel: 6,
-      adaptiveFiltering: false
-    })
-    .toBuffer();
+  );
+
+  /*
+    Не даём памяти
+    бесконечно расти.
+  */
+
+  while (
+    cache.size > 200
+  ) {
+
+    const first =
+      cache.keys()
+        .next()
+        .value;
+
+    cache.delete(first);
+  }
 }
 
 /* =========================================================
    HANDLER
    ========================================================= */
 
-module.exports = async function handler(req, res) {
+module.exports =
+async function handler(
+  req,
+  res
+) {
 
   try {
 
-    const {
-      manifest,
-      timestamp,
-      z,
-      x,
-      y
-    } = req.query;
+    const query =
+      req.query || {};
+
+    const manifest =
+      query.manifest;
+
+    const timestamp =
+      query.timestamp;
+
+    const z =
+      query.z;
+
+    const x =
+      query.x;
+
+    const y =
+      query.y;
 
     /* =====================================================
-       MANIFEST
+       MANIFEST REQUEST
        ===================================================== */
 
-    if (manifest === "1") {
+    if (
+      manifest === "1"
+    ) {
 
       const data =
         await getManifest();
+
+      const timestamps =
+        normalizeManifest(data);
+
+      /*
+        Возвращаем исходный manifest,
+        чтобы существующий rainradar.js
+        продолжал работать.
+      */
+
+      res.setHeader(
+        "Content-Type",
+        "application/json; charset=utf-8"
+      );
 
       res.setHeader(
         "Cache-Control",
         "public, s-maxage=30, stale-while-revalidate=60"
       );
 
-      res.status(200).json(data);
+      /*
+        Диагностический header.
+        Можно увидеть, что manifest
+        действительно дошёл.
+      */
+
+      res.setHeader(
+        "X-CLOrad-RainRadar-Frames",
+        String(
+          timestamps.length
+        )
+      );
+
+      res.status(200)
+        .send(
+          JSON.stringify(data)
+        );
 
       return;
     }
 
     /* =====================================================
-       TILE VALIDATION
+       TILE REQUEST
        ===================================================== */
 
     if (
@@ -411,16 +729,27 @@ module.exports = async function handler(req, res) {
       y == null
     ) {
 
-      res.status(400).json({
-        error: "Missing timestamp/z/x/y"
-      });
+      res.status(400)
+        .json({
+          error:
+            "Missing timestamp/z/x/y"
+        });
 
       return;
     }
 
-    const Z = Number(z);
-    const X = Number(x);
-    const Y = Number(y);
+    const Z =
+      Number(z);
+
+    const X =
+      Number(x);
+
+    const Y =
+      Number(y);
+
+    /* =====================================================
+       COORDINATE VALIDATION
+       ===================================================== */
 
     if (
       !Number.isInteger(Z) ||
@@ -431,9 +760,11 @@ module.exports = async function handler(req, res) {
       Y < 0
     ) {
 
-      res.status(400).json({
-        error: "Invalid tile coordinates"
-      });
+      res.status(400)
+        .json({
+          error:
+            "Invalid tile coordinates"
+        });
 
       return;
     }
@@ -443,10 +774,15 @@ module.exports = async function handler(req, res) {
        ===================================================== */
 
     const key =
-      `${timestamp}/${Z}/${X}/${Y}`;
+      [
+        timestamp,
+        Z,
+        X,
+        Y
+      ].join("/");
 
     const cached =
-      cache.get(key);
+      getCached(key);
 
     if (cached) {
 
@@ -460,13 +796,19 @@ module.exports = async function handler(req, res) {
         "public, max-age=30, s-maxage=30"
       );
 
-      res.status(200).send(cached);
+      res.setHeader(
+        "X-CLOrad-RainRadar",
+        "cache"
+      );
+
+      res.status(200)
+        .send(cached);
 
       return;
     }
 
     /* =====================================================
-       GET ORIGINAL TILE
+       SOURCE URL
        ===================================================== */
 
     const url =
@@ -477,54 +819,84 @@ module.exports = async function handler(req, res) {
         Y
       );
 
+    /* =====================================================
+       SOURCE REQUEST
+       ===================================================== */
+
     const response =
-      await fetch(url, {
-        headers: {
-          "User-Agent": "CLOrad/1.0",
-          "Accept": "image/png,image/*"
+      await fetch(
+        url,
+        {
+          method: "GET",
+
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 CLOrad/1.0",
+
+            "Accept":
+              "image/png,image/*,*/*"
+          },
+
+          cache: "no-store"
         }
-      });
+      );
 
-    if (!response.ok) {
+    /* =====================================================
+       SOURCE ERROR
+       ===================================================== */
 
-      res.status(response.status).json({
-        error:
-          `RainRadar tile HTTP ${response.status}`
-      });
+    if (
+      !response.ok
+    ) {
+
+      res.status(
+        response.status
+      )
+        .json({
+          error:
+            `RainRadar source tile HTTP ${response.status}`,
+
+          url
+        });
 
       return;
     }
+
+    /* =====================================================
+       SOURCE BUFFER
+       ===================================================== */
 
     const source =
       Buffer.from(
         await response.arrayBuffer()
       );
 
+    if (
+      !source.length
+    ) {
+
+      throw new Error(
+        "RainRadar source tile is empty"
+      );
+    }
+
     /* =====================================================
        COLORIZE
        ===================================================== */
 
     const output =
-      await colorize(source);
+      await colorize(
+        source
+      );
 
     /* =====================================================
-       MEMORY CACHE
+       SAVE MEMORY CACHE
        ===================================================== */
 
-    cache.set(key, output);
-
-    /*
-      Ограничиваем cache.
-      Постоянных файлов на сервере нет.
-    */
-
-    if (cache.size > 250) {
-
-      const firstKey =
-        cache.keys().next().value;
-
-      cache.delete(firstKey);
-    }
+    setCached(
+      key,
+      output
+    );
 
     /* =====================================================
        RESPONSE
@@ -545,18 +917,26 @@ module.exports = async function handler(req, res) {
       "server-colorized"
     );
 
-    res.status(200).send(output);
+    res.status(200)
+      .send(output);
 
   } catch (error) {
 
     console.error(
-      "CLOrad RainRadar:",
+      "CLOrad RainRadar ERROR:",
       error
     );
 
-    res.status(500).json({
-      error: "RainRadar processing failed",
-      message: String(error.message || error)
-    });
+    res.status(500)
+      .json({
+        error:
+          "RainRadar processing failed",
+
+        message:
+          String(
+            error?.message ||
+            error
+          )
+      });
   }
 };
