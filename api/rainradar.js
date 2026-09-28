@@ -7,14 +7,15 @@
    /composite/{timestamp}/{z}/{x}_{y}.png
 
    ВАЖНО:
-   - никаких sharp
-   - никаких тяжёлых библиотек
-   - без HEAD-запросов
-   - короткие таймауты
-   - Vercel Serverless Function
+   - без sharp
+   - без тяжёлых библиотек
+   - без HEAD
+   - без перебора 18 запросов
+   - один внешний запрос за проверку
    ========================================================= */
 
 "use strict";
+
 
 /* =========================================================
    CONFIG
@@ -23,79 +24,15 @@
 const COMPOSITE_URL =
   "https://rainradar.ru/composite/";
 
-const CACHE_TIME =
-  30 * 1000;
-
 const TIMESTAMP_STEP =
   600;
 
-const SEARCH_STEPS =
-  18;
-
 const REQUEST_TIMEOUT =
-  3000;
+  4000;
 
 
 /* =========================================================
-   HELPERS
-   ========================================================= */
-
-function json(
-  body,
-  status = 200
-) {
-  return {
-    status,
-    headers: {
-      "Content-Type":
-        "application/json; charset=utf-8",
-
-      "Cache-Control":
-        "no-store, no-cache, must-revalidate"
-    },
-    body: JSON.stringify(body)
-  };
-}
-
-
-function nowUnix() {
-  return Math.floor(
-    Date.now() / 1000
-  );
-}
-
-
-function normalizeTimestamp(
-  value
-) {
-  const n =
-    Number(value);
-
-  if (
-    !Number.isFinite(n) ||
-    n <= 0
-  ) {
-    return null;
-  }
-
-  return (
-    Math.floor(
-      n / TIMESTAMP_STEP
-    ) * TIMESTAMP_STEP
-  );
-}
-
-
-function sleep(ms) {
-  return new Promise(
-    resolve =>
-      setTimeout(resolve, ms)
-  );
-}
-
-
-/* =========================================================
-   SAFE FETCH
+   FETCH
    ========================================================= */
 
 async function fetchWithTimeout(
@@ -128,10 +65,48 @@ async function fetchWithTimeout(
 
 
 /* =========================================================
-   CHECK ONE RAINRADAR FRAME
+   TIMESTAMP
    ========================================================= */
 
-async function checkTimestamp(
+function normalizeTimestamp(
+  value
+) {
+  const n =
+    Number(value);
+
+  if (
+    !Number.isFinite(n) ||
+    n <= 0
+  ) {
+    return null;
+  }
+
+  return (
+    Math.floor(
+      n / TIMESTAMP_STEP
+    ) * TIMESTAMP_STEP
+  );
+}
+
+
+/* =========================================================
+   CURRENT TIMESTAMP
+   ========================================================= */
+
+function currentTimestamp() {
+  return normalizeTimestamp(
+    Math.floor(
+      Date.now() / 1000
+    )
+  );
+}
+
+
+/* =========================================================
+   CHECK TILE
+   ========================================================= */
+
+async function checkTile(
   timestamp
 ) {
   const url =
@@ -140,26 +115,19 @@ async function checkTimestamp(
     "/5/19_9.png";
 
   try {
-    /*
-      GET, а не HEAD.
-      RainRadar может нормально отдавать PNG
-      на GET, но HEAD может работать иначе.
-    */
-
     const response =
       await fetchWithTimeout(
         url,
         {
           method: "GET",
           cache: "no-store"
-        },
-        REQUEST_TIMEOUT
+        }
       );
 
     if (
       !response.ok
     ) {
-      return null;
+      return false;
     }
 
     const type =
@@ -170,93 +138,97 @@ async function checkTimestamp(
       ).toLowerCase();
 
     /*
-      Если сервер действительно отдал PNG —
-      кадр существует.
+      RainRadar должен вернуть PNG.
     */
 
     if (
       type.includes("image") ||
       type.includes("png")
     ) {
-      return timestamp;
+      return true;
     }
 
     /*
-      Иногда Content-Type может быть странным.
-      Сам факт успешного ответа тоже считаем
-      достаточным, если это не HTML/JSON.
+      Иногда CDN может не отдавать
+      нормальный Content-Type.
+      Успешный ответ без HTML/JSON
+      тоже считаем допустимым.
     */
 
     if (
       !type.includes("text/html") &&
-      !type.includes("application/json")
+      !type.includes("json")
     ) {
-      return timestamp;
+      return true;
     }
 
-    return null;
+    return false;
 
   } catch {
-    return null;
+    return false;
   }
 }
 
 
 /* =========================================================
-   FIND LATEST FRAME
+   FIND LATEST
    ========================================================= */
 
-async function discoverLatest() {
+async function findLatest() {
+
+  /*
+    Сначала проверяем текущее
+    десятиминутное время.
+  */
+
   const current =
-    normalizeTimestamp(
-      nowUnix()
-    );
+    currentTimestamp();
 
   if (!current) {
     return null;
   }
 
-  /*
-    Проверяем сразу пачку последних
-    десятиминутных времён.
-
-    Это намного быстрее и безопаснее,
-    чем делать 18 последовательных запросов.
-  */
-
-  const candidates = [];
-
-  for (
-    let i = 0;
-    i < SEARCH_STEPS;
-    i++
+  if (
+    await checkTile(
+      current
+    )
   ) {
-    candidates.push(
-      current -
-      i * TIMESTAMP_STEP
-    );
+    return current;
   }
 
-  const results =
-    await Promise.all(
-      candidates.map(
-        timestamp =>
-          checkTimestamp(
-            timestamp
-          )
-      )
-    );
 
-  for (
-    let i = 0;
-    i < results.length;
-    i++
+  /*
+    Если текущего кадра ещё нет,
+    проверяем только предыдущий.
+  */
+
+  const previous =
+    current -
+    TIMESTAMP_STEP;
+
+  if (
+    await checkTile(
+      previous
+    )
   ) {
-    if (
-      results[i] !== null
-    ) {
-      return results[i];
-    }
+    return previous;
+  }
+
+
+  /*
+    Ещё один предыдущий.
+  */
+
+  const previous2 =
+    current -
+    TIMESTAMP_STEP * 2;
+
+  if (
+    await checkTile(
+      previous2
+    )
+  ) {
+    return previous2;
   }
 
   return null;
@@ -264,47 +236,16 @@ async function discoverLatest() {
 
 
 /* =========================================================
-   FRAME LIST
+   TILE URL
    ========================================================= */
 
-async function getFrames() {
-  const latest =
-    await discoverLatest();
-
-  if (!latest) {
-    return [];
-  }
-
-  /*
-    Возвращаем существующий кадр.
-    Timeline сможет работать даже если
-    RainRadar временно отдаёт только
-    последний доступный composite.
-  */
-
-  return [
-    {
-      timestamp: latest,
-      time:
-        new Date(
-          latest * 1000
-        ).toISOString()
-    }
-  ];
-}
-
-
-/* =========================================================
-   TILE
-   ========================================================= */
-
-async function getTile(
+function tileUrl(
   timestamp,
   z,
   x,
   y
 ) {
-  const url =
+  return (
     COMPOSITE_URL +
     timestamp +
     "/" +
@@ -313,42 +254,8 @@ async function getTile(
     x +
     "_" +
     y +
-    ".png";
-
-  const response =
-    await fetchWithTimeout(
-      url,
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          "Accept":
-            "image/png,image/*;q=0.9,*/*;q=0.5"
-        }
-      },
-      REQUEST_TIMEOUT
-    );
-
-  if (
-    !response.ok
-  ) {
-    return {
-      status:
-        response.status
-    };
-  }
-
-  const buffer =
-    await response.arrayBuffer();
-
-  return {
-    status: 200,
-    buffer,
-    contentType:
-      response.headers.get(
-        "content-type"
-      ) || "image/png"
-  };
+    ".png"
+  );
 }
 
 
@@ -361,33 +268,42 @@ module.exports =
     req,
     res
   ) {
+
     try {
+
       const query =
         req.query || {};
 
-      /* -----------------------------------------------
+
+      /* ===================================================
          MANIFEST
-         ----------------------------------------------- */
+         =================================================== */
 
       if (
         String(
           query.manifest
         ) === "1"
       ) {
-        const frames =
-          await getFrames();
 
-        if (
-          frames.length === 0
-        ) {
+        const latest =
+          await findLatest();
+
+        if (!latest) {
+
           return res
             .status(503)
             .json({
               ok: false,
               error:
-                "RainRadar: доступные кадры не найдены"
+                "RainRadar сейчас не отдал доступный кадр"
             });
         }
+
+
+        /*
+          Пока отдаём один гарантированно
+          существующий кадр.
+        */
 
         return res
           .status(200)
@@ -396,17 +312,31 @@ module.exports =
             "no-store"
           )
           .json({
+
             ok: true,
+
             source:
               "rainradar.ru/composite",
-            frames
+
+            frames: [
+              {
+                timestamp:
+                  latest,
+
+                time:
+                  new Date(
+                    latest * 1000
+                  ).toISOString()
+              }
+            ]
+
           });
       }
 
 
-      /* -----------------------------------------------
+      /* ===================================================
          TIMESTAMP
-         ----------------------------------------------- */
+         =================================================== */
 
       const timestamp =
         normalizeTimestamp(
@@ -414,6 +344,7 @@ module.exports =
         );
 
       if (!timestamp) {
+
         return res
           .status(400)
           .json({
@@ -424,9 +355,9 @@ module.exports =
       }
 
 
-      /* -----------------------------------------------
-         TILE COORDINATES
-         ----------------------------------------------- */
+      /* ===================================================
+         COORDINATES
+         =================================================== */
 
       const z =
         Number(query.z);
@@ -437,6 +368,7 @@ module.exports =
       const y =
         Number(query.y);
 
+
       if (
         !Number.isInteger(z) ||
         !Number.isInteger(x) ||
@@ -446,6 +378,7 @@ module.exports =
         x < 0 ||
         y < 0
       ) {
+
         return res
           .status(400)
           .json({
@@ -456,40 +389,73 @@ module.exports =
       }
 
 
-      /* -----------------------------------------------
-         GET TILE
-         ----------------------------------------------- */
+      /* ===================================================
+         REQUEST RAINRADAR TILE
+         =================================================== */
 
-      const tile =
-        await getTile(
+      const url =
+        tileUrl(
           timestamp,
           z,
           x,
           y
         );
 
+
+      const response =
+        await fetchWithTimeout(
+          url,
+          {
+            method: "GET",
+            cache: "no-store",
+
+            headers: {
+              "Accept":
+                "image/png,image/*,*/*;q=0.8"
+            }
+          }
+        );
+
+
+      /* ===================================================
+         ERROR FROM RAINRADAR
+         =================================================== */
+
       if (
-        tile.status !== 200
+        !response.ok
       ) {
+
         return res
-          .status(tile.status)
+          .status(
+            response.status
+          )
           .json({
             ok: false,
             error:
-              "RainRadar tile unavailable"
+              "RainRadar tile unavailable",
+            status:
+              response.status
           });
       }
 
 
-      /* -----------------------------------------------
-         RETURN ORIGINAL PNG
-         ----------------------------------------------- */
+      /* ===================================================
+         GET PNG
+         =================================================== */
+
+      const buffer =
+        await response.arrayBuffer();
+
+
+      /* ===================================================
+         RESPONSE
+         =================================================== */
 
       res.status(200);
 
       res.setHeader(
         "Content-Type",
-        tile.contentType
+        "image/png"
       );
 
       res.setHeader(
@@ -502,15 +468,17 @@ module.exports =
         "*"
       );
 
+
       return res.end(
         Buffer.from(
-          tile.buffer
+          buffer
         )
       );
 
     } catch (error) {
+
       console.error(
-        "CLOrad RainRadar API:",
+        "CLOrad RainRadar:",
         error
       );
 
@@ -521,10 +489,8 @@ module.exports =
           error:
             "RainRadar API error",
           message:
-            error &&
-            error.message
-              ? error.message
-              : String(error)
+            error?.message ||
+            String(error)
         });
     }
   };
