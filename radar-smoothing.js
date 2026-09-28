@@ -1,17 +1,21 @@
 /* =========================================================
    CLOrad — RADAR PIXEL INTERPOLATION
    ---------------------------------------------------------
-   • Кнопка находится внутри «Настройки»
-   • После «Кол. кадров»
-   • 0% = оригинальный кадр
-   • 1–100% = интерполяция всего изображения
+   • Интерполяция исходного радарного растра
    • Никаких контуров
-   • Никаких масок цветов
-   • Никакого удаления пикселей
-   • Не удаляет слоистую облачность
-   • Не создаёт отдельные цветовые области
-   • Интерполируется ВЕСЬ GIF-КАДР
+   • Никаких marching squares
+   • Никаких morphology
+   • Никаких Chaikin
+   • Никакого CSS blur
+   • Не удаляет облачность
+   • Не удаляет слабые радарные области
+   • Не добавляет новые геометрические области
+   • Цвета интерполируются только между соседними пикселями
+   • Географические координаты GIF не изменяются
+   • 0% = оригинальный кадр
+   • 1–100% = увеличение качества интерполяции
    • Обработка только после отпускания ползунка
+   • Настройка находится внутри «Настройки»
    ========================================================= */
 
 (() => {
@@ -27,7 +31,7 @@
   ];
 
   /* =======================================================
-     SETTINGS IDS
+     SETTINGS
      ======================================================= */
 
   const SETTING_ID =
@@ -65,7 +69,7 @@
 
   let installed = false;
 
-  let frameObserver = null;
+  let frameObserverStarted = false;
 
   /* =======================================================
      HELPERS
@@ -83,7 +87,7 @@
   }
 
   /* =======================================================
-     SOURCE IMAGE
+     FIND CURRENT GIF
      ======================================================= */
 
   function getSourceImage() {
@@ -98,6 +102,14 @@
       return null;
     }
 
+    /*
+       Берём последний настоящий
+       GIF-слой.
+
+       Наш собственный слой
+       имеет другой className.
+    */
+
     for (
       let i = images.length - 1;
       i >= 0;
@@ -107,7 +119,6 @@
 
       if (
         image &&
-        image.dataset &&
         image.dataset.cloradSmoothing !== "1"
       ) {
         return image;
@@ -127,8 +138,12 @@
         const image =
           new Image();
 
-        image.decoding =
-          "async";
+        /*
+           Нужно для data/blob URL,
+           которые используются GIF-радаром.
+        */
+
+        image.decoding = "async";
 
         image.onload = () => {
           resolve(image);
@@ -148,43 +163,45 @@
   }
 
   /* =======================================================
-     INTERPOLATION STRENGTH
+     INTERPOLATION SCALE
      -------------------------------------------------------
-     Чем больше значение,
-     тем сильнее уменьшается промежуточное
-     изображение перед обратным увеличением.
+     Здесь нет изменения цветов вручную.
 
-     ВАЖНО:
-     Мы не удаляем исходные данные.
-     Мы интерполируем ВЕСЬ кадр.
+     Мы просто создаём растр большего
+     разрешения и включаем стандартную
+     билинейную интерполяцию Canvas.
+
+     Чем выше значение — тем выше
+     промежуточное разрешение.
      ======================================================= */
 
-  function getInterpolationScale(
-    strength
-  ) {
-    const s =
+  function getInterpolationScale(strength) {
+    const value =
       clamp(
         Number(strength) || 0,
         0,
         100
-      ) / 100;
+      );
+
+    if (value <= 0) {
+      return 1;
+    }
 
     /*
-       0%:
-       исходное изображение.
+       1%:
+       почти исходный растр.
 
        100%:
-       промежуточный размер примерно 42%.
+       4x разрешение.
 
-       Это достаточно сильная
-       билинейная интерполяция,
-       но без превращения радара
-       в полностью размытое пятно.
+       Это специально ограничено 4x,
+       чтобы iPhone не получил
+       огромный canvas.
     */
 
     return (
-      1 -
-      s * 0.58
+      1 +
+      (value / 100) * 3
     );
   }
 
@@ -192,33 +209,25 @@
      DRAW INTERPOLATED IMAGE
      ======================================================= */
 
-  function interpolateImage(
-    source,
+  function createInterpolatedImage(
+    image,
     strength
   ) {
-    const width =
-      source.naturalWidth ||
-      source.width;
+    const sourceWidth =
+      image.naturalWidth ||
+      image.width;
 
-    const height =
-      source.naturalHeight ||
-      source.height;
-
-    if (
-      !width ||
-      !height
-    ) {
-      return null;
-    }
-
-    /*
-       При 0% ничего не интерполируем.
-    */
+    const sourceHeight =
+      image.naturalHeight ||
+      image.height;
 
     if (
-      strength <= 0
+      !sourceWidth ||
+      !sourceHeight
     ) {
-      return null;
+      throw new Error(
+        "Некорректный размер GIF"
+      );
     }
 
     const scale =
@@ -226,147 +235,148 @@
         strength
       );
 
-    const smallWidth =
-      Math.max(
-        2,
-        Math.round(
-          width * scale
-        )
-      );
+    /*
+       При 1x ничего не пересчитываем.
+    */
 
-    const smallHeight =
-      Math.max(
-        2,
-        Math.round(
-          height * scale
-        )
-      );
-
-    /* =====================================================
-       CANVAS №1
-       Уменьшение.
-
-       Браузер интерполирует соседние
-       исходные пиксели.
-       ===================================================== */
-
-    const smallCanvas =
-      document.createElement(
-        "canvas"
-      );
-
-    smallCanvas.width =
-      smallWidth;
-
-    smallCanvas.height =
-      smallHeight;
-
-    const smallCtx =
-      smallCanvas.getContext(
-        "2d",
-        {
-          alpha: true
-        }
-      );
-
-    if (!smallCtx) {
+    if (scale <= 1.001) {
       return null;
     }
 
+    let width =
+      Math.round(
+        sourceWidth * scale
+      );
+
+    let height =
+      Math.round(
+        sourceHeight * scale
+      );
+
     /*
-       Именно интерполяция,
-       а не nearest-neighbor.
+       Защита iPhone от слишком
+       большого canvas.
+
+       1122×1136 → максимум примерно 4x.
     */
 
-    smallCtx.imageSmoothingEnabled =
-      true;
+    const MAX_SIDE =
+      4600;
 
-    /*
-       В большинстве Safari
-       это даёт качественную
-       билинейную интерполяцию.
-    */
+    if (
+      width > MAX_SIDE ||
+      height > MAX_SIDE
+    ) {
+      const limit =
+        Math.min(
+          MAX_SIDE / width,
+          MAX_SIDE / height
+        );
 
-    smallCtx.imageSmoothingQuality =
-      "high";
+      width =
+        Math.max(
+          sourceWidth,
+          Math.floor(
+            width * limit
+          )
+        );
 
-    smallCtx.clearRect(
-      0,
-      0,
-      smallWidth,
-      smallHeight
-    );
+      height =
+        Math.max(
+          sourceHeight,
+          Math.floor(
+            height * limit
+          )
+        );
+    }
 
-    smallCtx.drawImage(
-      source,
-      0,
-      0,
-      width,
-      height,
-      0,
-      0,
-      smallWidth,
-      smallHeight
-    );
-
-    /* =====================================================
-       CANVAS №2
-       Обратное увеличение.
-
-       Здесь интерполяция повторяется,
-       поэтому квадратные пиксели
-       становятся визуально плавнее.
-       ===================================================== */
-
-    const outputCanvas =
+    const canvas =
       document.createElement(
         "canvas"
       );
 
-    outputCanvas.width =
+    canvas.width =
       width;
 
-    outputCanvas.height =
+    canvas.height =
       height;
 
-    const outputCtx =
-      outputCanvas.getContext(
+    const ctx =
+      canvas.getContext(
         "2d",
         {
-          alpha: true
+          alpha: true,
+          willReadFrequently: false
         }
       );
 
-    if (!outputCtx) {
-      return null;
+    if (!ctx) {
+      throw new Error(
+        "Canvas недоступен"
+      );
     }
 
-    outputCtx.imageSmoothingEnabled =
+    /*
+       КЛЮЧЕВОЙ МОМЕНТ.
+
+       Мы НЕ рисуем квадраты.
+
+       Canvas сам вычисляет цвет
+       промежуточных точек между
+       соседними пикселями.
+
+       Это стандартная билинейная
+       интерполяция изображения.
+    */
+
+    ctx.imageSmoothingEnabled =
       true;
 
-    outputCtx.imageSmoothingQuality =
-      "high";
+    /*
+       Высокое качество интерполяции.
+    */
 
-    outputCtx.clearRect(
+    if (
+      "imageSmoothingQuality" in ctx
+    ) {
+      ctx.imageSmoothingQuality =
+        "high";
+    }
+
+    /*
+       Весь исходный кадр,
+       включая облачность,
+       полностью переносится
+       на новый canvas.
+
+       Никакой классификации
+       цветов здесь НЕТ.
+    */
+
+    ctx.clearRect(
       0,
       0,
       width,
       height
     );
 
-    outputCtx.drawImage(
-      smallCanvas,
-      0,
-      0,
-      smallWidth,
-      smallHeight,
+    ctx.drawImage(
+      image,
       0,
       0,
       width,
       height
     );
 
-    return outputCanvas.toDataURL(
+    /*
+       PNG сохраняет:
+       • радар
+       • облачность
+       • прозрачность
+       • все исходные области
+    */
+
+    return canvas.toDataURL(
       "image/png"
     );
   }
@@ -375,7 +385,7 @@
      REMOVE INTERPOLATED LAYER
      ======================================================= */
 
-  function removeSmoothedLayer() {
+  function removeSmoothingLayer() {
     if (
       smoothingLayer &&
       window.map &&
@@ -399,7 +409,7 @@
   function restoreOriginal() {
     processToken++;
 
-    removeSmoothedLayer();
+    removeSmoothingLayer();
 
     const source =
       getSourceImage();
@@ -409,32 +419,34 @@
         sourceOriginalOpacity ||
         "1";
 
-      source.dataset.cloradSmoothing =
-        "0";
-
       sourceImageElement =
         source;
     }
 
-    processing =
-      false;
+    processing = false;
   }
 
   /* =======================================================
-     INSTALL INTERPOLATED IMAGE
+     INSTALL INTERPOLATED LAYER
      ======================================================= */
 
   function installInterpolatedLayer(
-    dataURL
+    dataURL,
+    source
   ) {
     if (
       !window.map ||
       !dataURL
     ) {
-      return;
+      return false;
     }
 
-    removeSmoothedLayer();
+    /*
+       Сначала создаём новый слой.
+
+       Старый GIF пока остаётся
+       полностью видимым.
+    */
 
     const layer =
       L.imageOverlay(
@@ -457,16 +469,13 @@
       layer;
 
     /*
-       Только после того,
-       как новый слой установлен,
-       скрываем оригинальный GIF.
+       Только после успешного
+       добавления интерполированного
+       слоя скрываем исходный.
 
-       Поэтому при ошибке оригинал
-       никогда не пропадает.
+       Поэтому GIF не должен
+       исчезать во время обработки.
     */
-
-    const source =
-      getSourceImage();
 
     if (source) {
       sourceImageElement =
@@ -486,6 +495,8 @@
     ) {
       layer.bringToFront();
     }
+
+    return true;
   }
 
   /* =======================================================
@@ -498,9 +509,19 @@
     const token =
       ++processToken;
 
-    if (
-      strength <= 0
-    ) {
+    const value =
+      clamp(
+        Number(strength) || 0,
+        0,
+        100
+      );
+
+    /*
+       0% = полностью исходный
+       радар.
+    */
+
+    if (value <= 0) {
       restoreOriginal();
       return;
     }
@@ -509,11 +530,15 @@
       getSourceImage();
 
     if (!source) {
-      processing =
-        false;
-
+      processing = false;
       return;
     }
+
+    /*
+       Если изображение ещё
+       не успело загрузиться,
+       ждём его.
+    */
 
     if (
       !source.complete ||
@@ -523,40 +548,38 @@
       setTimeout(
         () => {
           if (
-            token ===
-            processToken
+            token === processToken
           ) {
             processCurrentFrame(
-              strength
+              value
             );
           }
         },
-        150
+        120
       );
 
       return;
     }
 
-    /*
-       Если предыдущая обработка
-       ещё выполняется, не запускаем
-       вторую одновременно.
-    */
-
     if (processing) {
       return;
     }
 
-    processing =
-      true;
+    processing = true;
 
     try {
+      /*
+         Берём именно текущий кадр.
+      */
+
       const url =
         source.currentSrc ||
         source.src;
 
       if (!url) {
-        return;
+        throw new Error(
+          "URL текущего кадра отсутствует"
+        );
       }
 
       const image =
@@ -565,51 +588,68 @@
         );
 
       if (
-        token !==
-        processToken
+        token !== processToken
       ) {
         return;
       }
 
       /*
-         ВАЖНО:
+         Создаём интерполированный
+         вариант целиком.
 
-         Здесь НЕТ:
-
-         • классификации цветов
-         • масок
-         • marching squares
-         • contour
-         • cleanup
-         • удаления слабых пикселей
-         • отрисовки отдельных классов
-
-         Мы просто интерполируем
-         ВЕСЬ исходный кадр.
+         Никаких масок.
+         Никаких классов.
+         Никаких фильтров.
       */
 
       const result =
-        interpolateImage(
+        createInterpolatedImage(
           image,
-          strength
+          value
         );
 
       if (
-        token !==
-        processToken
+        token !== processToken
+      ) {
+        return;
+      }
+
+      if (!result) {
+        restoreOriginal();
+        return;
+      }
+
+      /*
+         Ещё раз проверяем,
+         что текущий GIF не сменился
+         пока canvas обрабатывался.
+      */
+
+      const currentSource =
+        getSourceImage();
+
+      if (
+        !currentSource ||
+        currentSource !== source
       ) {
         return;
       }
 
       if (
-        !result
+        token !== processToken
       ) {
         return;
       }
 
+      /*
+         Устанавливаем новый слой.
+      */
+
       installInterpolatedLayer(
-        result
+        result,
+        source
       );
+
     } catch (error) {
       console.error(
         "CLOrad radar interpolation:",
@@ -618,15 +658,22 @@
 
       /*
          При любой ошибке
-         оригинальный GIF остаётся.
+         НЕ удаляем оригинальный GIF.
       */
+
+      if (
+        source
+      ) {
+        source.style.opacity =
+          sourceOriginalOpacity ||
+          "1";
+      }
+
     } finally {
       if (
-        token ===
-        processToken
+        token === processToken
       ) {
-        processing =
-          false;
+        processing = false;
       }
     }
   }
@@ -656,9 +703,7 @@
         SETTING_ID
       )
     ) {
-      installed =
-        true;
-
+      installed = true;
       return;
     }
 
@@ -679,7 +724,7 @@
         id="${BUTTON_ID}"
         type="button"
       >
-        <span>Сглаживание радара</span>
+        <span>Интерполяция радара</span>
         <span class="settingArrow">›</span>
       </button>
 
@@ -694,40 +739,28 @@
             margin-bottom:10px;
           "
         >
-          Интерполяция пикселей
+          Плавность пикселей
         </div>
 
-        <div
+        <input
+          id="${RANGE_ID}"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
           style="
-            position:relative;
             width:100%;
-            height:32px;
-            display:flex;
-            align-items:center;
+            display:block;
+            accent-color:#53e39b;
+            touch-action:pan-y;
           "
         >
-          <input
-            id="${RANGE_ID}"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="0"
-            style="
-              width:100%;
-              height:28px;
-              margin:0;
-              padding:0;
-              accent-color:#53e39b;
-              touch-action:pan-y;
-            "
-          >
-        </div>
 
         <div
           id="${VALUE_ID}"
           style="
-            margin-top:5px;
+            margin-top:7px;
             font-size:13px;
             color:#dfe4e7;
             text-align:right;
@@ -739,7 +772,7 @@
     `;
 
     /*
-       Ставим строго после
+       Ставим именно после
        «Кол. кадров».
     */
 
@@ -791,67 +824,18 @@
       );
     }
 
-    /*
-       Не даём кликам по ползунку
-       закрывать родительские настройки.
-    */
-
-    if (range) {
-      range.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
-        }
-      );
-
-      range.addEventListener(
-        "pointerdown",
-        event => {
-          event.stopPropagation();
-        }
-      );
-
-      range.addEventListener(
-        "pointerup",
-        event => {
-          event.stopPropagation();
-        }
-      );
-
-      range.addEventListener(
-        "touchstart",
-        event => {
-          event.stopPropagation();
-        },
-        {
-          passive: true
-        }
-      );
-
-      range.addEventListener(
-        "touchend",
-        event => {
-          event.stopPropagation();
-        },
-        {
-          passive: true
-        }
-      );
-    }
-
     /* =====================================================
-       INPUT
+       SLIDER INPUT
        -----------------------------------------------------
-       Здесь НЕТ обработки изображения.
-       Только меняем значение.
+       Здесь НЕ запускаем обработку.
+
+       Только показываем значение.
        ===================================================== */
 
     if (range) {
       range.addEventListener(
         "input",
-        event => {
-          event.stopPropagation();
-
+        () => {
           smoothingValue =
             clamp(
               Number(
@@ -866,69 +850,105 @@
               smoothingValue +
               "%";
           }
+
+          /*
+             При движении ползунка
+             не пересчитываем радар.
+
+             Если пользователь уже
+             использовал интерполяцию,
+             оставляем текущий слой,
+             пока он не отпустит
+             ползунок.
+
+             Это также предотвращает
+             лаги и случайное исчезновение
+             GIF.
+          */
+
+          if (
+            smoothingValue === 0
+          ) {
+            restoreOriginal();
+          }
         }
       );
-    }
 
-    /* =====================================================
-       RELEASE
-       ===================================================== */
+      /* ===================================================
+         RELEASE
+         =================================================== */
 
-    const scheduleRelease =
-      event => {
-        if (event) {
-          event.stopPropagation();
-        }
+      const release =
+        event => {
+          /*
+             Не даём событию
+             закрыть настройки.
+          */
 
-        clearTimeout(
-          releaseTimer
-        );
+          if (
+            event
+          ) {
+            event.stopPropagation();
+          }
 
-        /*
-           Только здесь запускается
-           реальная интерполяция.
-        */
+          clearTimeout(
+            releaseTimer
+          );
 
-        releaseTimer =
-          setTimeout(
-            () => {
-              if (
-                smoothingValue ===
-                0
-              ) {
-                restoreOriginal();
-              } else {
+          releaseTimer =
+            setTimeout(
+              () => {
                 processCurrentFrame(
                   smoothingValue
                 );
-              }
-            },
-            180
-          );
-      };
+              },
+              180
+            );
+        };
 
-    if (range) {
       range.addEventListener(
         "pointerup",
-        scheduleRelease
+        release
       );
 
       range.addEventListener(
         "touchend",
-        scheduleRelease,
-        {
-          passive: true
-        }
+        release
       );
 
       range.addEventListener(
         "mouseup",
-        scheduleRelease
+        release
+      );
+
+      /*
+         Если палец ушёл за пределы
+         ползунка, всё равно
+         обрабатываем последнее
+         значение.
+      */
+
+      range.addEventListener(
+        "change",
+        () => {
+          clearTimeout(
+            releaseTimer
+          );
+
+          releaseTimer =
+            setTimeout(
+              () => {
+                processCurrentFrame(
+                  smoothingValue
+                );
+              },
+              180
+            );
+        }
       );
     }
 
-    installed =
-      true;
+    installed = true;
   }
 
   /* =======================================================
@@ -936,11 +956,16 @@
      ======================================================= */
 
   function watchGIFFrame() {
-    if (frameObserver) {
+    if (
+      frameObserverStarted
+    ) {
       return;
     }
 
-    frameObserver =
+    frameObserverStarted =
+      true;
+
+    const observer =
       new MutationObserver(
         mutations => {
           for (
@@ -972,29 +997,27 @@
             }
 
             /*
-               Новый GIF-кадр.
+               GIF переключился
+               на новый кадр.
 
                Старый интерполированный
-               слой больше не используется.
+               слой теперь больше
+               не соответствует кадру.
             */
 
             processToken++;
 
-            removeSmoothedLayer();
+            removeSmoothingLayer();
 
-            processing =
-              false;
+            processing = false;
 
             /*
-               Новый оригинальный кадр
-               всегда сначала показываем.
+               Новый кадр сначала
+               показываем полностью.
             */
 
             target.style.opacity =
               "1";
-
-            target.dataset.cloradSmoothing =
-              "0";
 
             sourceImageElement =
               target;
@@ -1005,8 +1028,7 @@
             /*
                Если интерполяция включена,
                после загрузки нового кадра
-               создаём новый интерполированный
-               слой.
+               создаём её заново.
             */
 
             if (
@@ -1023,14 +1045,14 @@
                       smoothingValue
                     );
                   },
-                  180
+                  120
                 );
             }
           }
         }
       );
 
-    frameObserver.observe(
+    observer.observe(
       document.body,
       {
         subtree: true,
@@ -1118,8 +1140,7 @@
       }
 
       if (
-        smoothingValue ===
-        0
+        smoothingValue <= 0
       ) {
         restoreOriginal();
       } else {
@@ -1130,8 +1151,7 @@
     },
 
     restore() {
-      smoothingValue =
-        0;
+      smoothingValue = 0;
 
       const range =
         document.getElementById(
@@ -1144,8 +1164,7 @@
         );
 
       if (range) {
-        range.value =
-          "0";
+        range.value = "0";
       }
 
       if (value) {
@@ -1156,4 +1175,5 @@
       restoreOriginal();
     }
   };
+
 })();
