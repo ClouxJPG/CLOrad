@@ -1,19 +1,18 @@
 /* =========================================================
-   CLOrad — RADAR CONTOUR SMOOTHING
+   CLOrad — RADAR INTERPOLATION
    ---------------------------------------------------------
    • Кнопка внутри «Настройки»
    • После «Кол. кадров»
-   • 0% = исходный радар
-   • 1–100% = сглаживание границ уровней
-   • НЕ blur
-   • НЕ CSS blur
-   • НЕТ квадратных ячеек
-   • НЕТ морфологического удаления пикселей
-   • НЕТ новых цветовых классов
-   • Фон не считается радаром
-   • Слоистая облачность не затрагивается
-   • iDarkMeteo не затрагивается
-   • Обработка только после отпускания шкалы
+   • 0% = оригинальный радар
+   • 1–100% = интерполяция радарного поля
+   • Без CSS blur
+   • Без RGB-размытия
+   • Без новых цветов
+   • Без удаления слоистой облачности
+   • Исходные радарные пиксели не удаляются намеренно
+   • Интерполируется именно поле классов радара
+   • Результат имеет те же географические bounds
+   • Обработка только после отпускания ползунка
    ========================================================= */
 
 (() => {
@@ -29,7 +28,7 @@
   ];
 
   /* =======================================================
-     IDS
+     SETTINGS IDS
      ======================================================= */
 
   const SETTING_ID =
@@ -47,18 +46,11 @@
   const VALUE_ID =
     "cloradSmoothingValue";
 
-  const TRACK_ID =
-    "cloradSmoothingTrack";
-
-  const FILL_ID =
-    "cloradSmoothingFill";
-
-  const THUMB_ID =
-    "cloradSmoothingThumb";
-
   /* =======================================================
-     PALETTES
+     RADAR PALETTE
      ======================================================= */
+
+  const SOURCE_CLASS_START = 2;
 
   const SOURCE_OY_COLORS = [
     "#b9c1c7",
@@ -97,7 +89,6 @@
     "#ff4d4d",
     "#db9248",
     "#ad7544",
-    "#924b48",
     "#f2aaf0",
     "#e85ae7",
     "#ca3cc7",
@@ -105,22 +96,13 @@
   ];
 
   /*
-     0 и 1:
-     слабые/служебные серые области.
-     Они не участвуют в сглаживании.
+     Небольшой допуск нужен только для
+     определения уже существующих цветов.
 
-     2–18:
-     реальные цветовые уровни радара.
+     Цвета между классами НЕ создаются.
   */
 
-  const RADAR_START_CLASS = 2;
-
-  /*
-     Строгий допуск.
-     Не даём фону случайно стать радаром.
-  */
-
-  const MAX_COLOR_DISTANCE = 24;
+  const MAX_COLOR_DISTANCE = 28;
 
   /* =======================================================
      STATE
@@ -142,10 +124,6 @@
 
   let installed = false;
 
-  let sliderDragging = false;
-
-  let sliderPointerId = null;
-
   let frameObserver = null;
 
   /* =======================================================
@@ -156,76 +134,48 @@
     return document.getElementById(id);
   }
 
-  function clamp(
-    value,
-    min,
-    max
-  ) {
+  function clamp(value, min, max) {
     return Math.max(
       min,
-      Math.min(
-        max,
-        value
-      )
+      Math.min(max, value)
     );
   }
 
   function hexToRGB(hex) {
-    if (
-      typeof hex !== "string"
-    ) {
+    if (typeof hex !== "string") {
       return null;
     }
 
-    let value =
-      hex.trim();
+    let value = hex.trim();
 
-    if (
-      value[0] === "#"
-    ) {
-      value =
-        value.slice(1);
+    if (value[0] === "#") {
+      value = value.slice(1);
     }
 
-    if (
-      value.length === 3
-    ) {
-      value =
-        value
-          .split("")
-          .map(
-            x => x + x
-          )
-          .join("");
+    if (value.length === 3) {
+      value = value
+        .split("")
+        .map(x => x + x)
+        .join("");
     }
 
-    if (
-      value.length !== 6
-    ) {
+    if (value.length !== 6) {
       return null;
     }
 
-    const n =
-      parseInt(
-        value,
-        16
-      );
+    const number = parseInt(
+      value,
+      16
+    );
 
-    if (
-      !Number.isFinite(n)
-    ) {
+    if (!Number.isFinite(number)) {
       return null;
     }
 
     return {
-      r:
-        (n >> 16) & 255,
-
-      g:
-        (n >> 8) & 255,
-
-      b:
-        n & 255
+      r: (number >> 16) & 255,
+      g: (number >> 8) & 255,
+      b: number & 255
     };
   }
 
@@ -235,33 +185,14 @@
     b,
     color
   ) {
-    const dr =
-      r - color.r;
-
-    const dg =
-      g - color.g;
-
-    const db =
-      b - color.b;
+    const dr = r - color.r;
+    const dg = g - color.g;
+    const db = b - color.b;
 
     return Math.sqrt(
       dr * dr +
       dg * dg +
       db * db
-    );
-  }
-
-  function colorToCSS(
-    color
-  ) {
-    return (
-      "rgb(" +
-      color.r +
-      "," +
-      color.g +
-      "," +
-      color.b +
-      ")"
     );
   }
 
@@ -280,19 +211,26 @@
 
         if (
           result &&
-          Array.isArray(
-            result.colors
-          ) &&
+          Array.isArray(result.colors) &&
           result.colors.length >= 19
         ) {
-          return result.colors
-            .slice(0, 19)
-            .map(hexToRGB);
+          const colors =
+            result.colors
+              .slice(0, 19)
+              .map(hexToRGB);
+
+          if (
+            colors.every(
+              color => color
+            )
+          ) {
+            return colors;
+          }
         }
       }
     } catch (error) {
       console.warn(
-        "CLOrad smoothing palette:",
+        "CLOrad interpolation palette:",
         error
       );
     }
@@ -303,7 +241,7 @@
   }
 
   /* =======================================================
-     FIND ONLY RADAR GIF
+     SOURCE IMAGE
      ======================================================= */
 
   function getSourceImage() {
@@ -314,33 +252,21 @@
         )
       );
 
-    if (
-      !images.length
-    ) {
+    if (!images.length) {
       return null;
     }
-
-    /*
-       Берём последний настоящий
-       GIF-слой.
-
-       Никогда не ищем
-       idarkmeteo-raster.
-    */
 
     for (
       let i = images.length - 1;
       i >= 0;
       i--
     ) {
-      const image =
-        images[i];
+      const image = images[i];
 
       if (
         image &&
         image.dataset &&
-        image.dataset.cloradSmoothing !==
-          "1"
+        image.dataset.cloradSmoothing !== "1"
       ) {
         return image;
       }
@@ -350,163 +276,36 @@
   }
 
   /* =======================================================
-     LOAD IMAGE
+     IMAGE LOADER
      ======================================================= */
 
-  function loadImage(
-    url
-  ) {
+  function loadImage(url) {
     return new Promise(
-      (
-        resolve,
-        reject
-      ) => {
+      (resolve, reject) => {
         const image =
           new Image();
 
-        image.decoding =
-          "async";
+        image.decoding = "async";
 
-        image.onload =
-          () => resolve(
-            image
+        image.onload = () => {
+          resolve(image);
+        };
+
+        image.onerror = () => {
+          reject(
+            new Error(
+              "Не удалось загрузить кадр радара"
+            )
           );
+        };
 
-        image.onerror =
-          () =>
-            reject(
-              new Error(
-                "Не удалось загрузить кадр радара"
-              )
-            );
-
-        image.src =
-          url;
+        image.src = url;
       }
     );
   }
 
   /* =======================================================
-     PALETTE DETECTION
-     ======================================================= */
-
-  function scorePalette(
-    imageData,
-    palette
-  ) {
-    const data =
-      imageData.data;
-
-    let score = 0;
-
-    /*
-       Берём каждый 4-й пиксель.
-       Этого достаточно для определения
-       используемой палитры и сильно
-       уменьшает нагрузку на iPhone.
-    */
-
-    for (
-      let p = 0;
-      p < data.length;
-      p += 16
-    ) {
-      const alpha =
-        data[p + 3];
-
-      if (
-        alpha < 32
-      ) {
-        continue;
-      }
-
-      const r =
-        data[p];
-
-      const g =
-        data[p + 1];
-
-      const b =
-        data[p + 2];
-
-      let best =
-        Infinity;
-
-      for (
-        let c =
-          RADAR_START_CLASS;
-        c < palette.length;
-        c++
-      ) {
-        const color =
-          palette[c];
-
-        if (!color) {
-          continue;
-        }
-
-        const d =
-          rgbDistance(
-            r,
-            g,
-            b,
-            color
-          );
-
-        if (
-          d < best
-        ) {
-          best =
-            d;
-        }
-      }
-
-      if (
-        best <=
-        MAX_COLOR_DISTANCE
-      ) {
-        score++;
-      }
-    }
-
-    return score;
-  }
-
-  function choosePalette(
-    imageData
-  ) {
-    const target =
-      getCurrentPalette();
-
-    const source =
-      SOURCE_OY_COLORS.map(
-        hexToRGB
-      );
-
-    const targetScore =
-      scorePalette(
-        imageData,
-        target
-      );
-
-    const sourceScore =
-      scorePalette(
-        imageData,
-        source
-      );
-
-    if (
-      sourceScore >
-      targetScore
-    ) {
-      return source;
-    }
-
-    return target;
-  }
-
-  /* =======================================================
-     BUILD RADAR CLASS MAP
+     COLOR CLASSIFICATION
      ======================================================= */
 
   function buildLabelMap(
@@ -519,37 +318,22 @@
       imageData.data;
 
     const labels =
-      new Int8Array(
+      new Int16Array(
         width * height
       );
 
     /*
-       -1 = не радар.
+       -1 = прозрачный / фон
+       0–1 = служебные серые классы
+       2–18 = радар
     */
 
     labels.fill(-1);
 
-    const boxes =
-      new Array(
-        palette.length
-      );
-
-    for (
-      let i = 0;
-      i < palette.length;
-      i++
-    ) {
-      boxes[i] = {
-        minX: width,
-        minY: height,
-        maxX: -1,
-        maxY: -1,
-        count: 0
-      };
-    }
-
-    const cache =
+    const paletteCache =
       new Map();
+
+    let radarPixels = 0;
 
     for (
       let y = 0;
@@ -573,9 +357,7 @@
         const alpha =
           data[p + 3];
 
-        if (
-          alpha < 32
-        ) {
+        if (alpha < 32) {
           continue;
         }
 
@@ -593,27 +375,36 @@
           (g << 8) |
           b;
 
-        let cls;
+        let classIndex;
 
         if (
-          cache.has(key)
+          paletteCache.has(key)
         ) {
-          cls =
-            cache.get(key);
+          classIndex =
+            paletteCache.get(key);
         } else {
-          cls = -1;
-
           let best =
+            -1;
+
+          let bestDistance =
             Infinity;
 
+          /*
+             Ищем ближайший цвет
+             ТОЛЬКО среди радарных
+             классов.
+
+             Серый фон сюда не попадает.
+          */
+
           for (
-            let c =
-              RADAR_START_CLASS;
-            c < palette.length;
-            c++
+            let i =
+              SOURCE_CLASS_START;
+            i < palette.length;
+            i++
           ) {
             const color =
-              palette[c];
+              palette[i];
 
             if (!color) {
               continue;
@@ -629,866 +420,357 @@
 
             if (
               distance <
-              best
+              bestDistance
             ) {
-              best =
+              bestDistance =
                 distance;
 
-              cls =
-                c;
+              best =
+                i;
             }
           }
 
           if (
-            best >
-            MAX_COLOR_DISTANCE
+            best <
+              SOURCE_CLASS_START ||
+            bestDistance >
+              MAX_COLOR_DISTANCE
           ) {
-            cls = -1;
+            best = -1;
           }
 
-          cache.set(
+          paletteCache.set(
             key,
-            cls
+            best
           );
-        }
 
-        if (
-          cls <
-          RADAR_START_CLASS
-        ) {
-          continue;
+          classIndex =
+            best;
         }
 
         labels[index] =
-          cls;
-
-        const box =
-          boxes[cls];
-
-        box.count++;
+          classIndex;
 
         if (
-          x < box.minX
+          classIndex >=
+          SOURCE_CLASS_START
         ) {
-          box.minX = x;
-        }
-
-        if (
-          y < box.minY
-        ) {
-          box.minY = y;
-        }
-
-        if (
-          x > box.maxX
-        ) {
-          box.maxX = x;
-        }
-
-        if (
-          y > box.maxY
-        ) {
-          box.maxY = y;
+          radarPixels++;
         }
       }
     }
 
     return {
       labels,
-      boxes
+      radarPixels
     };
   }
 
   /* =======================================================
-     CUMULATIVE BOUNDING BOXES
+     INTERPOLATION
      -------------------------------------------------------
-     Для каждого уровня строим область:
-     
-       class >= level
+     Здесь НЕТ morphology,
+     НЕТ marching squares,
+     НЕТ Chaikin.
 
-     Поэтому все контуры автоматически
-     вложены друг в друга.
+     Это обычная пространственная
+     интерполяция числового поля классов.
+
+     После интерполяции значение
+     снова переводится в существующий
+     цвет палитры.
      ======================================================= */
 
-  function buildLevelBoxes(
-    boxes,
-    paletteLength
-  ) {
-    const result =
-      new Array(
-        paletteLength
-      );
-
-    let current = {
-      minX: Infinity,
-      minY: Infinity,
-      maxX: -1,
-      maxY: -1,
-      count: 0
-    };
-
-    for (
-      let level =
-        paletteLength - 1;
-      level >= RADAR_START_CLASS;
-      level--
-    ) {
-      const box =
-        boxes[level];
-
-      if (
-        box &&
-        box.count > 0
-      ) {
-        current = {
-          minX:
-            Math.min(
-              current.minX,
-              box.minX
-            ),
-
-          minY:
-            Math.min(
-              current.minY,
-              box.minY
-            ),
-
-          maxX:
-            Math.max(
-              current.maxX,
-              box.maxX
-            ),
-
-          maxY:
-            Math.max(
-              current.maxY,
-              box.maxY
-            ),
-
-          count:
-            current.count +
-            box.count
-        };
-      }
-
-      result[level] = {
-        minX:
-          current.minX,
-
-        minY:
-          current.minY,
-
-        maxX:
-          current.maxX,
-
-        maxY:
-          current.maxY,
-
-        count:
-          current.count
-      };
-    }
-
-    return result;
-  }
-
-  /* =======================================================
-     MARCHING SQUARES
-     ======================================================= */
-
-  function buildLevelSegments(
+  function interpolateClass(
     labels,
     width,
     height,
-    level,
-    box
+    x,
+    y,
+    radius
   ) {
-    const segments =
-      [];
+    /*
+       Базовая точка.
+    */
 
-    if (
-      !box ||
-      box.count <= 0 ||
-      box.maxX < 0
-    ) {
-      return segments;
-    }
+    const x0 =
+      Math.floor(x);
 
-    const minX =
-      Math.max(
-        0,
-        box.minX - 1
-      );
+    const y0 =
+      Math.floor(y);
 
-    const minY =
-      Math.max(
-        0,
-        box.minY - 1
-      );
-
-    const maxX =
+    const x1 =
       Math.min(
-        width - 2,
-        box.maxX
+        width - 1,
+        x0 + 1
       );
 
-    const maxY =
+    const y1 =
       Math.min(
-        height - 2,
-        box.maxY
+        height - 1,
+        y0 + 1
       );
 
-    function inside(
-      x,
-      y
+    const fx =
+      x - x0;
+
+    const fy =
+      y - y0;
+
+    function value(
+      px,
+      py
     ) {
       if (
-        x < 0 ||
-        y < 0 ||
-        x >= width ||
-        y >= height
+        px < 0 ||
+        py < 0 ||
+        px >= width ||
+        py >= height
       ) {
-        return false;
+        return -1;
       }
 
-      return (
-        labels[
-          y * width + x
-        ] >= level
-      );
+      return labels[
+        py * width + px
+      ];
     }
 
-    function add(
-      a,
-      b
-    ) {
-      segments.push([
-        a[0],
-        a[1],
-        b[0],
-        b[1]
+    /*
+       Сначала обычная bilinear
+       interpolation.
+
+       Она работает только если
+       вокруг точки действительно
+       есть радар.
+    */
+
+    const a =
+      value(x0, y0);
+
+    const b =
+      value(x1, y0);
+
+    const c =
+      value(x0, y1);
+
+    const d =
+      value(x1, y1);
+
+    const values = [];
+
+    if (a >= SOURCE_CLASS_START) {
+      values.push([
+        a,
+        (1 - fx) *
+          (1 - fy)
       ]);
     }
 
-    for (
-      let y = minY;
-      y <= maxY;
-      y++
-    ) {
-      for (
-        let x = minX;
-        x <= maxX;
-        x++
-      ) {
-        const tl =
-          inside(
-            x,
-            y
-          )
-            ? 1
-            : 0;
-
-        const tr =
-          inside(
-            x + 1,
-            y
-          )
-            ? 1
-            : 0;
-
-        const br =
-          inside(
-            x + 1,
-            y + 1
-          )
-            ? 1
-            : 0;
-
-        const bl =
-          inside(
-            x,
-            y + 1
-          )
-            ? 1
-            : 0;
-
-        const code =
-          tl |
-          (tr << 1) |
-          (br << 2) |
-          (bl << 3);
-
-        if (
-          code === 0 ||
-          code === 15
-        ) {
-          continue;
-        }
-
-        /*
-           Полупиксельные точки.
-           Никаких квадратов в результате.
-        */
-
-        const top = [
-          x + 0.5,
-          y
-        ];
-
-        const right = [
-          x + 1,
-          y + 0.5
-        ];
-
-        const bottom = [
-          x + 0.5,
-          y + 1
-        ];
-
-        const left = [
-          x,
-          y + 0.5
-        ];
-
-        switch (
-          code
-        ) {
-          case 1:
-            add(
-              left,
-              top
-            );
-            break;
-
-          case 2:
-            add(
-              top,
-              right
-            );
-            break;
-
-          case 3:
-            add(
-              left,
-              right
-            );
-            break;
-
-          case 4:
-            add(
-              right,
-              bottom
-            );
-            break;
-
-          case 5:
-            add(
-              left,
-              top
-            );
-
-            add(
-              right,
-              bottom
-            );
-            break;
-
-          case 6:
-            add(
-              top,
-              bottom
-            );
-            break;
-
-          case 7:
-            add(
-              left,
-              bottom
-            );
-            break;
-
-          case 8:
-            add(
-              bottom,
-              left
-            );
-            break;
-
-          case 9:
-            add(
-              top,
-              bottom
-            );
-            break;
-
-          case 10:
-            add(
-              top,
-              left
-            );
-
-            add(
-              right,
-              bottom
-            );
-            break;
-
-          case 11:
-            add(
-              right,
-              bottom
-            );
-            break;
-
-          case 12:
-            add(
-              right,
-              left
-            );
-            break;
-
-          case 13:
-            add(
-              top,
-              right
-            );
-            break;
-
-          case 14:
-            add(
-              top,
-              left
-            );
-            break;
-        }
-      }
+    if (b >= SOURCE_CLASS_START) {
+      values.push([
+        b,
+        fx *
+          (1 - fy)
+      ]);
     }
 
-    return segments;
-  }
-
-  /* =======================================================
-     CHAIN SEGMENTS
-     ======================================================= */
-
-  function chainSegments(
-    segments
-  ) {
-    const contours =
-      [];
-
-    if (
-      !segments.length
-    ) {
-      return contours;
+    if (c >= SOURCE_CLASS_START) {
+      values.push([
+        c,
+        (1 - fx) *
+          fy
+      ]);
     }
 
-    const connections =
-      new Map();
-
-    function key(
-      x,
-      y
-    ) {
-      return (
-        Math.round(x * 2) +
-        ":" +
-        Math.round(y * 2)
-      );
+    if (d >= SOURCE_CLASS_START) {
+      values.push([
+        d,
+        fx * fy
+      ]);
     }
-
-    function connect(
-      k,
-      index
-    ) {
-      if (
-        !connections.has(k)
-      ) {
-        connections.set(
-          k,
-          []
-        );
-      }
-
-      connections
-        .get(k)
-        .push(index);
-    }
-
-    for (
-      let i = 0;
-      i < segments.length;
-      i++
-    ) {
-      const s =
-        segments[i];
-
-      connect(
-        key(
-          s[0][0],
-          s[0][1]
-        ),
-        i
-      );
-
-      connect(
-        key(
-          s[1][0],
-          s[1][1]
-        ),
-        i
-      );
-    }
-
-    const used =
-      new Uint8Array(
-        segments.length
-      );
-
-    for (
-      let start = 0;
-      start < segments.length;
-      start++
-    ) {
-      if (
-        used[start]
-      ) {
-        continue;
-      }
-
-      const first =
-        segments[start];
-
-      const points =
-        [];
-
-      let current =
-        [
-          first[0][0],
-          first[0][1]
-        ];
-
-      const startPoint =
-        [
-          current[0],
-          current[1]
-        ];
-
-      points.push(
-        current
-      );
-
-      current =
-        [
-          first[1][0],
-          first[1][1]
-        ];
-
-      points.push(
-        current
-      );
-
-      used[start] =
-        1;
-
-      let guard = 0;
-
-      while (
-        guard++ <
-        segments.length + 10
-      ) {
-        const k =
-          key(
-            current[0],
-            current[1]
-          );
-
-        const candidates =
-          connections.get(k);
-
-        if (
-          !candidates
-        ) {
-          break;
-        }
-
-        let next =
-          -1;
-
-        for (
-          const index of candidates
-        ) {
-          if (
-            !used[index]
-          ) {
-            next =
-              index;
-
-            break;
-          }
-        }
-
-        if (
-          next < 0
-        ) {
-          break;
-        }
-
-        const segment =
-          segments[next];
-
-        used[next] =
-          1;
-
-        const a =
-          segment[0];
-
-        const b =
-          segment[1];
-
-        if (
-          Math.abs(
-            a[0] -
-            current[0]
-          ) <
-            0.001 &&
-          Math.abs(
-            a[1] -
-            current[1]
-          ) <
-            0.001
-        ) {
-          current =
-            [
-              b[0],
-              b[1]
-            ];
-        } else {
-          current =
-            [
-              a[0],
-              a[1]
-            ];
-        }
-
-        points.push(
-          current
-        );
-
-        if (
-          Math.abs(
-            current[0] -
-            startPoint[0]
-          ) <
-            0.001 &&
-          Math.abs(
-            current[1] -
-            startPoint[1]
-          ) <
-            0.001
-        ) {
-          break;
-        }
-      }
-
-      if (
-        points.length >= 4
-      ) {
-        const last =
-          points[
-            points.length - 1
-          ];
-
-        if (
-          Math.abs(
-            last[0] -
-            startPoint[0]
-          ) <
-            0.01 &&
-          Math.abs(
-            last[1] -
-            startPoint[1]
-          ) <
-            0.01
-        ) {
-          points.pop();
-
-          contours.push(
-            points
-          );
-        }
-      }
-    }
-
-    return contours;
-  }
-
-  /* =======================================================
-     CONTOUR AREA
-     ======================================================= */
-
-  function contourArea(
-    points
-  ) {
-    let area = 0;
-
-    for (
-      let i = 0;
-      i < points.length;
-      i++
-    ) {
-      const a =
-        points[i];
-
-      const b =
-        points[
-          (i + 1) %
-            points.length
-        ];
-
-      area +=
-        a[0] * b[1] -
-        b[0] * a[1];
-    }
-
-    return Math.abs(
-      area
-    ) / 2;
-  }
-
-  /* =======================================================
-     CONTOUR SIMPLIFICATION
-     ======================================================= */
-
-  function simplifyContour(
-    points,
-    tolerance
-  ) {
-    if (
-      points.length < 8 ||
-      tolerance <= 0
-    ) {
-      return points.slice();
-    }
-
-    const result =
-      [];
 
     /*
-       Сначала удаляем только
-       абсолютно близкие точки.
+       Если локальная bilinear-точка
+       полностью оказалась в фоне,
+       проверяем ближайшее
+       интерполяционное окружение.
+
+       Это не позволяет маленьким
+       радарным участкам исчезать.
     */
 
-    for (
-      let i = 0;
-      i < points.length;
-      i++
+    if (
+      !values.length
     ) {
-      const a =
-        points[i];
+      let weighted =
+        0;
 
-      const b =
-        points[
-          (i + 1) %
-            points.length
-        ];
+      let weightSum =
+        0;
 
-      const dx =
-        b[0] - a[0];
+      const r =
+        Math.max(
+          1,
+          radius
+        );
 
-      const dy =
-        b[1] - a[1];
+      for (
+        let dy = -r;
+        dy <= r;
+        dy++
+      ) {
+        for (
+          let dx = -r;
+          dx <= r;
+          dx++
+        ) {
+          const px =
+            Math.round(x) + dx;
+
+          const py =
+            Math.round(y) + dy;
+
+          const v =
+            value(px, py);
+
+          if (
+            v <
+            SOURCE_CLASS_START
+          ) {
+            continue;
+          }
+
+          const distance =
+            Math.sqrt(
+              dx * dx +
+              dy * dy
+            );
+
+          if (
+            distance >
+            r
+          ) {
+            continue;
+          }
+
+          const weight =
+            1 /
+            (
+              1 +
+              distance
+            );
+
+          weighted +=
+            v *
+            weight;
+
+          weightSum +=
+            weight;
+        }
+      }
 
       if (
-        Math.hypot(
-          dx,
-          dy
-        ) >= tolerance
+        weightSum <= 0
       ) {
-        result.push(
-          a
-        );
+        return -1;
       }
+
+      return (
+        weighted /
+        weightSum
+      );
     }
 
-    return result;
-  }
+    let weighted =
+      0;
 
-  /* =======================================================
-     CHAIKIN
-     -------------------------------------------------------
-     Не рисует квадраты.
-     Получается непрерывная закрытая
-     кривая.
-     ======================================================= */
-
-  function chaikin(
-    points,
-    amount
-  ) {
-    if (
-      points.length < 4
-    ) {
-      return points.slice();
-    }
-
-    const result =
-      [];
+    let weightSum =
+      0;
 
     for (
-      let i = 0;
-      i < points.length;
-      i++
+      const item of values
     ) {
-      const a =
-        points[i];
+      weighted +=
+        item[0] *
+        item[1];
 
-      const b =
-        points[
-          (i + 1) %
-            points.length
-        ];
-
-      const q = [
-        a[0] +
-          (b[0] - a[0]) *
-            amount,
-
-        a[1] +
-          (b[1] - a[1]) *
-            amount
-      ];
-
-      const r = [
-        b[0] -
-          (b[0] - a[0]) *
-            amount,
-
-        b[1] -
-          (b[1] - a[1]) *
-            amount
-      ];
-
-      result.push(q);
-      result.push(r);
+      weightSum +=
+        item[1];
     }
 
-    return result;
+    if (
+      weightSum <= 0
+    ) {
+      return -1;
+    }
+
+    return (
+      weighted /
+      weightSum
+    );
   }
 
   /* =======================================================
-     SMOOTH CONTOUR
+     INTERPOLATED RADAR
      ======================================================= */
 
-  function smoothContour(
-    points,
+  function createInterpolatedRadar(
+    labels,
+    width,
+    height,
+    palette,
     strength
   ) {
-    if (
-      points.length < 4
-    ) {
-      return points.slice();
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    canvas.width =
+      width;
+
+    canvas.height =
+      height;
+
+    const ctx =
+      canvas.getContext(
+        "2d",
+        {
+          willReadFrequently:
+            false
+        }
+      );
+
+    if (!ctx) {
+      return null;
     }
+
+    /*
+       Прозрачный canvas.
+
+       Поэтому:
+       • карта остаётся снизу;
+       • слоистая облачность остаётся;
+       • фон GIF не закрашивается.
+    */
+
+    ctx.clearRect(
+      0,
+      0,
+      width,
+      height
+    );
+
+    /*
+       Сила интерполяции.
+
+       1–10%:
+       практически исходная форма.
+
+       100%:
+       более широкая интерполяция
+       соседних значений.
+    */
 
     const s =
       clamp(
@@ -1497,187 +779,271 @@
         100
       ) / 100;
 
-    /*
-       Чем сильнее сглаживание,
-       тем меньше остаётся исходной
-       пиксельной ломаности.
-
-       Но сама область не
-       морфологически расширяется
-       и не сжимается.
-    */
-
-    const tolerance =
-      0.15 +
-      s * 0.8;
-
-    let result =
-      simplifyContour(
-        points,
-        tolerance
+    const radius =
+      Math.max(
+        1,
+        Math.min(
+          4,
+          1 +
+            Math.floor(
+              s * 3
+            )
+        )
       );
 
-    if (
-      result.length < 4
+    /*
+       ВАЖНО:
+
+       Мы не рисуем каждый пиксель
+       отдельным прямоугольником.
+
+       Сначала создаётся интерполированное
+       поле, затем оно окрашивается
+       существующими цветами.
+    */
+
+    const output =
+      new Uint8ClampedArray(
+        width *
+        height
+      );
+
+    /*
+       0 = прозрачный
+       1 = радар
+    */
+
+    const outputClass =
+      new Int16Array(
+        width *
+        height
+      );
+
+    outputClass.fill(-1);
+
+    /*
+       Чтобы не перегружать iPhone,
+       обрабатываем строками.
+    */
+
+    for (
+      let y = 0;
+      y < height;
+      y++
     ) {
-      result =
-        points.slice();
+      for (
+        let x = 0;
+        x < width;
+        x++
+      ) {
+        const index =
+          y * width + x;
+
+        /*
+           Исходный класс.
+        */
+
+        const original =
+          labels[index];
+
+        /*
+           Если это радарный пиксель,
+           он обязательно остаётся
+           представленным в результате.
+        */
+
+        if (
+          original >=
+          SOURCE_CLASS_START
+        ) {
+          const interpolated =
+            interpolateClass(
+              labels,
+              width,
+              height,
+              x,
+              y,
+              radius
+            );
+
+          if (
+            interpolated >=
+            SOURCE_CLASS_START
+          ) {
+            /*
+               Привязываем результат
+               обратно к существующим
+               дискретным классам.
+
+               НОВЫХ RGB-ЦВЕТОВ НЕТ.
+            */
+
+            const nearest =
+              clamp(
+                Math.round(
+                  interpolated
+                ),
+                SOURCE_CLASS_START,
+                palette.length - 1
+              );
+
+            outputClass[index] =
+              nearest;
+          } else {
+            /*
+               Если интерполяция около
+               границы потеряла значение,
+               оставляем оригинал.
+            */
+
+            outputClass[index] =
+              original;
+          }
+
+          continue;
+        }
+
+        /*
+           Для фона пытаемся аккуратно
+           продолжить интерполированную
+           область только если рядом
+           есть радар.
+
+           Это позволяет сглаживать
+           границу, не удаляя исходные
+           радарные пиксели.
+        */
+
+        if (
+          strength <= 0
+        ) {
+          continue;
+        }
+
+        const interpolated =
+          interpolateClass(
+            labels,
+            width,
+            height,
+            x,
+            y,
+            radius
+          );
+
+        if (
+          interpolated <
+          SOURCE_CLASS_START
+        ) {
+          continue;
+        }
+
+        /*
+           Чем выше сила,
+           тем больше допускаем
+           интерполяционное продолжение
+           границы.
+
+           Но максимум — радиус
+           самого интерполяционного
+           окна.
+        */
+
+        const distance =
+          Math.abs(
+            interpolated -
+            Math.round(
+              interpolated
+            )
+          );
+
+        /*
+           На границе используем только
+           достаточно уверенные значения.
+        */
+
+        if (
+          distance <=
+          0.48
+        ) {
+          outputClass[index] =
+            clamp(
+              Math.round(
+                interpolated
+              ),
+              SOURCE_CLASS_START,
+              palette.length - 1
+            );
+        }
+      }
     }
 
     /*
-       5% = очень мягкое
-       100% = сильное.
+       Рисуем только радар.
+
+       Каждый класс получает
+       СУЩЕСТВУЮЩИЙ цвет палитры.
     */
 
-    let iterations = 1;
+    const data =
+      ctx.createImageData(
+        width,
+        height
+      );
 
-    if (
-      strength >= 25
-    ) {
-      iterations = 2;
-    }
-
-    if (
-      strength >= 55
-    ) {
-      iterations = 3;
-    }
-
-    if (
-      strength >= 80
-    ) {
-      iterations = 4;
-    }
-
-    const amount =
-      0.025 +
-      s * 0.10;
+    const rgba =
+      data.data;
 
     for (
       let i = 0;
-      i < iterations;
+      i < outputClass.length;
       i++
     ) {
-      result =
-        chaikin(
-          result,
-          amount
-        );
-    }
+      const classIndex =
+        outputClass[i];
 
-    return result;
-  }
-
-  /* =======================================================
-     DRAW SMOOTH LEVEL
-     ======================================================= */
-
-  function drawSmoothLevel(
-    ctx,
-    contours,
-    color
-  ) {
-    if (
-      !contours.length
-    ) {
-      return;
-    }
-
-    ctx.save();
-
-    ctx.beginPath();
-
-    for (
-      const contour of contours
-    ) {
       if (
-        contour.length < 3
+        classIndex <
+        SOURCE_CLASS_START
       ) {
         continue;
       }
 
-      /*
-         Очень маленькие области
-         всё равно рисуем.
-         Никакого удаления пикселей.
-      */
+      const color =
+        palette[
+          classIndex
+        ];
 
-      const first =
-        contour[0];
-
-      ctx.moveTo(
-        first[0],
-        first[1]
-      );
-
-      /*
-         Квадратичная интерполяция
-         через середины сегментов.
-
-         Поэтому итоговая линия
-         получается непрерывной,
-         без видимых ступеней.
-      */
-
-      for (
-        let i = 0;
-        i < contour.length;
-        i++
-      ) {
-        const current =
-          contour[i];
-
-        const next =
-          contour[
-            (i + 1) %
-              contour.length
-          ];
-
-        const midX =
-          (
-            current[0] +
-            next[0]
-          ) / 2;
-
-        const midY =
-          (
-            current[1] +
-            next[1]
-          ) / 2;
-
-        ctx.quadraticCurveTo(
-          current[0],
-          current[1],
-          midX,
-          midY
-        );
+      if (!color) {
+        continue;
       }
 
-      ctx.closePath();
+      const p =
+        i * 4;
+
+      rgba[p] =
+        color.r;
+
+      rgba[p + 1] =
+        color.g;
+
+      rgba[p + 2] =
+        color.b;
+
+      rgba[p + 3] =
+        255;
     }
 
-    /*
-       Только существующий цвет
-       текущей палитры.
-    */
-
-    ctx.fillStyle =
-      colorToCSS(
-        color
-      );
-
-    ctx.globalAlpha =
-      1;
-
-    ctx.fill(
-      "evenodd"
+    ctx.putImageData(
+      data,
+      0,
+      0
     );
 
-    ctx.restore();
+    return canvas;
   }
 
   /* =======================================================
-     REMOVE ONLY OUR LAYER
+     REMOVE INTERPOLATION
      ======================================================= */
 
   function removeSmoothedLayer() {
@@ -1698,10 +1064,7 @@
   }
 
   /* =======================================================
-     RESTORE ORIGINAL GIF
-     -------------------------------------------------------
-     НИКАКИХ activeLayer.
-     НИКАКИХ iDarkMeteo.
+     RESTORE ORIGINAL RADAR
      ======================================================= */
 
   function restoreOriginal() {
@@ -1712,51 +1075,38 @@
     const source =
       getSourceImage();
 
-    if (
-      source
-    ) {
+    if (source) {
       source.style.opacity =
         sourceOriginalOpacity ||
         "1";
-
-      source.dataset.cloradSmoothing =
-        "0";
-
-      sourceImageElement =
-        source;
     }
+
+    sourceImageElement =
+      source;
 
     processing =
       false;
   }
 
   /* =======================================================
-     INSTALL SMOOTH LAYER
+     INSTALL RESULT
      ======================================================= */
 
-  function installSmoothedLayer(
+  function installInterpolatedLayer(
     dataURL
   ) {
     if (
-      !window.map
+      !window.map ||
+      !dataURL
     ) {
-      return;
+      return false;
     }
 
-    removeSmoothedLayer();
-
     /*
-       ВАЖНО:
+       Сначала добавляем результат.
 
-       iDarkMeteo activeLayer находится
-       на zIndex 5.
-
-       GIF radar — zIndex 6.
-
-       Сглаживание — zIndex 6.
-
-       Мы не создаём новый слой поверх
-       облачности с неправильным порядком.
+       Только после успешного добавления
+       скрываем оригинальный радар.
     */
 
     const layer =
@@ -1766,7 +1116,7 @@
         {
           opacity: 1,
           interactive: false,
-          zIndex: 6,
+          zIndex: 7,
           className:
             "clorad-gif-radar-smoothed"
         }
@@ -1779,28 +1129,15 @@
     smoothingLayer =
       layer;
 
-    /*
-       Скрываем ТОЛЬКО DOM-картинку
-       GIF-радара.
-
-       activeLayer / облачность
-       вообще не трогаются.
-    */
-
     const source =
       getSourceImage();
 
-    if (
-      source
-    ) {
+    if (source) {
       sourceImageElement =
         source;
 
       sourceOriginalOpacity =
         source.style.opacity ||
-        "1";
-
-      source.dataset.cloradSmoothing =
         "1";
 
       source.style.opacity =
@@ -1813,10 +1150,12 @@
     ) {
       layer.bringToFront();
     }
+
+    return true;
   }
 
   /* =======================================================
-     PROCESS CURRENT FRAME
+     PROCESS FRAME
      ======================================================= */
 
   async function processCurrentFrame(
@@ -1829,19 +1168,13 @@
       strength <= 0
     ) {
       restoreOriginal();
-
       return;
     }
 
     const source =
       getSourceImage();
 
-    if (
-      !source
-    ) {
-      processing =
-        false;
-
+    if (!source) {
       return;
     }
 
@@ -1851,34 +1184,47 @@
       !source.naturalHeight
     ) {
       setTimeout(
-        () =>
-          processCurrentFrame(
-            strength
-          ),
+        () => {
+          if (
+            token ===
+            processToken
+          ) {
+            processCurrentFrame(
+              strength
+            );
+          }
+        },
         150
       );
 
       return;
     }
 
-    if (
-      processing
-    ) {
+    if (processing) {
       return;
     }
 
     processing =
       true;
 
+    /*
+       Пока вычисляем,
+       оригинал НЕ скрываем.
+
+       Это важно: если canvas
+       или кадр не загрузится,
+       радар не пропадёт.
+    */
+
     try {
       const url =
         source.currentSrc ||
         source.src;
 
-      if (
-        !url
-      ) {
-        return;
+      if (!url) {
+        throw new Error(
+          "Нет URL текущего кадра"
+        );
       }
 
       const image =
@@ -1905,7 +1251,9 @@
         !width ||
         !height
       ) {
-        return;
+        throw new Error(
+          "Некорректный размер кадра"
+        );
       }
 
       const canvas =
@@ -1928,17 +1276,11 @@
           }
         );
 
-      if (
-        !ctx
-      ) {
+      if (!ctx) {
         throw new Error(
           "Canvas недоступен"
         );
       }
-
-      /*
-         Читаем исходный GIF.
-      */
 
       ctx.clearRect(
         0,
@@ -1955,13 +1297,21 @@
         height
       );
 
-      const imageData =
-        ctx.getImageData(
-          0,
-          0,
-          width,
-          height
+      let imageData;
+
+      try {
+        imageData =
+          ctx.getImageData(
+            0,
+            0,
+            width,
+            height
+          );
+      } catch (error) {
+        throw new Error(
+          "Canvas заблокирован"
         );
+      }
 
       if (
         token !==
@@ -1971,22 +1321,16 @@
       }
 
       const palette =
-        choosePalette(
-          imageData
-        );
+        getCurrentPalette();
 
       if (
         !palette ||
-        palette.length <
-          19
+        palette.length < 19
       ) {
-        return;
+        throw new Error(
+          "Палитра радара недоступна"
+        );
       }
-
-      /*
-         Получаем дискретное поле
-         радарных уровней.
-      */
 
       const mapData =
         buildLabelMap(
@@ -2004,218 +1348,51 @@
       }
 
       /*
-         Считаем реальные радарные
-         пиксели.
-      */
-
-      let radarPixels =
-        0;
-
-      for (
-        let i = 0;
-        i < mapData.labels.length;
-        i++
-      ) {
-        if (
-          mapData.labels[i] >=
-          RADAR_START_CLASS
-        ) {
-          radarPixels++;
-        }
-      }
-
-      /*
-         Защита от пустого/неверного
-         кадра.
+         Защита от пустого результата.
       */
 
       if (
-        radarPixels < 3
+        mapData.radarPixels <
+        20
+      ) {
+        throw new Error(
+          "Радарные пиксели не найдены"
+        );
+      }
+
+      const resultCanvas =
+        createInterpolatedRadar(
+          mapData.labels,
+          width,
+          height,
+          palette,
+          strength
+        );
+
+      if (!resultCanvas) {
+        throw new Error(
+          "Не удалось создать интерполированный слой"
+        );
+      }
+
+      if (
+        token !==
+        processToken
       ) {
         return;
       }
 
-      /*
-         Полностью очищаем canvas.
-
-         Поэтому фон GIF,
-         серые области,
-         карта и прочее
-
-         НЕ ПОПАДАЮТ
-         в результат.
-      */
-
-      ctx.clearRect(
-        0,
-        0,
-        width,
-        height
-      );
-
-      const levelBoxes =
-        buildLevelBoxes(
-          mapData.boxes,
-          palette.length
+      const result =
+        resultCanvas.toDataURL(
+          "image/png"
         );
 
-      /*
-         ====================================================
-         ГЛАВНОЕ ИЗМЕНЕНИЕ
-
-         Мы НЕ сглаживаем отдельные цвета.
-
-         Вместо этого строим:
-
-           уровень 2+
-           уровень 3+
-           уровень 4+
-           уровень 5+
-           ...
-
-         Получаются вложенные области.
-
-         Это именно то, что нужно для вида:
-
-              ┌─────────────┐
-              │   зелёный   │
-              │  ┌───────┐  │
-              │  │ жёлтый│  │
-              │  │ ┌───┐ │  │
-              │  │ │крас│ │  │
-              │  │ └───┘ │  │
-              │  └───────┘  │
-              └─────────────┘
-
-         без квадратных пикселей.
-         ====================================================
-      */
-
-      for (
-        let level =
-          RADAR_START_CLASS;
-        level <
-          palette.length;
-        level++
+      if (
+        !result ||
+        result === "data:,"
       ) {
-        if (
-          token !==
-          processToken
-        ) {
-          return;
-        }
-
-        const box =
-          levelBoxes[level];
-
-        if (
-          !box ||
-          box.count <= 0
-        ) {
-          continue;
-        }
-
-        const segments =
-          buildLevelSegments(
-            mapData.labels,
-            width,
-            height,
-            level,
-            box
-          );
-
-        if (
-          !segments.length
-        ) {
-          continue;
-        }
-
-        const contours =
-          chainSegments(
-            segments
-          );
-
-        if (
-          !contours.length
-        ) {
-          continue;
-        }
-
-        const smoothed =
-          [];
-
-        for (
-          const contour of contours
-        ) {
-          if (
-            contour.length < 3
-          ) {
-            continue;
-          }
-
-          /*
-             Не отбрасываем маленькие
-             области.
-
-             Это важно для условия
-             "пиксели не пропадают".
-          */
-
-          const area =
-            contourArea(
-              contour
-            );
-
-          /*
-             Очень маленькие контуры
-             не прогоняем через сильную
-             геометрическую деформацию.
-          */
-
-          if (
-            area < 2
-          ) {
-            smoothed.push(
-              contour
-            );
-
-            continue;
-          }
-
-          const curve =
-            smoothContour(
-              contour,
-              strength
-            );
-
-          if (
-            curve.length >= 3
-          ) {
-            smoothed.push(
-              curve
-            );
-          }
-        }
-
-        if (
-          !smoothed.length
-        ) {
-          continue;
-        }
-
-        const color =
-          palette[level];
-
-        if (
-          !color
-        ) {
-          continue;
-        }
-
-        drawSmoothLevel(
-          ctx,
-          smoothed,
-          color
+        throw new Error(
+          "Пустой результат интерполяции"
         );
       }
 
@@ -2227,33 +1404,49 @@
       }
 
       /*
-         Готовый прозрачный PNG.
-
-         Вне радарных областей
-         alpha = 0.
+         Старый результат удаляем
+         только когда новый уже готов.
       */
 
-      const result =
-        canvas.toDataURL(
-          "image/png"
+      removeSmoothedLayer();
+
+      /*
+         Оригинальный радар пока виден.
+      */
+
+      const installedResult =
+        installInterpolatedLayer(
+          result
         );
 
-      if (
-        !result ||
-        result ===
-          "data:,"
-      ) {
-        return;
+      if (!installedResult) {
+        throw new Error(
+          "Не удалось установить слой"
+        );
       }
-
-      installSmoothedLayer(
-        result
-      );
     } catch (error) {
       console.error(
-        "CLOrad radar smoothing:",
+        "CLOrad radar interpolation:",
         error
       );
+
+      /*
+         При любой ошибке оригинальный
+         радар остаётся видимым.
+      */
+
+      removeSmoothedLayer();
+
+      const sourceAfterError =
+        getSourceImage();
+
+      if (
+        sourceAfterError
+      ) {
+        sourceAfterError.style.opacity =
+          sourceOriginalOpacity ||
+          "1";
+      }
     } finally {
       if (
         token ===
@@ -2266,262 +1459,11 @@
   }
 
   /* =======================================================
-     CUSTOM SLIDER
-     -------------------------------------------------------
-     Нажать рядом с линией = ничего.
-     Двигается только сама линия/ползунок.
-     ======================================================= */
-
-  function updateSliderVisual(
-    value
-  ) {
-    const fill =
-      $(FILL_ID);
-
-    const thumb =
-      $(THUMB_ID);
-
-    const valueElement =
-      $(VALUE_ID);
-
-    const v =
-      clamp(
-        Number(value) || 0,
-        0,
-        100
-      );
-
-    if (
-      fill
-    ) {
-      fill.style.width =
-        v + "%";
-    }
-
-    if (
-      thumb
-    ) {
-      thumb.style.left =
-        v + "%";
-    }
-
-    if (
-      valueElement
-    ) {
-      valueElement.textContent =
-        v + "%";
-    }
-  }
-
-  function sliderValueFromPointer(
-    event
-  ) {
-    const track =
-      $(TRACK_ID);
-
-    if (
-      !track
-    ) {
-      return smoothingValue;
-    }
-
-    const rect =
-      track.getBoundingClientRect();
-
-    if (
-      rect.width <= 0
-    ) {
-      return smoothingValue;
-    }
-
-    const x =
-      clamp(
-        event.clientX -
-          rect.left,
-        0,
-        rect.width
-      );
-
-    return Math.round(
-      x /
-        rect.width *
-        100
-    );
-  }
-
-  function beginSlider(
-    event
-  ) {
-    const track =
-      $(TRACK_ID);
-
-    if (
-      !track
-    ) {
-      return;
-    }
-
-    /*
-       Только нажатие непосредственно
-       на track или thumb.
-    */
-
-    if (
-      event.target !== track &&
-      event.target.id !==
-        THUMB_ID &&
-      event.target.id !==
-        FILL_ID
-    ) {
-      return;
-    }
-
-    sliderDragging =
-      true;
-
-    sliderPointerId =
-      event.pointerId;
-
-    try {
-      track.setPointerCapture(
-        event.pointerId
-      );
-    } catch {}
-
-    setSliderFromEvent(
-      event
-    );
-
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  function moveSlider(
-    event
-  ) {
-    if (
-      !sliderDragging
-    ) {
-      return;
-    }
-
-    if (
-      sliderPointerId !== null &&
-      event.pointerId !==
-        sliderPointerId
-    ) {
-      return;
-    }
-
-    setSliderFromEvent(
-      event
-    );
-
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  function endSlider(
-    event
-  ) {
-    if (
-      !sliderDragging
-    ) {
-      return;
-    }
-
-    if (
-      sliderPointerId !== null &&
-      event.pointerId !==
-        sliderPointerId
-    ) {
-      return;
-    }
-
-    sliderDragging =
-      false;
-
-    sliderPointerId =
-      null;
-
-    clearTimeout(
-      releaseTimer
-    );
-
-    /*
-       Только здесь начинается
-       тяжёлая обработка.
-    */
-
-    releaseTimer =
-      setTimeout(
-        () => {
-          processCurrentFrame(
-            smoothingValue
-          );
-        },
-        180
-      );
-
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  function setSliderFromEvent(
-    event
-  ) {
-    const value =
-      sliderValueFromPointer(
-        event
-      );
-
-    smoothingValue =
-      value;
-
-    updateSliderVisual(
-      value
-    );
-
-    /*
-       Во время движения
-       не считаем сглаживание.
-
-       Только убираем старый
-       результат, если он есть.
-    */
-
-    if (
-      smoothingLayer
-    ) {
-      removeSmoothedLayer();
-
-      const source =
-        getSourceImage();
-
-      if (
-        source
-      ) {
-        source.style.opacity =
-          sourceOriginalOpacity ||
-          "1";
-      }
-    }
-
-    if (
-      value === 0
-    ) {
-      restoreOriginal();
-    }
-  }
-
-  /* =======================================================
      SETTINGS UI
      ======================================================= */
 
   function installSetting() {
-    if (
-      installed
-    ) {
+    if (installed) {
       return;
     }
 
@@ -2530,9 +1472,7 @@
         "settings"
       );
 
-    if (
-      !settings
-    ) {
+    if (!settings) {
       return;
     }
 
@@ -2573,79 +1513,56 @@
         id="${PANEL_ID}"
       >
         <div
+          class="cloradInterpolationTitle"
           style="
             font-size:12px;
             color:#9da7ad;
-            margin-bottom:12px;
+            margin-bottom:8px;
           "
         >
-          Сглаживание контуров
+          Интерполяция радарного поля
         </div>
 
         <div
-          id="${TRACK_ID}"
+          class="cloradInterpolationSlider"
           style="
-            position:relative;
             width:100%;
-            height:24px;
+            height:32px;
+            display:flex;
+            align-items:center;
             touch-action:none;
             user-select:none;
             -webkit-user-select:none;
           "
         >
-          <div
+          <input
+            id="${RANGE_ID}"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="0"
             style="
-              position:absolute;
-              left:0;
-              right:0;
-              top:10px;
-              height:4px;
-              border-radius:999px;
-              background:#39434a;
-              pointer-events:none;
+              display:block;
+              width:100%;
+              height:28px;
+              margin:0;
+              padding:0;
+              cursor:pointer;
+              touch-action:pan-x;
+              accent-color:#53e39b;
             "
-          ></div>
-
-          <div
-            id="${FILL_ID}"
-            style="
-              position:absolute;
-              left:0;
-              top:10px;
-              width:0%;
-              height:4px;
-              border-radius:999px;
-              background:#53e39b;
-              pointer-events:none;
-            "
-          ></div>
-
-          <div
-            id="${THUMB_ID}"
-            style="
-              position:absolute;
-              left:0%;
-              top:4px;
-              width:16px;
-              height:16px;
-              margin-left:-8px;
-              border-radius:50%;
-              background:#ffffff;
-              border:2px solid #53e39b;
-              box-sizing:border-box;
-              pointer-events:none;
-              box-shadow:0 0 0 1px rgba(0,0,0,.25);
-            "
-          ></div>
+          >
         </div>
 
         <div
           id="${VALUE_ID}"
           style="
-            margin-top:5px;
+            margin-top:4px;
             font-size:13px;
             color:#dfe4e7;
             text-align:right;
+            line-height:18px;
           "
         >
           0%
@@ -2663,9 +1580,7 @@
         "framesSetting"
       );
 
-    if (
-      framesSetting
-    ) {
+    if (framesSetting) {
       framesSetting.after(
         setting
       );
@@ -2676,14 +1591,28 @@
     }
 
     const button =
-      $(BUTTON_ID);
+      document.getElementById(
+        BUTTON_ID
+      );
 
-    const track =
-      $(TRACK_ID);
+    const panel =
+      document.getElementById(
+        PANEL_ID
+      );
 
-    /*
-       Открытие/закрытие.
-    */
+    const range =
+      document.getElementById(
+        RANGE_ID
+      );
+
+    const value =
+      document.getElementById(
+        VALUE_ID
+      );
+
+    /* =====================================================
+       OPEN / CLOSE
+       ===================================================== */
 
     button?.addEventListener(
       "click",
@@ -2698,35 +1627,187 @@
     );
 
     /*
-       Своя шкала.
-
-       Нажатие по остальному
-       settingBody сюда вообще
-       не приходит.
+       Ничего внутри панели
+       не должно закрывать
+       «Настройки».
     */
 
-    track?.addEventListener(
+    panel?.addEventListener(
+      "click",
+      event => {
+        event.stopPropagation();
+      }
+    );
+
+    panel?.addEventListener(
       "pointerdown",
-      beginSlider
+      event => {
+        event.stopPropagation();
+      }
     );
 
-    track?.addEventListener(
-      "pointermove",
-      moveSlider
-    );
-
-    track?.addEventListener(
+    panel?.addEventListener(
       "pointerup",
-      endSlider
+      event => {
+        event.stopPropagation();
+      }
     );
 
-    track?.addEventListener(
+    panel?.addEventListener(
+      "touchstart",
+      event => {
+        event.stopPropagation();
+      },
+      {
+        passive: true
+      }
+    );
+
+    panel?.addEventListener(
+      "touchend",
+      event => {
+        event.stopPropagation();
+      },
+      {
+        passive: true
+      }
+    );
+
+    /* =====================================================
+       SLIDER INPUT
+       -----------------------------------------------------
+       Здесь НИЧЕГО не пересчитывается.
+       ===================================================== */
+
+    range?.addEventListener(
+      "input",
+      event => {
+        event.stopPropagation();
+
+        smoothingValue =
+          clamp(
+            Number(
+              range.value
+            ),
+            0,
+            100
+          );
+
+        if (value) {
+          value.textContent =
+            smoothingValue +
+            "%";
+        }
+
+        /*
+           Старый результат убираем,
+           но оригинальный радар
+           оставляем.
+
+           Поэтому GIF никогда
+           не исчезает при движении
+           ползунка.
+        */
+
+        if (
+          smoothingLayer
+        ) {
+          removeSmoothedLayer();
+        }
+
+        const source =
+          getSourceImage();
+
+        if (source) {
+          source.style.opacity =
+            sourceOriginalOpacity ||
+            "1";
+        }
+
+        /*
+           0% — сразу оригинал.
+        */
+
+        if (
+          smoothingValue ===
+          0
+        ) {
+          clearTimeout(
+            releaseTimer
+          );
+
+          restoreOriginal();
+        }
+      }
+    );
+
+    /* =====================================================
+       RELEASE
+       ===================================================== */
+
+    const scheduleRelease =
+      event => {
+        if (event) {
+          event.stopPropagation();
+        }
+
+        clearTimeout(
+          releaseTimer
+        );
+
+        releaseTimer =
+          setTimeout(
+            () => {
+              processCurrentFrame(
+                smoothingValue
+              );
+            },
+            220
+          );
+      };
+
+    range?.addEventListener(
+      "pointerup",
+      scheduleRelease
+    );
+
+    range?.addEventListener(
+      "touchend",
+      scheduleRelease,
+      {
+        passive: false
+      }
+    );
+
+    range?.addEventListener(
+      "mouseup",
+      scheduleRelease
+    );
+
+    /*
+       Если пользователь закончил
+       движение за пределами элемента.
+    */
+
+    range?.addEventListener(
       "pointercancel",
-      endSlider
-    );
+      event => {
+        event.stopPropagation();
 
-    updateSliderVisual(
-      0
+        clearTimeout(
+          releaseTimer
+        );
+
+        releaseTimer =
+          setTimeout(
+            () => {
+              processCurrentFrame(
+                smoothingValue
+              );
+            },
+            220
+          );
+      }
     );
 
     installed =
@@ -2738,9 +1819,7 @@
      ======================================================= */
 
   function watchGIFFrame() {
-    if (
-      frameObserver
-    ) {
+    if (frameObserver) {
       return;
     }
 
@@ -2776,13 +1855,11 @@
             }
 
             /*
-               Новый GIF-кадр.
+               Новый кадр.
 
-               Удаляем ТОЛЬКО наше
-               сглаживание.
-
-               iDarkMeteo activeLayer
-               здесь вообще не вызывается.
+               Старый интерполированный
+               слой больше не соответствует
+               GIF.
             */
 
             processToken++;
@@ -2792,17 +1869,25 @@
             processing =
               false;
 
+            /*
+               Новый GIF всегда сначала
+               показываем оригинальным.
+            */
+
             target.style.opacity =
               "1";
-
-            target.dataset.cloradSmoothing =
-              "0";
 
             sourceImageElement =
               target;
 
             sourceOriginalOpacity =
               "1";
+
+            /*
+               Если интерполяция включена,
+               после загрузки нового кадра
+               строим её заново.
+            */
 
             if (
               smoothingValue > 0
@@ -2818,7 +1903,7 @@
                       smoothingValue
                     );
                   },
-                  120
+                  180
                 );
             }
           }
@@ -2844,9 +1929,7 @@
   function init() {
     installSetting();
 
-    if (
-      !installed
-    ) {
+    if (!installed) {
       setTimeout(
         init,
         250
@@ -2878,14 +1961,11 @@
      ======================================================= */
 
   window.CLOradRadarSmoothing = {
-
     getValue() {
       return smoothingValue;
     },
 
-    setValue(
-      value
-    ) {
+    setValue(value) {
       smoothingValue =
         clamp(
           Number(value) || 0,
@@ -2893,9 +1973,28 @@
           100
         );
 
-      updateSliderVisual(
-        smoothingValue
-      );
+      const range =
+        document.getElementById(
+          RANGE_ID
+        );
+
+      const valueElement =
+        document.getElementById(
+          VALUE_ID
+        );
+
+      if (range) {
+        range.value =
+          String(
+            smoothingValue
+          );
+      }
+
+      if (valueElement) {
+        valueElement.textContent =
+          smoothingValue +
+          "%";
+      }
 
       if (
         smoothingValue ===
@@ -2903,19 +2002,9 @@
       ) {
         restoreOriginal();
       } else {
-        clearTimeout(
-          releaseTimer
+        processCurrentFrame(
+          smoothingValue
         );
-
-        releaseTimer =
-          setTimeout(
-            () => {
-              processCurrentFrame(
-                smoothingValue
-              );
-            },
-            180
-          );
       }
     },
 
@@ -2923,12 +2012,27 @@
       smoothingValue =
         0;
 
-      updateSliderVisual(
-        0
-      );
+      const range =
+        document.getElementById(
+          RANGE_ID
+        );
+
+      const value =
+        document.getElementById(
+          VALUE_ID
+        );
+
+      if (range) {
+        range.value =
+          "0";
+      }
+
+      if (value) {
+        value.textContent =
+          "0%";
+      }
 
       restoreOriginal();
     }
   };
-
 })();
