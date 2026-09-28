@@ -1,7 +1,6 @@
 /* =========================================================
    CLOrad — RainRadar Russia Composite
-   Автоматический timestamp
-   Canvas colorizer
+   Canvas colorizer + atomic tile loading + timeline
    ========================================================= */
 
 (() => {
@@ -25,10 +24,10 @@
 
   const REFRESH_TIME = 60 * 1000;
 
-  /*
-   * ВАЖНО:
-   * Палитра RGMC ОЯ не изменяется.
-   */
+  /* =======================================================
+     RGMC ОЯ PALETTE
+     НЕ ИЗМЕНЯТЬ
+     ======================================================= */
 
   const RGMC_OY_PALETTE = [
     "#b9c1c7",
@@ -52,19 +51,53 @@
     "#777c91"
   ];
 
+  /* =======================================================
+     COLOR CALIBRATION
+     ======================================================= */
+
   /*
-   * 0 = прозрачность.
+   * RainRadar grayscale сильно сжат в нижней части шкалы.
    *
-   * Остальной диапазон 1–255
-   * распределяется равномерно по
-   * всем 19 цветовым уровням.
+   * Поэтому простое:
    *
-   * Это не даёт искусственно усиливать
-   * или ослаблять отдельные значения.
+   *   1..255 -> 19 цветов
+   *
+   * давало сильную недооценку.
+   *
+   * GAMMA < 1 растягивает слабые и средние значения,
+   * сохраняя их исходный порядок.
+   *
+   * 0 остаётся прозрачным.
    */
+
+  const COLOR_GAMMA = 0.52;
 
   const COLOR_LEVELS =
     RGMC_OY_PALETTE.length;
+
+  /* =======================================================
+     PALETTE RGB
+     ======================================================= */
+
+  const PALETTE_RGB =
+    RGMC_OY_PALETTE.map(
+      hex => ({
+        r: parseInt(
+          hex.slice(1, 3),
+          16
+        ),
+
+        g: parseInt(
+          hex.slice(3, 5),
+          16
+        ),
+
+        b: parseInt(
+          hex.slice(5, 7),
+          16
+        )
+      })
+    );
 
   /* =======================================================
      STATE
@@ -75,13 +108,23 @@
   let rainRadarLayer = null;
 
   let timestamps = [];
+
   let currentIndex = -1;
 
   let active = false;
 
+  let loading = false;
+
   let refreshTimer = null;
 
-  let loading = false;
+  let playbackTimer = null;
+
+  let playback = false;
+
+  let requestId = 0;
+
+  let suppressTimelineInput =
+    false;
 
   /* =======================================================
      HELPERS
@@ -96,37 +139,42 @@
   }
 
   function showMessage(text) {
+
     if (
-      typeof window.msg === "function"
+      typeof window.msg ===
+      "function"
     ) {
       window.msg(text);
       return;
     }
 
     const el =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
-    el.textContent = text;
+    el.textContent =
+      text;
 
     el.style.cssText =
-      [
-        "position:fixed",
-        "z-index:2147483646",
-        "left:50%",
-        "bottom:125px",
-        "transform:translateX(-50%)",
-        "background:#202930",
-        "color:#fff",
-        "padding:9px 14px",
-        "border-radius:8px",
-        "border:1px solid #3d4850",
-        "white-space:nowrap",
-        "max-width:calc(100% - 30px)",
-        "overflow:hidden",
-        "text-overflow:ellipsis"
-      ].join(";");
+      "position:fixed;" +
+      "z-index:2147483646;" +
+      "left:50%;" +
+      "bottom:125px;" +
+      "transform:translateX(-50%);" +
+      "background:#202930;" +
+      "color:#fff;" +
+      "padding:9px 14px;" +
+      "border-radius:8px;" +
+      "border:1px solid #3d4850;" +
+      "white-space:nowrap;" +
+      "max-width:calc(100% - 30px);" +
+      "overflow:hidden;" +
+      "text-overflow:ellipsis;";
 
-    document.body.appendChild(el);
+    document.body.appendChild(
+      el
+    );
 
     setTimeout(
       () => el.remove(),
@@ -135,95 +183,84 @@
   }
 
   /* =======================================================
-     COLOR HELPERS
+     COLOR MAPPING
      ======================================================= */
 
-  function hexToRGB(hex) {
-    return {
-      r: parseInt(
-        hex.slice(1, 3),
-        16
-      ),
-
-      g: parseInt(
-        hex.slice(3, 5),
-        16
-      ),
-
-      b: parseInt(
-        hex.slice(5, 7),
-        16
-      )
-    };
-  }
-
-  const PALETTE_RGB =
-    RGMC_OY_PALETTE.map(
-      hexToRGB
-    );
-
-  /*
-   * Преобразование исходного серого
-   * значения RainRadar в цвет.
-   *
-   * 0   -> прозрачный
-   * 1   -> первый цвет
-   * 255 -> последний цвет
-   *
-   * Используется полный диапазон 1–255.
-   */
-
-  function valueToPaletteIndex(
+  function colorIndex(
     value
   ) {
+
     if (
       value <= 0
     ) {
       return -1;
     }
 
-    const index =
-      Math.floor(
-        (
-          (value - 1) *
-          COLOR_LEVELS
-        ) / 255
+    /*
+     * Нормализуем весь диапазон 1..255.
+     */
+
+    const normalized =
+      (value - 1) / 254;
+
+    /*
+     * Гамма-коррекция.
+     *
+     * Малые значения получают
+     * больше цветового диапазона.
+     */
+
+    const corrected =
+      Math.pow(
+        normalized,
+        COLOR_GAMMA
       );
 
     return Math.max(
       0,
       Math.min(
         COLOR_LEVELS - 1,
-        index
+        Math.floor(
+          corrected *
+          COLOR_LEVELS
+        )
       )
     );
   }
 
   /* =======================================================
-     COLORIZE TILE
+     COLORIZE IMAGE
      ======================================================= */
 
   function colorizeImage(
     image
   ) {
+
+    const width =
+      image.naturalWidth ||
+      256;
+
+    const height =
+      image.naturalHeight ||
+      256;
+
     const canvas =
       document.createElement(
         "canvas"
       );
 
     canvas.width =
-      image.naturalWidth ||
-      256;
+      width;
 
     canvas.height =
-      image.naturalHeight ||
-      256;
+      height;
 
     const ctx =
       canvas.getContext(
         "2d",
         {
-          willReadFrequently: true
+          willReadFrequently:
+            true
         }
       );
 
@@ -233,53 +270,34 @@
       );
     }
 
-    /*
-     * КРИТИЧНО:
-     * никаких сглаживаний.
-     * Каждый исходный пиксель
-     * остаётся квадратным.
-     */
-
     ctx.imageSmoothingEnabled =
       false;
 
     ctx.clearRect(
       0,
       0,
-      canvas.width,
-      canvas.height
+      width,
+      height
     );
-
-    /*
-     * Рисуем PNG 1:1.
-     * Никакого масштабирования.
-     */
 
     ctx.drawImage(
       image,
       0,
       0,
-      canvas.width,
-      canvas.height
+      width,
+      height
     );
 
     const imageData =
       ctx.getImageData(
         0,
         0,
-        canvas.width,
-        canvas.height
+        width,
+        height
       );
 
     const data =
       imageData.data;
-
-    /*
-     * PNG RainRadar — grayscale.
-     *
-     * Берём красный канал как
-     * значение интенсивности.
-     */
 
     for (
       let i = 0;
@@ -287,30 +305,38 @@
       i += 4
     ) {
 
+      /*
+       * RainRadar — grayscale.
+       * Берём интенсивность из красного канала.
+       */
+
       const value =
         data[i];
 
       /*
-       * Чёрный фон полностью убираем.
+       * Чёрный фон =
+       * полностью прозрачный.
        */
 
       if (
         value <= 0
       ) {
+
         data[i + 3] =
           0;
 
         continue;
       }
 
-      const paletteIndex =
-        valueToPaletteIndex(
+      const index =
+        colorIndex(
           value
         );
 
       if (
-        paletteIndex < 0
+        index < 0
       ) {
+
         data[i + 3] =
           0;
 
@@ -319,13 +345,8 @@
 
       const color =
         PALETTE_RGB[
-          paletteIndex
+          index
         ];
-
-      /*
-       * Непрозрачный цвет.
-       * Без смешивания с фоном.
-       */
 
       data[i] =
         color.r;
@@ -350,13 +371,15 @@
   }
 
   /* =======================================================
-     NAV
+     NAVIGATION
      ======================================================= */
 
   function createNav() {
+
     if (
       $("rainRadarNav")
     ) {
+
       rainRadarNav =
         $("rainRadarNav");
 
@@ -366,7 +389,9 @@
     const rainButton =
       $("rainProduct");
 
-    if (!rainButton) {
+    if (
+      !rainButton
+    ) {
       return;
     }
 
@@ -410,33 +435,39 @@
   }
 
   /* =======================================================
-     ACTIVE NAV
+     ACTIVATE
      ======================================================= */
 
   function activate() {
-    active = true;
+
+    active =
+      true;
+
+    stopPlayback();
 
     document
       .querySelectorAll(
         ".nav .n"
       )
-      .forEach(button => {
+      .forEach(
+        button => {
 
-        button.classList.remove(
-          "active"
-        );
+          button.classList.remove(
+            "active"
+          );
 
-      });
+        }
+      );
 
-    if (rainRadarNav) {
+    if (
+      rainRadarNav
+    ) {
+
       rainRadarNav.classList.add(
         "active"
       );
-    }
 
-    /*
-     * Выключаем другие продукты.
-     */
+    }
 
     try {
 
@@ -444,7 +475,9 @@
         typeof window.CLOradStopRadar ===
         "function"
       ) {
+
         window.CLOradStopRadar();
+
       }
 
     } catch {}
@@ -455,7 +488,9 @@
         typeof window.CLOradDeactivateGIF ===
         "function"
       ) {
+
         window.CLOradDeactivateGIF();
+
       }
 
     } catch {}
@@ -466,25 +501,47 @@
      ======================================================= */
 
   function tileUrl(
-    timestamp
+    timestamp,
+    coords
   ) {
 
     return (
       `${API}` +
       `?timestamp=${encodeURIComponent(timestamp)}` +
-      `&z={z}` +
-      `&x={x}` +
-      `&y={y}`
+      `&z=${coords.z}` +
+      `&x=${coords.x}` +
+      `&y=${coords.y}`
     );
-
   }
 
   /* =======================================================
-     RAINRADAR CANVAS TILE LAYER
+     ATOMIC RAINRADAR TILE LAYER
      ======================================================= */
 
   const RainRadarLayer =
     L.GridLayer.extend({
+
+      initialize:
+        function(options) {
+
+          L.GridLayer.prototype.initialize.call(
+            this,
+            options
+          );
+
+          this._pendingTiles =
+            new Set();
+
+          this._failedTiles =
+            new Set();
+
+          this._frameReady =
+            false;
+        },
+
+      /* ---------------------------------------------------
+         CREATE TILE
+         --------------------------------------------------- */
 
       createTile:
         function(
@@ -496,6 +553,10 @@
             document.createElement(
               "canvas"
             );
+
+          /*
+           * Нативный размер тайла.
+           */
 
           tile.width =
             256;
@@ -509,13 +570,21 @@
           tile.style.height =
             "256px";
 
-          /*
-           * Запрещаем браузеру
-           * сглаживать изображение.
-           */
+          tile.style.display =
+            "block";
 
           tile.style.imageRendering =
             "pixelated";
+
+          tile.style.background =
+            "transparent";
+
+          const key =
+            `${coords.z}:${coords.x}:${coords.y}`;
+
+          this._pendingTiles.add(
+            key
+          );
 
           const ctx =
             tile.getContext(
@@ -528,6 +597,14 @@
 
           if (!ctx) {
 
+            this._pendingTiles.delete(
+              key
+            );
+
+            this._failedTiles.add(
+              key
+            );
+
             done(
               new Error(
                 "Canvas 2D недоступен"
@@ -535,31 +612,13 @@
               tile
             );
 
+            this._checkReady();
+
             return tile;
           }
 
           ctx.imageSmoothingEnabled =
             false;
-
-          const timestamp =
-            this.options.timestamp;
-
-          const url =
-            tileUrl(
-              timestamp
-            )
-              .replace(
-                "{z}",
-                coords.z
-              )
-              .replace(
-                "{x}",
-                coords.x
-              )
-              .replace(
-                "{y}",
-                coords.y
-              );
 
           const image =
             new Image();
@@ -569,6 +628,31 @@
 
           image.decoding =
             "async";
+
+          const finish =
+            error => {
+
+              this._pendingTiles.delete(
+                key
+              );
+
+              if (
+                error
+              ) {
+
+                this._failedTiles.add(
+                  key
+                );
+
+              }
+
+              done(
+                error,
+                tile
+              );
+
+              this._checkReady();
+            };
 
           image.onload =
             () => {
@@ -580,11 +664,8 @@
                     image
                   );
 
-                /*
-                 * Копируем уже
-                 * раскрашенный Canvas
-                 * в Leaflet tile.
-                 */
+                ctx.imageSmoothingEnabled =
+                  false;
 
                 ctx.clearRect(
                   0,
@@ -592,9 +673,6 @@
                   256,
                   256
                 );
-
-                ctx.imageSmoothingEnabled =
-                  false;
 
                 ctx.drawImage(
                   colored,
@@ -604,21 +682,21 @@
                   256
                 );
 
-                done(
-                  null,
-                  tile
+                finish(
+                  null
                 );
 
-              } catch (error) {
+              } catch (
+                error
+              ) {
 
                 console.error(
                   "RainRadar tile:",
                   error
                 );
 
-                done(
-                  error,
-                  tile
+                finish(
+                  error
                 );
 
               }
@@ -628,25 +706,141 @@
           image.onerror =
             () => {
 
-              done(
+              finish(
                 new Error(
                   "RainRadar tile unavailable"
-                ),
-                tile
+                )
               );
 
             };
 
           image.src =
-            url;
+            tileUrl(
+              this.options.timestamp,
+              coords
+            );
 
           return tile;
+        },
+
+      /* ---------------------------------------------------
+         ON ADD
+         --------------------------------------------------- */
+
+      onAdd:
+        function(map) {
+
+          this._frameReady =
+            false;
+
+          this._pendingTiles.clear();
+
+          this._failedTiles.clear();
+
+          L.GridLayer.prototype.onAdd.call(
+            this,
+            map
+          );
+
+          /*
+           * Ключевой момент:
+           *
+           * слой физически уже загружается,
+           * но полностью невидим.
+           */
+
+          this.setOpacity(
+            0
+          );
+        },
+
+      /* ---------------------------------------------------
+         CHECK FRAME
+         --------------------------------------------------- */
+
+      _checkReady:
+        function() {
+
+          /*
+           * Пока есть хотя бы один
+           * незавершённый тайл —
+           * ничего не показываем.
+           */
+
+          if (
+            this._frameReady ||
+            this._pendingTiles.size !== 0
+          ) {
+
+            return;
+          }
+
+          const tiles =
+            Object.values(
+              this._tiles || {}
+            );
+
+          if (
+            !tiles.length
+          ) {
+
+            return;
+          }
+
+          this._frameReady =
+            true;
+
+          /*
+           * Если хотя бы один тайл
+           * не загрузился — не показываем
+           * частично собранный кадр.
+           */
+
+          if (
+            this._failedTiles.size
+          ) {
+
+            this.fire(
+              "frameready",
+              {
+                ready:
+                  false,
+
+                failed:
+                  this._failedTiles.size
+              }
+            );
+
+            return;
+          }
+
+          /*
+           * ВСЕ тайлы готовы.
+           *
+           * Теперь кадр появляется
+           * целиком одновременно.
+           */
+
+          this.setOpacity(
+            1
+          );
+
+          this.fire(
+            "frameready",
+            {
+              ready:
+                true,
+
+              failed:
+                0
+            }
+          );
         }
 
     });
 
   /* =======================================================
-     CREATE LAYER
+     CREATE FRAME LAYER
      ======================================================= */
 
   function createLayer(
@@ -664,19 +858,13 @@
 
     }
 
-    if (rainRadarLayer) {
+    const id =
+      ++requestId;
 
-      try {
+    const oldLayer =
+      rainRadarLayer;
 
-        map.removeLayer(
-          rainRadarLayer
-        );
-
-      } catch {}
-
-    }
-
-    rainRadarLayer =
+    const layer =
       new RainRadarLayer({
 
         tileSize:
@@ -703,8 +891,13 @@
         zIndex:
           620,
 
+        /*
+         * Небольшой buffer,
+         * чтобы не грузить лишние тайлы.
+         */
+
         keepBuffer:
-          2,
+          1,
 
         updateWhenIdle:
           true,
@@ -712,16 +905,112 @@
         updateWhenZooming:
           false,
 
+        updateInterval:
+          100,
+
         timestamp:
           timestamp
 
       });
 
-    rainRadarLayer.addTo(
+    rainRadarLayer =
+      layer;
+
+    /*
+     * Новый слой невидим,
+     * пока полностью не готов.
+     */
+
+    layer.setOpacity(
+      0
+    );
+
+    layer.once(
+      "frameready",
+      event => {
+
+        /*
+         * Если за время загрузки
+         * пользователь переключился
+         * на другой кадр —
+         * этот слой уже не актуален.
+         */
+
+        if (
+          id !== requestId ||
+          !active
+        ) {
+
+          return;
+        }
+
+        /*
+         * Неполный кадр не показываем.
+         */
+
+        if (
+          !event.ready
+        ) {
+
+          showMessage(
+            "Не все тайлы кадра загрузились"
+          );
+
+          map.removeLayer(
+            layer
+          );
+
+          if (
+            rainRadarLayer ===
+            layer
+          ) {
+
+            rainRadarLayer =
+              oldLayer ||
+              null;
+
+          }
+
+          return;
+        }
+
+        /*
+         * ВСЯ мозаика готова.
+         *
+         * Показываем её.
+         */
+
+        layer.setOpacity(
+          1
+        );
+
+        /*
+         * Только теперь удаляем
+         * предыдущий кадр.
+         */
+
+        if (
+          oldLayer &&
+          oldLayer !== layer &&
+          map.hasLayer(
+            oldLayer
+          )
+        ) {
+
+          map.removeLayer(
+            oldLayer
+          );
+
+        }
+
+      }
+    );
+
+    layer.addTo(
       map
     );
 
-    return rainRadarLayer;
+    return layer;
   }
 
   /* =======================================================
@@ -739,8 +1028,7 @@
         }
       );
 
-    let data =
-      null;
+    let data;
 
     try {
 
@@ -785,15 +1073,6 @@
 
     }
 
-    /*
-     * API возвращает:
-     *
-     * {
-     *   timestamp: 1790617200,
-     *   time: "..."
-     * }
-     */
-
     timestamps =
       frames
         .map(
@@ -819,10 +1098,7 @@
           }
         )
         .filter(
-          value =>
-            Number.isFinite(
-              value
-            )
+          Number.isFinite
         )
         .sort(
           (a, b) =>
@@ -843,19 +1119,24 @@
   }
 
   /* =======================================================
-     SHOW
+     SHOW RAINRADAR
      ======================================================= */
 
   async function showRainRadar() {
 
-    if (loading) {
+    if (
+      loading
+    ) {
+
       return;
     }
 
     const map =
       getMap();
 
-    if (!map) {
+    if (
+      !map
+    ) {
 
       showMessage(
         "Карта ещё не готова"
@@ -867,6 +1148,8 @@
     loading =
       true;
 
+    stopPlayback();
+
     showMessage(
       "Загрузка RainRadar..."
     );
@@ -875,19 +1158,19 @@
 
       await loadFrames();
 
+      /*
+       * Последний доступный кадр.
+       */
+
       currentIndex =
         timestamps.length - 1;
 
-      const timestamp =
-        timestamps[
-          currentIndex
-        ];
-
-      createLayer(
-        timestamp
-      );
-
       updateTimeline();
+
+      await setFrame(
+        currentIndex,
+        true
+      );
 
       startRefresh();
 
@@ -921,14 +1204,17 @@
      SET FRAME
      ======================================================= */
 
-  function setFrame(
-    index
+  async function setFrame(
+    index,
+    initial = false
   ) {
 
     if (
-      !timestamps.length
+      !timestamps.length ||
+      !active
     ) {
-      return;
+
+      return false;
     }
 
     index =
@@ -943,16 +1229,77 @@
     currentIndex =
       index;
 
+    updateTimeline();
+
     const timestamp =
       timestamps[
         currentIndex
       ];
 
-    createLayer(
-      timestamp
-    );
+    const layer =
+      createLayer(
+        timestamp
+      );
 
-    updateTimeline();
+    return new Promise(
+      resolve => {
+
+        let finished =
+          false;
+
+        const finish =
+          event => {
+
+            if (
+              finished
+            ) {
+
+              return;
+            }
+
+            finished =
+              true;
+
+            if (
+              !event.ready &&
+              initial
+            ) {
+
+              showMessage(
+                "Кадр не загружен полностью"
+              );
+
+            }
+
+            resolve(
+              event.ready
+            );
+          };
+
+        layer.once(
+          "frameready",
+          finish
+        );
+
+        /*
+         * Защита от очень быстрой
+         * загрузки первого кадра.
+         */
+
+        if (
+          layer._frameReady
+        ) {
+
+          finish({
+            ready:
+              layer._failedTiles.size ===
+              0
+          });
+
+        }
+
+      }
+    );
   }
 
   /* =======================================================
@@ -966,9 +1313,15 @@
         ".timeline input[type='range']"
       );
 
-    if (!range) {
+    if (
+      !range
+    ) {
+
       return;
     }
+
+    suppressTimelineInput =
+      true;
 
     range.min =
       "0";
@@ -991,7 +1344,180 @@
           currentIndex
         )
       );
+
+    /*
+     * Если API вернул один кадр,
+     * ползунок физически нечего перематывать.
+     */
+
+    range.disabled =
+      timestamps.length <= 1;
+
+    suppressTimelineInput =
+      false;
   }
+
+  /* =======================================================
+     FIND PLAY BUTTON
+     ======================================================= */
+
+  function findPlayButton() {
+
+    const timeline =
+      document.querySelector(
+        ".timeline"
+      );
+
+    if (
+      !timeline
+    ) {
+
+      return null;
+    }
+
+    return timeline.querySelector(
+      [
+        "button",
+        ".play",
+        "[data-action='play']",
+        "[aria-label*='play' i]"
+      ].join(",")
+    );
+  }
+
+  /* =======================================================
+     PLAY BUTTON STATE
+     ======================================================= */
+
+  function updatePlayButton() {
+
+    const button =
+      findPlayButton();
+
+    if (
+      !button
+    ) {
+
+      return;
+    }
+
+    button.classList.toggle(
+      "active",
+      playback
+    );
+
+    button.setAttribute(
+      "aria-pressed",
+      playback
+        ? "true"
+        : "false"
+    );
+  }
+
+  /* =======================================================
+     STOP PLAYBACK
+     ======================================================= */
+
+  function stopPlayback() {
+
+    playback =
+      false;
+
+    if (
+      playbackTimer
+    ) {
+
+      clearInterval(
+        playbackTimer
+      );
+
+    }
+
+    playbackTimer =
+      null;
+
+    updatePlayButton();
+  }
+
+  /* =======================================================
+     START PLAYBACK
+     ======================================================= */
+
+  function startPlayback() {
+
+    if (
+      timestamps.length < 2 ||
+      !active
+    ) {
+
+      return;
+    }
+
+    stopPlayback();
+
+    playback =
+      true;
+
+    updatePlayButton();
+
+    /*
+     * Интервал между кадрами.
+     *
+     * Сам кадр появляется только после
+     * полной загрузки всех его тайлов.
+     */
+
+    playbackTimer =
+      setInterval(
+        async () => {
+
+          if (
+            !active ||
+            timestamps.length < 2
+          ) {
+
+            stopPlayback();
+
+            return;
+          }
+
+          const next =
+            currentIndex >=
+            timestamps.length - 1
+              ? 0
+              : currentIndex + 1;
+
+          await setFrame(
+            next
+          );
+
+        },
+        700
+      );
+  }
+
+  /* =======================================================
+     TOGGLE PLAYBACK
+     ======================================================= */
+
+  function togglePlayback() {
+
+    if (
+      playback
+    ) {
+
+      stopPlayback();
+
+    } else {
+
+      startPlayback();
+
+    }
+  }
+
+  /* =======================================================
+     TIMELINE HOOK
+     ======================================================= */
 
   function hookTimeline() {
 
@@ -1000,37 +1526,93 @@
         ".timeline input[type='range']"
       );
 
-    if (!range) {
-      return;
+    if (
+      range &&
+      !range.dataset.rainRadarHooked
+    ) {
+
+      range.dataset.rainRadarHooked =
+        "1";
+
+      range.addEventListener(
+        "input",
+        () => {
+
+          if (
+            !active ||
+            suppressTimelineInput
+          ) {
+
+            return;
+          }
+
+          /*
+           * Ручная перемотка
+           * останавливает проигрывание.
+           */
+
+          stopPlayback();
+
+          setFrame(
+            Number(
+              range.value
+            )
+          );
+
+        }
+      );
     }
+
+    const timeline =
+      document.querySelector(
+        ".timeline"
+      );
 
     if (
-      range.dataset
-        .rainRadarHooked
+      timeline &&
+      !timeline.dataset.rainRadarPlayHooked
     ) {
-      return;
-    }
 
-    range.dataset
-      .rainRadarHooked =
-      "1";
-
-    range.addEventListener(
-      "input",
-      () => {
-
-        if (!active) {
-          return;
-        }
-
-        setFrame(
-          Number(
-            range.value
-          )
+      const buttons =
+        timeline.querySelectorAll(
+          [
+            "button",
+            ".play",
+            "[data-action='play']",
+            "[aria-label*='play' i]"
+          ].join(",")
         );
 
+      if (
+        buttons.length
+      ) {
+
+        buttons[0].addEventListener(
+          "click",
+          event => {
+
+            if (
+              !active
+            ) {
+
+              return;
+            }
+
+            event.preventDefault();
+
+            event.stopPropagation();
+
+            togglePlayback();
+
+          }
+        );
+
+        timeline.dataset.rainRadarPlayHooked =
+          "1";
       }
-    );
+    }
+
+    updateTimeline();
   }
 
   /* =======================================================
@@ -1045,7 +1627,11 @@
       setInterval(
         async () => {
 
-          if (!active) {
+          if (
+            !active ||
+            loading
+          ) {
+
             return;
           }
 
@@ -1068,14 +1654,33 @@
               oldLatest
             ) {
 
+              const wasPlaying =
+                playback;
+
+              if (
+                wasPlaying
+              ) {
+
+                stopPlayback();
+
+              }
+
               currentIndex =
                 timestamps.length - 1;
 
-              createLayer(
-                newLatest
+              updateTimeline();
+
+              await setFrame(
+                currentIndex
               );
 
-              updateTimeline();
+              if (
+                wasPlaying
+              ) {
+
+                startPlayback();
+
+              }
 
               showMessage(
                 "RainRadar: новый кадр"
@@ -1099,6 +1704,10 @@
       );
   }
 
+  /* =======================================================
+     STOP REFRESH
+     ======================================================= */
+
   function stopRefresh() {
 
     if (
@@ -1109,14 +1718,14 @@
         refreshTimer
       );
 
-      refreshTimer =
-        null;
-
     }
+
+    refreshTimer =
+      null;
   }
 
   /* =======================================================
-     PUBLIC STOP
+     STOP
      ======================================================= */
 
   function stop() {
@@ -1124,7 +1733,16 @@
     active =
       false;
 
+    stopPlayback();
+
     stopRefresh();
+
+    /*
+     * Отменяем устаревшие
+     * асинхронные переключения.
+     */
+
+    ++requestId;
 
     const map =
       getMap();
@@ -1158,19 +1776,19 @@
 
     hookTimeline();
 
-    /*
-     * Timeline в index.html может
-     * появиться позже.
-     */
-
     setTimeout(
       hookTimeline,
-      500
+      300
     );
 
     setTimeout(
       hookTimeline,
-      1500
+      1000
+    );
+
+    setTimeout(
+      hookTimeline,
+      2000
     );
   }
 
@@ -1203,6 +1821,12 @@
 
     reload:
       showRainRadar,
+
+    play:
+      startPlayback,
+
+    pause:
+      stopPlayback,
 
     getFrames:
       () =>
