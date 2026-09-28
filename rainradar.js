@@ -1,20 +1,19 @@
 /* =========================================================
    CLOrad — RainRadar
-   rainradar.ru / composite
-   Отдельный радарный слой
+   Отдельный радарный слой rainradar.ru
+
+   Кнопка находится В ВЕРХНЕЙ ПАНЕЛИ .nav,
+   рядом с:
+   - Осадки-мм/ч
+   - ДМРЛ композит
 
    index.html НЕ изменяется.
-   Кнопка RainRadar создаётся этим файлом автоматически
-   внутри существующего блока #layers.
 
-   Источник:
+   RainRadar:
    https://rainradar.ru/composite/
 
-   Структура:
+   Тайлы:
    /composite/{timestamp}/{z}/{x}_{y}.png
-
-   Manifest:
-   /composite/manifest.json
    ========================================================= */
 
 (() => {
@@ -30,71 +29,60 @@
   const RR_MANIFEST =
     RR_ROOT + "manifest.json";
 
-  /*
-     RainRadar использует тайлы уровней 3–5.
-  */
   const RR_MIN_ZOOM = 3;
-  const RR_MAX_ZOOM = 5;
 
-  /*
-     Географические границы покрытия RainRadar.
-     Они нужны, чтобы Leaflet не запрашивал тайлы
-     по всему миру.
-  */
+  const RR_MAX_NATIVE_ZOOM = 5;
+
   const RR_BOUNDS = [
     [35, 15],
     [72, 180]
   ];
-
-  /*
-     Обновление manifest.
-     60 секунд достаточно: сами данные идут
-     примерно с шагом 10 минут.
-  */
-  const RR_MANIFEST_CACHE_MS = 60000;
 
 
   /* =======================================================
      STATE
      ======================================================= */
 
+  let rainRadarButton = null;
+
   let rainRadarLayer = null;
 
   let rainRadarEnabled = false;
+
+  let rainRadarTimestamp = null;
 
   let rainRadarManifest = null;
 
   let rainRadarFrames = [];
 
-  let rainRadarActiveTimestamp = null;
-
-  let rainRadarManifestLoadedAt = 0;
-
-  let rainRadarButton = null;
-
   let rainRadarLoading = false;
 
-  let rainRadarObserver = null;
+  let manifestLoadedAt = 0;
+
+  let refreshTimer = null;
 
 
   /* =======================================================
      HELPERS
      ======================================================= */
 
-  function get(id) {
+  function $(id) {
     return document.getElementById(id);
   }
 
 
-  function showMessage(text) {
-    if (typeof window.msg === "function") {
+  function message(text) {
+    if (
+      typeof window.msg === "function"
+    ) {
       window.msg(text);
       return;
     }
 
-    const old = document.getElementById(
-      "cloradRainRadarMessage"
-    );
+    const old =
+      document.getElementById(
+        "rainRadarMessage"
+      );
 
     if (old) {
       old.remove();
@@ -104,9 +92,10 @@
       document.createElement("div");
 
     box.id =
-      "cloradRainRadarMessage";
+      "rainRadarMessage";
 
-    box.textContent = text;
+    box.textContent =
+      text;
 
     box.style =
       "position:fixed;" +
@@ -126,9 +115,12 @@
 
     document.body.appendChild(box);
 
-    setTimeout(() => {
-      box.remove();
-    }, 1800);
+    setTimeout(
+      () => {
+        box.remove();
+      },
+      1800
+    );
   }
 
 
@@ -138,183 +130,125 @@
 
 
   /* =======================================================
-     RAINRADAR BUTTON
+     УДАЛЕНИЕ СТАРОЙ КНОПКИ ИЗ БОКОВОЙ ПАНЕЛИ
+     ======================================================= */
+
+  function removeOldLayersButton() {
+    const oldLayer =
+      document.getElementById(
+        "rainradarLayerControl"
+      );
+
+    if (oldLayer) {
+      oldLayer.remove();
+    }
+
+    const oldSwitch =
+      document.getElementById(
+        "rainradarSwitch"
+      );
+
+    if (oldSwitch) {
+      const parent =
+        oldSwitch.closest(".layer");
+
+      if (parent) {
+        parent.remove();
+      } else {
+        oldSwitch.remove();
+      }
+    }
+  }
+
+
+  /* =======================================================
+     СОЗДАНИЕ КНОПКИ В ВЕРХНЕЙ ПАНЕЛИ
      ======================================================= */
 
   function createRainRadarButton() {
-    if (rainRadarButton) {
+    if (
+      document.getElementById(
+        "rainRadarNav"
+      )
+    ) {
+      rainRadarButton =
+        document.getElementById(
+          "rainRadarNav"
+        );
+
       return rainRadarButton;
     }
 
-    const layers =
-      get("layers");
 
-    if (!layers) {
+    const nav =
+      document.querySelector(
+        ".nav"
+      );
+
+    if (!nav) {
       return null;
     }
 
+
     /*
-       Не создаём вторую кнопку.
+       Такая же структура, как у
+       остальных кнопок верхней панели:
+       class="n"
     */
-    const existing =
-      get("rainradarSwitch");
-
-    if (existing) {
-      rainRadarButton = existing;
-      return existing;
-    }
-
-    const layer =
-      document.createElement("div");
-
-    layer.className =
-      "layer";
-
-    layer.id =
-      "rainradarLayerControl";
-
-
-    /* =====================================================
-       ICON
-       ===================================================== */
-
-    const icon =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "svg"
-      );
-
-    icon.setAttribute(
-      "viewBox",
-      "0 0 24 24"
-    );
-
-    const circle =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "circle"
-      );
-
-    circle.setAttribute(
-      "cx",
-      "12"
-    );
-
-    circle.setAttribute(
-      "cy",
-      "12"
-    );
-
-    circle.setAttribute(
-      "r",
-      "7"
-    );
-
-    const drop =
-      document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "path"
-      );
-
-    drop.setAttribute(
-      "d",
-      "M12 5c0 3-5 6-5 10a5 5 0 0 0 10 0c0-4-5-7-5-10z"
-    );
-
-    icon.appendChild(circle);
-    icon.appendChild(drop);
-
-
-    /* =====================================================
-       TEXT
-       ===================================================== */
-
-    const text =
-      document.createElement("span");
-
-    text.textContent =
-      "RainRadar";
-
-
-    /* =====================================================
-       SWITCH
-       ===================================================== */
 
     const button =
-      document.createElement("button");
+      document.createElement(
+        "button"
+      );
 
     button.className =
-      "switch";
+      "n";
 
     button.id =
-      "rainradarSwitch";
+      "rainRadarNav";
 
     button.type =
       "button";
 
-    const knob =
-      document.createElement("i");
 
-    button.appendChild(knob);
-
-
-    /* =====================================================
-       BUILD
-       ===================================================== */
-
-    layer.appendChild(icon);
-    layer.appendChild(text);
-    layer.appendChild(button);
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24">
+        <path d="M5 19V11"/>
+        <path d="M12 19V7"/>
+        <path d="M19 19V4"/>
+      </svg>
+      RainRadar
+    `;
 
 
     /*
-       Сначала пытаемся найти существующий
-       ДМРЛ-композит / Осадки-мм/ч.
-
-       Если найден — RainRadar ставим сразу
-       после него.
-
-       Если нет — ставим в конец блока #layers.
+       Ставим именно рядом с
+       «Осадки-мм/ч» и «ДМРЛ композит».
     */
 
-    const children =
-      Array.from(
-        layers.querySelectorAll(
-          ":scope > .layer"
-        )
+    const gifButton =
+      document.getElementById(
+        "gifRadarNav"
+      );
+
+    const rainButton =
+      document.getElementById(
+        "rainProduct"
       );
 
 
-    let insertAfter =
-      null;
-
-
-    for (
-      const item of children
-    ) {
-      const label =
-        item
-          .querySelector("span")
-          ?.textContent
-          ?.trim()
-          ?.toLowerCase() || "";
-
-      if (
-        label.includes("дмрл") ||
-        label.includes("композит") ||
-        label.includes("осадки-мм") ||
-        label.includes("осадки мм") ||
-        label.includes("мм/ч")
-      ) {
-        insertAfter = item;
-      }
-    }
-
-
-    if (insertAfter) {
-      insertAfter.after(layer);
+    if (gifButton) {
+      gifButton.after(
+        button
+      );
+    } else if (rainButton) {
+      rainButton.after(
+        button
+      );
     } else {
-      layers.appendChild(layer);
+      nav.appendChild(
+        button
+      );
     }
 
 
@@ -322,20 +256,9 @@
       button;
 
 
-    /*
-       Полностью повторяем поведение
-       существующих переключателей.
-    */
-
-    button.addEventListener(
-      "pointerdown",
-      event => {
-        event.preventDefault();
-        event.stopPropagation();
-      },
-      true
-    );
-
+    /* =====================================================
+       CLICK
+       ===================================================== */
 
     button.addEventListener(
       "click",
@@ -343,9 +266,14 @@
         event.preventDefault();
         event.stopPropagation();
 
-        toggleRainRadar();
-      },
-      true
+        if (
+          rainRadarEnabled
+        ) {
+          disableRainRadar();
+        } else {
+          enableRainRadar();
+        }
+      }
     );
 
 
@@ -354,94 +282,28 @@
 
 
   /* =======================================================
-     FIND / INSERT BUTTON
+     ACTIVE NAV
      ======================================================= */
 
-  function ensureRainRadarButton() {
-    if (
-      get("rainradarSwitch")
-    ) {
-      rainRadarButton =
-        get("rainradarSwitch");
-
-      return true;
-    }
-
-    return !!createRainRadarButton();
-  }
-
-
-  /*
-     Некоторые существующие CLOrad-модули могут
-     добавлять свои .layer динамически.
-
-     Поэтому немного ждём и при необходимости
-     переставляем RainRadar после появления
-     ДМРЛ/осадков.
-  */
-
-  function placeButtonCorrectly() {
-    const layers =
-      get("layers");
-
-    const button =
-      get("rainradarSwitch");
-
-    if (
-      !layers ||
-      !button
-    ) {
-      return;
-    }
-
-    const rainLayer =
-      button.closest(".layer");
-
-    if (!rainLayer) {
-      return;
-    }
-
-    const children =
-      Array.from(
-        layers.querySelectorAll(
-          ":scope > .layer"
-        )
+  function setActiveNav(
+    button
+  ) {
+    document
+      .querySelectorAll(
+        ".n"
+      )
+      .forEach(
+        item => {
+          item.classList.remove(
+            "active"
+          );
+        }
       );
 
-    let target =
-      null;
-
-    for (
-      const item of children
-    ) {
-      if (item === rainLayer) {
-        continue;
-      }
-
-      const label =
-        item
-          .querySelector("span")
-          ?.textContent
-          ?.trim()
-          ?.toLowerCase() || "";
-
-      if (
-        label.includes("дмрл") ||
-        label.includes("композит") ||
-        label.includes("осадки-мм") ||
-        label.includes("осадки мм") ||
-        label.includes("мм/ч")
-      ) {
-        target = item;
-      }
-    }
-
-    if (
-      target &&
-      target.nextElementSibling !==
-        rainLayer
-    ) {
-      target.after(rainLayer);
+    if (button) {
+      button.classList.add(
+        "active"
+      );
     }
   }
 
@@ -456,12 +318,13 @@
     const now =
       Date.now();
 
+
     if (
       !force &&
       rainRadarManifest &&
       now -
-        rainRadarManifestLoadedAt <
-        RR_MANIFEST_CACHE_MS
+        manifestLoadedAt <
+        60000
     ) {
       return rainRadarManifest;
     }
@@ -479,7 +342,8 @@
 
     if (!response.ok) {
       throw new Error(
-        `RainRadar manifest: HTTP ${response.status}`
+        "RainRadar manifest: HTTP " +
+        response.status
       );
     }
 
@@ -488,9 +352,11 @@
       await response.json();
 
 
-    if (!Array.isArray(data)) {
+    if (
+      !Array.isArray(data)
+    ) {
       throw new Error(
-        "RainRadar: manifest имеет неверный формат"
+        "Неверный формат manifest.json"
       );
     }
 
@@ -498,7 +364,7 @@
     rainRadarManifest =
       data;
 
-    rainRadarManifestLoadedAt =
+    manifestLoadedAt =
       now;
 
 
@@ -516,13 +382,13 @@
      ======================================================= */
 
   function parseManifest(
-    manifest
+    data
   ) {
     const frames = [];
 
 
     for (
-      const item of manifest
+      const item of data
     ) {
       if (
         !Array.isArray(item) ||
@@ -533,100 +399,26 @@
 
 
       const timestamp =
-        Number(item[0]);
+        Number(
+          item[0]
+        );
 
       const groups =
         item[1];
 
 
       if (
-        !Number.isFinite(timestamp) ||
+        !Number.isFinite(
+          timestamp
+        ) ||
         !Array.isArray(groups)
       ) {
         continue;
       }
 
 
-      const tiles = [];
-
-
-      /*
-         Manifest RainRadar имеет группы координат.
-         По структуре:
-
-         группа 0 → z=3
-         группа 1 → z=4
-         группа 2 → z=5
-      */
-
-      for (
-        let z = 0;
-        z < groups.length;
-        z++
-      ) {
-        const group =
-          groups[z];
-
-        if (
-          !Array.isArray(group)
-        ) {
-          continue;
-        }
-
-
-        const zoom =
-          z + 3;
-
-
-        for (
-          const coordinate
-            of group
-        ) {
-          if (
-            !Array.isArray(
-              coordinate
-            ) ||
-            coordinate.length < 2
-          ) {
-            continue;
-          }
-
-
-          const x =
-            Number(
-              coordinate[0]
-            );
-
-          const y =
-            Number(
-              coordinate[1]
-            );
-
-
-          if (
-            !Number.isFinite(x) ||
-            !Number.isFinite(y)
-          ) {
-            continue;
-          }
-
-
-          tiles.push({
-            z: zoom,
-            x,
-            y
-          });
-        }
-      }
-
-
       frames.push({
-        timestamp,
-        date:
-          new Date(
-            timestamp * 1000
-          ),
-        tiles
+        timestamp
       });
     }
 
@@ -640,9 +432,6 @@
 
     rainRadarFrames =
       frames;
-
-
-    return frames;
   }
 
 
@@ -657,6 +446,7 @@
       return null;
     }
 
+
     return (
       rainRadarFrames[
         rainRadarFrames.length - 1
@@ -666,62 +456,10 @@
 
 
   /* =======================================================
-     FIND FRAME FOR TIMESTAMP
+     TILE URL
      ======================================================= */
 
-  function findFrame(
-    timestamp
-  ) {
-    return (
-      rainRadarFrames.find(
-        frame =>
-          frame.timestamp ===
-          timestamp
-      ) ||
-      null
-    );
-  }
-
-
-  /* =======================================================
-     FORMAT TIME
-     ======================================================= */
-
-  function formatRainRadarTime(
-    timestamp
-  ) {
-    const date =
-      new Date(
-        timestamp * 1000
-      );
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return "—";
-    }
-
-
-    return date.toLocaleString(
-      "ru-RU",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Europe/Moscow"
-      }
-    );
-  }
-
-
-  /* =======================================================
-     BUILD TILE URL
-     ======================================================= */
-
-  function tileUrl(
+  function getTileUrl(
     timestamp
   ) {
     return (
@@ -740,6 +478,7 @@
     const map =
       getMap();
 
+
     if (
       map &&
       rainRadarLayer &&
@@ -752,7 +491,11 @@
       );
     }
 
+
     rainRadarLayer =
+      null;
+
+    rainRadarTimestamp =
       null;
   }
 
@@ -767,6 +510,7 @@
     const map =
       getMap();
 
+
     if (!map) {
       throw new Error(
         "Карта CLOrad ещё не готова"
@@ -779,19 +523,21 @@
 
     rainRadarLayer =
       L.tileLayer(
-        tileUrl(timestamp),
+        getTileUrl(
+          timestamp
+        ),
         {
           minZoom:
             RR_MIN_ZOOM,
-
-          maxZoom:
-            14,
 
           minNativeZoom:
             RR_MIN_ZOOM,
 
           maxNativeZoom:
-            RR_MAX_ZOOM,
+            RR_MAX_NATIVE_ZOOM,
+
+          maxZoom:
+            14,
 
           opacity:
             1,
@@ -818,7 +564,7 @@
             true,
 
           className:
-            "clorad-rainradar-layer"
+            "clorad-rainradar"
         }
       );
 
@@ -828,12 +574,6 @@
     );
 
 
-    /*
-       RainRadar должен быть выше
-       базовой карты и остальных карт,
-       но не ломать интерфейс.
-    */
-
     if (
       typeof rainRadarLayer.bringToFront ===
       "function"
@@ -842,11 +582,8 @@
     }
 
 
-    rainRadarActiveTimestamp =
+    rainRadarTimestamp =
       timestamp;
-
-
-    return rainRadarLayer;
   }
 
 
@@ -862,24 +599,12 @@
     }
 
 
-    const map =
-      getMap();
-
-    if (!map) {
-      showMessage(
-        "Карта ещё не готова"
-      );
-
-      return;
-    }
-
-
     rainRadarLoading =
       true;
 
 
     try {
-      showMessage(
+      message(
         "Загрузка RainRadar…"
       );
 
@@ -895,7 +620,7 @@
 
       if (!latest) {
         throw new Error(
-          "В RainRadar нет доступных кадров"
+          "Нет доступных кадров RainRadar"
         );
       }
 
@@ -913,43 +638,55 @@
         rainRadarButton
       ) {
         rainRadarButton.classList.add(
-          "on"
+          "active"
         );
       }
 
 
-      showMessage(
+      /*
+         Остальные .n тоже используют
+         active, поэтому RainRadar
+         выглядит как обычная кнопка
+         навигации.
+      */
+
+      setActiveNav(
+        rainRadarButton
+      );
+
+
+      message(
         "RainRadar: " +
-        formatRainRadarTime(
+        formatTime(
           latest.timestamp
         )
       );
 
 
     } catch (error) {
+      console.error(
+        "CLOrad RainRadar:",
+        error
+      );
+
+
       rainRadarEnabled =
         false;
+
+
+      removeRainRadarLayer();
 
 
       if (
         rainRadarButton
       ) {
         rainRadarButton.classList.remove(
-          "on"
+          "active"
         );
       }
 
 
-      removeRainRadarLayer();
-
-
-      console.error(
-        "[CLOrad RainRadar]",
-        error
-      );
-
-
-      showMessage(
+      message(
         error?.message ||
         "RainRadar не загрузился"
       );
@@ -970,46 +707,69 @@
     rainRadarEnabled =
       false;
 
+
     removeRainRadarLayer();
+
 
     if (
       rainRadarButton
     ) {
       rainRadarButton.classList.remove(
-        "on"
+        "active"
       );
     }
 
-    showMessage(
+
+    message(
       "RainRadar выключен"
     );
   }
 
 
   /* =======================================================
-     TOGGLE
+     TIME
      ======================================================= */
 
-  function toggleRainRadar() {
+  function formatTime(
+    timestamp
+  ) {
+    const date =
+      new Date(
+        timestamp * 1000
+      );
+
+
     if (
-      rainRadarEnabled
+      Number.isNaN(
+        date.getTime()
+      )
     ) {
-      disableRainRadar();
-    } else {
-      enableRainRadar();
+      return "—";
     }
+
+
+    return date.toLocaleString(
+      "ru-RU",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone:
+          "Europe/Moscow"
+      }
+    );
   }
 
 
   /* =======================================================
-     REFRESH CURRENT FRAME
+     REFRESH
      ======================================================= */
 
-  async function refreshRainRadar(
-    force = true
-  ) {
+  async function refreshRainRadar() {
     if (
-      !rainRadarEnabled
+      !rainRadarEnabled ||
+      rainRadarLoading
     ) {
       return;
     }
@@ -1017,7 +777,7 @@
 
     try {
       await loadManifest(
-        force
+        true
       );
 
 
@@ -1025,14 +785,16 @@
         getLatestFrame();
 
 
-      if (!latest) {
+      if (
+        !latest
+      ) {
         return;
       }
 
 
       if (
         latest.timestamp !==
-        rainRadarActiveTimestamp
+        rainRadarTimestamp
       ) {
         createRainRadarLayer(
           latest.timestamp
@@ -1041,10 +803,101 @@
 
     } catch (error) {
       console.error(
-        "[CLOrad RainRadar refresh]",
+        "RainRadar refresh:",
         error
       );
     }
+  }
+
+
+  /* =======================================================
+     INTERCEPT OTHER NAV BUTTONS
+     ======================================================= */
+
+  function setupNavigation() {
+    const nav =
+      document.querySelector(
+        ".nav"
+      );
+
+    if (!nav) {
+      return;
+    }
+
+
+    nav.addEventListener(
+      "click",
+      event => {
+        const button =
+          event.target.closest(
+            ".n"
+          );
+
+
+        if (!button) {
+          return;
+        }
+
+
+        if (
+          button.id ===
+          "rainRadarNav"
+        ) {
+          return;
+        }
+
+
+        if (
+          rainRadarEnabled
+        ) {
+          disableRainRadar();
+        }
+      },
+      true
+    );
+  }
+
+
+  /* =======================================================
+     INITIALIZE
+     ======================================================= */
+
+  function init() {
+    /*
+       На всякий случай убираем кнопку
+       старой версии из боковой панели.
+    */
+
+    removeOldLayersButton();
+
+
+    /*
+       Создаём RainRadar именно
+       в .nav.
+    */
+
+    createRainRadarButton();
+
+
+    /*
+       Настраиваем переключение
+       между верхними слоями.
+    */
+
+    setupNavigation();
+
+
+    /*
+       Автообновление примерно раз
+       в минуту. Новые данные RainRadar
+       появляются с шагом около 10 минут.
+    */
+
+    refreshTimer =
+      setInterval(
+        refreshRainRadar,
+        60000
+      );
   }
 
 
@@ -1060,7 +913,15 @@
       disableRainRadar,
 
     toggle:
-      toggleRainRadar,
+      () => {
+        if (
+          rainRadarEnabled
+        ) {
+          disableRainRadar();
+        } else {
+          enableRainRadar();
+        }
+      },
 
     refresh:
       refreshRainRadar,
@@ -1069,101 +930,19 @@
       () =>
         rainRadarLayer,
 
-    getFrames:
+    getTimestamp:
       () =>
-        rainRadarFrames.slice(),
+        rainRadarTimestamp,
 
-    getLatest:
-      getLatestFrame
+    isEnabled:
+      () =>
+        rainRadarEnabled
   };
 
 
   /* =======================================================
-     OBSERVER
+     START
      ======================================================= */
-
-  function startLayerObserver() {
-    const layers =
-      get("layers");
-
-    if (!layers) {
-      return;
-    }
-
-
-    if (
-      rainRadarObserver
-    ) {
-      return;
-    }
-
-
-    rainRadarObserver =
-      new MutationObserver(
-        () => {
-          if (
-            !get(
-              "rainradarSwitch"
-            )
-          ) {
-            createRainRadarButton();
-          }
-
-          placeButtonCorrectly();
-        }
-      );
-
-
-    rainRadarObserver.observe(
-      layers,
-      {
-        childList: true,
-        subtree: true
-      }
-    );
-  }
-
-
-  /* =======================================================
-     INITIALIZE
-     ======================================================= */
-
-  function initRainRadar() {
-    if (
-      !getMap()
-    ) {
-      setTimeout(
-        initRainRadar,
-        100
-      );
-
-      return;
-    }
-
-
-    ensureRainRadarButton();
-
-    placeButtonCorrectly();
-
-    startLayerObserver();
-
-
-    /*
-       Обновляем manifest периодически,
-       но сам слой не трогаем, пока RainRadar
-       выключен.
-    */
-
-    setInterval(
-      () => {
-        refreshRainRadar(
-          true
-        );
-      },
-      60000
-    );
-  }
-
 
   if (
     document.readyState ===
@@ -1171,13 +950,13 @@
   ) {
     document.addEventListener(
       "DOMContentLoaded",
-      initRainRadar,
+      init,
       {
         once: true
       }
     );
   } else {
-    initRainRadar();
+    init();
   }
 
 })();
