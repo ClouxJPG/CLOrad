@@ -1,13 +1,19 @@
 /* =========================================================
    CLOrad — RainRadar Russia Composite API
    Источник:
-   rainradar
+   https://rainradar.ru/composite/
 
-   Автоматическое получение timestamp.
-   manifest.json НЕ является обязательным.
+   Автоматическое получение актуального timestamp.
+   manifest.json — только дополнительный источник.
+   Тайлы:
+   /composite/{timestamp}/{z}/{x}_{y}.png
    ========================================================= */
 
 const sharp = require("sharp");
+
+/* =========================================================
+   CONFIG
+   ========================================================= */
 
 const MANIFEST_URL =
   "https://rainradar.ru/composite/manifest.json";
@@ -16,13 +22,28 @@ const COMPOSITE_URL =
   "https://rainradar.ru/composite/";
 
 const CACHE_TIME = 30 * 1000;
-const TIMESTAMP_STEP = 600; // 10 минут
+
+/*
+ * RainRadar использует 10-минутные timestamps.
+ */
+const TIMESTAMP_STEP = 600;
+
+/*
+ * Для автоматического поиска проверяем только
+ * последние 12 возможных кадров.
+ *
+ * Это максимум 12 запросов вместо 37+ последовательных.
+ */
+const SEARCH_STEPS = 12;
+
+const REQUEST_TIMEOUT = 3500;
 
 const USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 CLOrad/1.0";
 
 /* =========================================================
-   RGMC ОЯ — НЕ ИЗМЕНЯТЬ
+   RGMC ОЯ
+   НЕ ИЗМЕНЯТЬ
    ========================================================= */
 
 const RGMC_OY_PALETTE = [
@@ -60,60 +81,150 @@ let latestTimestampCacheTime = 0;
 const tileCache = new Map();
 
 /* =========================================================
-   HTTP
+   SAFE FETCH
+   ========================================================= */
+
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeout = REQUEST_TIMEOUT
+) {
+  const controller =
+    new AbortController();
+
+  const timer =
+    setTimeout(
+      () => controller.abort(),
+      timeout
+    );
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* =========================================================
+   FETCH TEXT
    ========================================================= */
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept":
-        "text/html,application/json,image/png,*/*"
-    }
-  });
+  const response =
+    await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Accept":
+            "text/html,application/json,text/plain,*/*"
+        }
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
-      `HTTP ${response.status} ${response.statusText}`
+      `HTTP ${response.status}`
     );
   }
 
   return await response.text();
 }
 
-async function fetchBuffer(url) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept": "image/png,image/*,*/*"
-    }
-  });
+/* =========================================================
+   FETCH JSON
+   ========================================================= */
+
+async function fetchJSON(url) {
+  const response =
+    await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Accept":
+            "application/json,text/plain,*/*"
+        }
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
-      `HTTP ${response.status} ${response.statusText}`
+      `HTTP ${response.status}`
     );
   }
 
-  const arrayBuffer = await response.arrayBuffer();
+  const text =
+    await response.text();
 
-  return Buffer.from(arrayBuffer);
+  if (!text) {
+    throw new Error(
+      "Пустой ответ"
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      "Ответ не является JSON"
+    );
+  }
 }
 
 /* =========================================================
-   TIMESTAMP NORMALIZATION
+   FETCH IMAGE
+   ========================================================= */
+
+async function fetchBuffer(url) {
+  const response =
+    await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Accept":
+            "image/png,image/*,*/*"
+        }
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `HTTP ${response.status}`
+    );
+  }
+
+  const arrayBuffer =
+    await response.arrayBuffer();
+
+  return Buffer.from(
+    arrayBuffer
+  );
+}
+
+/* =========================================================
+   TIMESTAMP
    ========================================================= */
 
 function normalizeTimestamp(value) {
-  if (value === null || value === undefined) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return null;
   }
 
-  if (typeof value === "number") {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  ) {
     if (
-      Number.isFinite(value) &&
-      value > 1000000000 &&
-      value < 3000000000
+      value >= 1000000000 &&
+      value <= 3000000000
     ) {
       return Math.floor(value);
     }
@@ -121,53 +232,74 @@ function normalizeTimestamp(value) {
     return null;
   }
 
-  const text = String(value).trim();
+  const text =
+    String(value).trim();
 
-  if (/^\d{9,12}$/.test(text)) {
-    const n = Number(text);
+  /*
+   * Unix timestamp.
+   */
+  if (
+    /^\d{9,12}$/.test(text)
+  ) {
+    const number =
+      Number(text);
 
     if (
-      Number.isFinite(n) &&
-      n > 1000000000 &&
-      n < 3000000000
+      Number.isFinite(number) &&
+      number >= 1000000000 &&
+      number <= 3000000000
     ) {
-      return Math.floor(n);
+      return Math.floor(number);
     }
   }
 
-  const parsed = Date.parse(text);
+  /*
+   * ISO / date.
+   */
+  const parsed =
+    Date.parse(text);
 
-  if (!Number.isNaN(parsed)) {
-    return Math.floor(parsed / 1000);
+  if (
+    !Number.isNaN(parsed)
+  ) {
+    return Math.floor(
+      parsed / 1000
+    );
   }
 
   return null;
 }
 
 /* =========================================================
-   EXTRACT TIMESTAMPS FROM ANY TEXT
+   EXTRACT TIMESTAMPS
    ========================================================= */
 
 function extractTimestamps(text) {
-  const result = new Set();
+  const result =
+    new Set();
 
   if (!text) {
     return [];
   }
 
   /*
-   * Ищем именно 10-значные Unix timestamp.
+   * Основной формат:
    *
-   * Например:
    * /composite/1790614800/
    */
 
-  const regex = /(?:^|[/"'=:_-])(\d{10})(?=[/"'?:_.,<>\s-]|$)/g;
+  const regex =
+    /\/composite\/(\d{9,12})\//g;
 
   let match;
 
-  while ((match = regex.exec(text)) !== null) {
-    const timestamp = normalizeTimestamp(match[1]);
+  while (
+    (match = regex.exec(text)) !== null
+  ) {
+    const timestamp =
+      normalizeTimestamp(
+        match[1]
+      );
 
     if (timestamp) {
       result.add(timestamp);
@@ -175,32 +307,49 @@ function extractTimestamps(text) {
   }
 
   /*
-   * Дополнительно ищем любые 9-12 значные числа,
-   * которые похожи на Unix timestamp.
+   * Дополнительный поиск timestamp.
    */
 
-  const looseRegex = /\b(\d{9,12})\b/g;
+  const loose =
+    /\b(\d{10})\b/g;
 
-  while ((match = looseRegex.exec(text)) !== null) {
-    const timestamp = normalizeTimestamp(match[1]);
+  while (
+    (match = loose.exec(text)) !== null
+  ) {
+    const timestamp =
+      normalizeTimestamp(
+        match[1]
+      );
 
     if (timestamp) {
       result.add(timestamp);
     }
   }
 
-  return Array.from(result).sort((a, b) => a - b);
+  return Array.from(
+    result
+  ).sort(
+    (a, b) => a - b
+  );
 }
 
 /* =========================================================
-   MANIFEST PARSER
+   MANIFEST
    ========================================================= */
 
 function extractManifestTimestamps(data) {
-  const result = new Set();
+  const result =
+    new Set();
 
-  function walk(value, depth = 0) {
-    if (depth > 8 || value === null || value === undefined) {
+  function walk(
+    value,
+    depth = 0
+  ) {
+    if (
+      depth > 8 ||
+      value === null ||
+      value === undefined
+    ) {
       return;
     }
 
@@ -208,7 +357,10 @@ function extractManifestTimestamps(data) {
       typeof value === "string" ||
       typeof value === "number"
     ) {
-      const timestamp = normalizeTimestamp(value);
+      const timestamp =
+        normalizeTimestamp(
+          value
+        );
 
       if (timestamp) {
         result.add(timestamp);
@@ -217,86 +369,112 @@ function extractManifestTimestamps(data) {
       return;
     }
 
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        walk(item, depth + 1);
+    if (
+      Array.isArray(value)
+    ) {
+      for (
+        const item of value
+      ) {
+        walk(
+          item,
+          depth + 1
+        );
       }
 
       return;
     }
 
-    if (typeof value === "object") {
-      for (const key of Object.keys(value)) {
-        walk(key, depth + 1);
-        walk(value[key], depth + 1);
+    if (
+      typeof value === "object"
+    ) {
+      for (
+        const key of Object.keys(value)
+      ) {
+        walk(
+          key,
+          depth + 1
+        );
+
+        walk(
+          value[key],
+          depth + 1
+        );
       }
     }
   }
 
   walk(data);
 
-  return Array.from(result).sort((a, b) => a - b);
+  return Array.from(
+    result
+  ).sort(
+    (a, b) => a - b
+  );
 }
 
 /* =========================================================
-   METHOD 1
-   MANIFEST
+   GET MANIFEST
    ========================================================= */
 
 async function getFromManifest() {
-  const now = Date.now();
+  const now =
+    Date.now();
 
   if (
     manifestCache &&
-    now - manifestCacheTime < CACHE_TIME
+    now - manifestCacheTime <
+      CACHE_TIME
   ) {
     return manifestCache;
   }
 
-  const response = await fetch(MANIFEST_URL, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept": "application/json,text/plain,*/*"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `manifest HTTP ${response.status}`
+  const data =
+    await fetchJSON(
+      MANIFEST_URL
     );
-  }
-
-  const data = await response.json();
 
   const timestamps =
-    extractManifestTimestamps(data);
+    extractManifestTimestamps(
+      data
+    );
 
-  if (!timestamps.length) {
+  if (
+    !timestamps.length
+  ) {
     throw new Error(
-      "manifest не содержит timestamp"
+      "В manifest нет timestamp"
     );
   }
 
-  manifestCache = timestamps;
-  manifestCacheTime = now;
+  manifestCache =
+    timestamps;
+
+  manifestCacheTime =
+    now;
 
   return timestamps;
 }
 
 /* =========================================================
-   METHOD 2
-   DIRECTORY LISTING
+   GET COMPOSITE DIRECTORY
    ========================================================= */
 
 async function getFromDirectory() {
-  const html = await fetchText(COMPOSITE_URL);
+  const text =
+    await fetchText(
+      COMPOSITE_URL
+    );
 
   const timestamps =
-    extractTimestamps(html);
+    extractTimestamps(
+      text
+    );
 
-  if (!timestamps.length) {
+  if (
+    !timestamps.length
+  ) {
     throw new Error(
-      "В /composite/ не найдено timestamp"
+      "В /composite/ нет списка timestamp"
     );
   }
 
@@ -304,110 +482,204 @@ async function getFromDirectory() {
 }
 
 /* =========================================================
-   TILE EXISTENCE CHECK
+   MAKE SOURCE TILE URL
    ========================================================= */
 
-async function checkTimestamp(timestamp) {
-  /*
-   * Используем один реальный тайл.
-   *
-   * z=5 / x=19 / y=9
-   *
-   * Такой запрос нужен только для определения,
-   * существует ли конкретный timestamp.
-   */
+function makeSourceTileUrl(
+  timestamp,
+  z = 5,
+  x = 19,
+  y = 9
+) {
+  return (
+    COMPOSITE_URL +
+    encodeURIComponent(
+      timestamp
+    ) +
+    "/" +
+    z +
+    "/" +
+    x +
+    "_" +
+    y +
+    ".png"
+  );
+}
 
-  const url =
-    `${COMPOSITE_URL}` +
-    `${encodeURIComponent(timestamp)}/5/19_9.png`;
+/* =========================================================
+   CHECK TIMESTAMP
+   ========================================================= */
 
+/*
+ * Не используем HEAD:
+ * некоторые серверы нормально отдают PNG,
+ * но некорректно обрабатывают HEAD.
+ *
+ * Делаем обычный GET.
+ */
+
+async function checkTimestamp(
+  timestamp
+) {
   try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      headers: {
-        "User-Agent": USER_AGENT,
-        "Accept": "image/png,*/*"
-      }
-    });
+    const response =
+      await fetchWithTimeout(
+        makeSourceTileUrl(
+          timestamp
+        ),
+        {
+          headers: {
+            "User-Agent":
+              USER_AGENT,
+            "Accept":
+              "image/png,image/*,*/*"
+          }
+        },
+        REQUEST_TIMEOUT
+      );
 
-    return response.ok;
+    if (
+      !response.ok
+    ) {
+      return false;
+    }
+
+    /*
+     * Нам достаточно успешного HTTP.
+     * Сам PNG здесь не нужен.
+     */
+    return true;
   } catch {
     return false;
   }
 }
 
 /* =========================================================
-   METHOD 3
-   AUTOMATIC TIME SEARCH
+   AUTOMATIC TIMESTAMP SEARCH
    ========================================================= */
 
-async function discoverByTime() {
-  const now = Math.floor(Date.now() / 1000);
+async function discoverLatest() {
+  const now =
+    Math.floor(
+      Date.now() / 1000
+    );
 
   /*
-   * Округляем текущее время вниз до 10 минут.
+   * Округляем до 10 минут.
    */
-
   const current =
-    Math.floor(now / TIMESTAMP_STEP) *
-    TIMESTAMP_STEP;
+    Math.floor(
+      now / TIMESTAMP_STEP
+    ) * TIMESTAMP_STEP;
 
   /*
-   * Проверяем последние 6 часов.
-   *
-   * Обычно актуальный timestamp будет найден
-   * буквально за несколько запросов.
+   * Проверяем последние 12 кадров
+   * одновременно.
    */
 
-  const MAX_STEPS = 36;
+  const candidates =
+    [];
 
-  for (let i = 0; i <= MAX_STEPS; i++) {
-    const timestamp =
-      current - i * TIMESTAMP_STEP;
+  for (
+    let i = 0;
+    i < SEARCH_STEPS;
+    i++
+  ) {
+    candidates.push(
+      current -
+      i * TIMESTAMP_STEP
+    );
+  }
 
-    if (await checkTimestamp(timestamp)) {
-      return timestamp;
-    }
+  const results =
+    await Promise.all(
+      candidates.map(
+        async timestamp => ({
+          timestamp,
+          exists:
+            await checkTimestamp(
+              timestamp
+            )
+        })
+      )
+    );
+
+  /*
+   * Берём самый свежий существующий.
+   */
+
+  const valid =
+    results
+      .filter(
+        item => item.exists
+      )
+      .sort(
+        (a, b) =>
+          b.timestamp -
+          a.timestamp
+      );
+
+  if (
+    valid.length
+  ) {
+    return valid[0]
+      .timestamp;
   }
 
   throw new Error(
-    "Не найден актуальный timestamp RainRadar"
+    "RainRadar: актуальный кадр не найден"
   );
 }
 
 /* =========================================================
-   FIND LATEST
+   GET LATEST TIMESTAMP
    ========================================================= */
 
 async function getLatestTimestamp() {
-  const now = Date.now();
+  const now =
+    Date.now();
 
   if (
     latestTimestampCache &&
-    now - latestTimestampCacheTime < CACHE_TIME
+    now -
+      latestTimestampCacheTime <
+      CACHE_TIME
   ) {
     return latestTimestampCache;
   }
 
   /*
-   * 1. Manifest
+   * 1. Manifest.
+   *
+   * Если он не работает —
+   * НЕ падаем.
    */
 
   try {
-    const timestamps =
+    const frames =
       await getFromManifest();
 
-    if (timestamps.length) {
+    if (
+      frames.length
+    ) {
       const latest =
-        timestamps[timestamps.length - 1];
+        frames[
+          frames.length - 1
+        ];
 
-      latestTimestampCache = latest;
-      latestTimestampCacheTime = now;
+      latestTimestampCache =
+        latest;
+
+      latestTimestampCacheTime =
+        now;
 
       return latest;
     }
-  } catch {
-    // продолжаем fallback
+  } catch (error) {
+    console.warn(
+      "RainRadar manifest:",
+      error?.message
+    );
   }
 
   /*
@@ -415,83 +687,105 @@ async function getLatestTimestamp() {
    */
 
   try {
-    const timestamps =
+    const frames =
       await getFromDirectory();
 
-    if (timestamps.length) {
+    if (
+      frames.length
+    ) {
       const latest =
-        timestamps[timestamps.length - 1];
+        frames[
+          frames.length - 1
+        ];
 
-      latestTimestampCache = latest;
-      latestTimestampCacheTime = now;
+      latestTimestampCache =
+        latest;
+
+      latestTimestampCacheTime =
+        now;
 
       return latest;
     }
-  } catch {
-    // продолжаем fallback
+  } catch (error) {
+    console.warn(
+      "RainRadar directory:",
+      error?.message
+    );
   }
 
   /*
-   * 3. Автоматический поиск по времени
+   * 3. Автоматический поиск.
    */
 
   const latest =
-    await discoverByTime();
+    await discoverLatest();
 
-  latestTimestampCache = latest;
-  latestTimestampCacheTime = now;
+  latestTimestampCache =
+    latest;
+
+  latestTimestampCacheTime =
+    now;
 
   return latest;
 }
 
 /* =========================================================
-   FIND FRAMES
+   GET FRAMES
    ========================================================= */
 
 async function getFrames() {
   /*
-   * Manifest
+   * История через manifest.
    */
 
   try {
-    const timestamps =
+    const frames =
       await getFromManifest();
 
-    if (timestamps.length) {
-      return timestamps;
+    if (
+      frames.length
+    ) {
+      return frames;
     }
-  } catch {
-    // fallback
+  } catch (error) {
+    console.warn(
+      "RainRadar manifest:",
+      error?.message
+    );
   }
 
   /*
-   * Directory
+   * История через /composite/.
    */
 
   try {
-    const timestamps =
+    const frames =
       await getFromDirectory();
 
-    if (timestamps.length) {
-      return timestamps;
+    if (
+      frames.length
+    ) {
+      return frames;
     }
-  } catch {
-    // fallback
+  } catch (error) {
+    console.warn(
+      "RainRadar directory:",
+      error?.message
+    );
   }
 
   /*
-   * Если получить историю невозможно,
-   * возвращаем хотя бы актуальный кадр.
+   * Если история недоступна,
+   * возвращаем только актуальный кадр.
    */
 
-  const latest =
-    await getLatestTimestamp();
-
-  return [latest];
+  return [
+    await getLatestTimestamp()
+  ];
 }
 
 /* =========================================================
-   GRAYSCALE → RGMC OЯ
+   RGMC ОЯ MAPPING
    ========================================================= */
 
 function grayToLevel(v) {
@@ -519,61 +813,80 @@ function grayToLevel(v) {
 }
 
 /* =========================================================
-   COLORIZE
+   COLORIZE PNG
    ========================================================= */
 
-async function colorize(buffer) {
-  const image =
-    sharp(buffer).ensureAlpha();
-
+async function colorize(
+  buffer
+) {
   const {
     data,
     info
-  } = await image.raw().toBuffer({
-    resolveWithObject: true
-  });
+  } =
+    await sharp(buffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({
+        resolveWithObject: true
+      });
 
   const output =
-    Buffer.alloc(info.width * info.height * 4);
+    Buffer.alloc(
+      info.width *
+      info.height *
+      4
+    );
 
   for (
     let i = 0, j = 0;
     i < data.length;
-    i += info.channels, j += 4
+    i += info.channels,
+    j += 4
   ) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
+    const r =
+      data[i] || 0;
 
-    /*
-     * RainRadar tiles являются grayscale.
-     * Берём максимальный канал.
-     */
+    const g =
+      data[i + 1] || 0;
+
+    const b =
+      data[i + 2] || 0;
 
     const gray =
-      Math.max(r, g, b);
+      Math.max(
+        r,
+        g,
+        b
+      );
 
     /*
-     * Чёрный / почти чёрный =
-     * отсутствие данных.
+     * Чёрный фон = прозрачность.
      */
 
-    if (gray <= 4) {
+    if (
+      gray <= 4
+    ) {
       output[j] = 0;
       output[j + 1] = 0;
       output[j + 2] = 0;
       output[j + 3] = 0;
+
       continue;
     }
 
     const level =
-      grayToLevel(gray);
+      grayToLevel(
+        gray
+      );
 
-    if (level < 0) {
+    if (
+      level < 0
+    ) {
       output[j] = 0;
       output[j + 1] = 0;
       output[j + 2] = 0;
       output[j + 3] = 0;
+
       continue;
     }
 
@@ -586,24 +899,41 @@ async function colorize(buffer) {
       ];
 
     output[j] =
-      parseInt(hex.slice(1, 3), 16);
+      parseInt(
+        hex.slice(1, 3),
+        16
+      );
 
     output[j + 1] =
-      parseInt(hex.slice(3, 5), 16);
+      parseInt(
+        hex.slice(3, 5),
+        16
+      );
 
     output[j + 2] =
-      parseInt(hex.slice(5, 7), 16);
+      parseInt(
+        hex.slice(5, 7),
+        16
+      );
 
-    output[j + 3] = 255;
+    output[j + 3] =
+      255;
   }
 
-  return await sharp(output, {
-    raw: {
-      width: info.width,
-      height: info.height,
-      channels: 4
+  return await sharp(
+    output,
+    {
+      raw: {
+        width:
+          info.width,
+
+        height:
+          info.height,
+
+        channels: 4
+      }
     }
-  })
+  )
     .png({
       compressionLevel: 6,
       adaptiveFiltering: false
@@ -612,40 +942,30 @@ async function colorize(buffer) {
 }
 
 /* =========================================================
-   TILE URL
-   ========================================================= */
-
-function makeTileUrl(
-  timestamp,
-  z,
-  x,
-  y
-) {
-  return (
-    `${COMPOSITE_URL}` +
-    `${encodeURIComponent(timestamp)}/` +
-    `${z}/` +
-    `${x}_${y}.png`
-  );
-}
-
-/* =========================================================
    TILE CACHE
    ========================================================= */
 
-function getCachedTile(key) {
+function getCachedTile(
+  key
+) {
   const item =
-    tileCache.get(key);
+    tileCache.get(
+      key
+    );
 
   if (!item) {
     return null;
   }
 
   if (
-    Date.now() - item.time >
-    CACHE_TIME
+    Date.now() -
+      item.time >
+      CACHE_TIME
   ) {
-    tileCache.delete(key);
+    tileCache.delete(
+      key
+    );
+
     return null;
   }
 
@@ -656,52 +976,262 @@ function setCachedTile(
   key,
   buffer
 ) {
-  tileCache.set(key, {
-    buffer,
-    time: Date.now()
-  });
+  tileCache.set(
+    key,
+    {
+      buffer,
+      time:
+        Date.now()
+    }
+  );
 
   /*
-   * Максимум 200 тайлов.
+   * Ограничиваем память.
    */
 
-  if (tileCache.size > 200) {
+  while (
+    tileCache.size >
+    200
+  ) {
     const first =
-      tileCache.keys().next().value;
+      tileCache.keys()
+        .next()
+        .value;
 
-    if (first) {
-      tileCache.delete(first);
+    if (
+      first === undefined
+    ) {
+      break;
     }
+
+    tileCache.delete(
+      first
+    );
   }
 }
 
 /* =========================================================
-   MAIN HANDLER
+   MAIN VERCEL HANDLER
    ========================================================= */
 
-module.exports = async function handler(
-  req,
-  res
-) {
-  try {
-    const {
-      manifest,
-      timestamp,
-      z,
-      x,
-      y
-    } = req.query || {};
+module.exports =
+  async function handler(
+    req,
+    res
+  ) {
+    try {
+      const query =
+        req.query || {};
 
-    /* =====================================================
-       MANIFEST / FRAME REQUEST
-       ===================================================== */
+      const manifest =
+        query.manifest;
 
-    if (manifest === "1") {
-      const frames =
-        await getFrames();
+      const timestamp =
+        query.timestamp;
 
-      const latest =
-        frames[frames.length - 1];
+      const z =
+        query.z;
+
+      const x =
+        query.x;
+
+      const y =
+        query.y;
+
+      /* ===================================================
+         FRAMES
+         =================================================== */
+
+      if (
+        manifest === "1"
+      ) {
+        const frames =
+          await getFrames();
+
+        const latest =
+          frames[
+            frames.length - 1
+          ];
+
+        res.setHeader(
+          "Cache-Control",
+          "no-store"
+        );
+
+        res.setHeader(
+          "Content-Type",
+          "application/json; charset=utf-8"
+        );
+
+        return res
+          .status(200)
+          .json({
+            ok: true,
+            frames,
+            latest,
+            step:
+              TIMESTAMP_STEP
+          });
+      }
+
+      /* ===================================================
+         LATEST
+         =================================================== */
+
+      if (
+        timestamp === undefined &&
+        z === undefined &&
+        x === undefined &&
+        y === undefined
+      ) {
+        const latest =
+          await getLatestTimestamp();
+
+        res.setHeader(
+          "Cache-Control",
+          "no-store"
+        );
+
+        res.setHeader(
+          "Content-Type",
+          "application/json; charset=utf-8"
+        );
+
+        return res
+          .status(200)
+          .json({
+            ok: true,
+            latest,
+            step:
+              TIMESTAMP_STEP
+          });
+      }
+
+      /* ===================================================
+         TILE PARAMETERS
+         =================================================== */
+
+      if (
+        timestamp === undefined ||
+        z === undefined ||
+        x === undefined ||
+        y === undefined
+      ) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "Нужны timestamp, z, x и y"
+          });
+      }
+
+      const zi =
+        Number(z);
+
+      const xi =
+        Number(x);
+
+      const yi =
+        Number(y);
+
+      if (
+        !Number.isInteger(zi) ||
+        !Number.isInteger(xi) ||
+        !Number.isInteger(yi)
+      ) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "Некорректные координаты тайла"
+          });
+      }
+
+      /* ===================================================
+         CACHE
+         =================================================== */
+
+      const cacheKey =
+        `${timestamp}/${zi}/${xi}/${yi}`;
+
+      const cached =
+        getCachedTile(
+          cacheKey
+        );
+
+      if (cached) {
+        res.setHeader(
+          "Content-Type",
+          "image/png"
+        );
+
+        res.setHeader(
+          "Cache-Control",
+          "public, max-age=30"
+        );
+
+        return res
+          .status(200)
+          .send(cached);
+      }
+
+      /* ===================================================
+         SOURCE RAINRADAR TILE
+         =================================================== */
+
+      const sourceUrl =
+        makeSourceTileUrl(
+          timestamp,
+          zi,
+          xi,
+          yi
+        );
+
+      const source =
+        await fetchBuffer(
+          sourceUrl
+        );
+
+      /* ===================================================
+         COLORIZE
+         =================================================== */
+
+      const colored =
+        await colorize(
+          source
+        );
+
+      setCachedTile(
+        cacheKey,
+        colored
+      );
+
+      res.setHeader(
+        "Content-Type",
+        "image/png"
+      );
+
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=30"
+      );
+
+      return res
+        .status(200)
+        .send(colored);
+    } catch (error) {
+      console.error(
+        "RainRadar API:",
+        error
+      );
+
+      /*
+       * Ошибку отдаём как JSON,
+       * а не заставляем Vercel
+       * падать без ответа.
+       */
 
       res.setHeader(
         "Cache-Control",
@@ -713,137 +1243,13 @@ module.exports = async function handler(
         "application/json; charset=utf-8"
       );
 
-      return res.status(200).json({
-        ok: true,
-        frames,
-        latest,
-        step: TIMESTAMP_STEP
-      });
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            error?.message ||
+            "RainRadar API error"
+        });
     }
-
-    /* =====================================================
-       LATEST TIMESTAMP REQUEST
-       ===================================================== */
-
-    if (
-      !timestamp &&
-      !z &&
-      !x &&
-      !y
-    ) {
-      const latest =
-        await getLatestTimestamp();
-
-      res.setHeader(
-        "Cache-Control",
-        "no-store"
-      );
-
-      return res.status(200).json({
-        ok: true,
-        latest,
-        step: TIMESTAMP_STEP
-      });
-    }
-
-    /* =====================================================
-       TILE
-       ===================================================== */
-
-    if (
-      !timestamp ||
-      z === undefined ||
-      x === undefined ||
-      y === undefined
-    ) {
-      return res.status(400).json({
-        ok: false,
-        error:
-          "Нужны timestamp, z, x и y"
-      });
-    }
-
-    const zi = Number(z);
-    const xi = Number(x);
-    const yi = Number(y);
-
-    if (
-      !Number.isInteger(zi) ||
-      !Number.isInteger(xi) ||
-      !Number.isInteger(yi)
-    ) {
-      return res.status(400).json({
-        ok: false,
-        error: "Некорректные координаты тайла"
-      });
-    }
-
-    const cacheKey =
-      `${timestamp}/${zi}/${xi}/${yi}`;
-
-    const cached =
-      getCachedTile(cacheKey);
-
-    if (cached) {
-      res.setHeader(
-        "Content-Type",
-        "image/png"
-      );
-
-      res.setHeader(
-        "Cache-Control",
-        "public, max-age=30"
-      );
-
-      return res.status(200).send(cached);
-    }
-
-    const sourceUrl =
-      makeTileUrl(
-        timestamp,
-        zi,
-        xi,
-        yi
-      );
-
-    const source =
-      await fetchBuffer(sourceUrl);
-
-    const colored =
-      await colorize(source);
-
-    setCachedTile(
-      cacheKey,
-      colored
-    );
-
-    res.setHeader(
-      "Content-Type",
-      "image/png"
-    );
-
-    res.setHeader(
-      "Cache-Control",
-      "public, max-age=30"
-    );
-
-    return res.status(200).send(colored);
-  } catch (error) {
-    console.error(
-      "RainRadar API error:",
-      error
-    );
-
-    res.setHeader(
-      "Cache-Control",
-      "no-store"
-    );
-
-    return res.status(500).json({
-      ok: false,
-      error:
-        error?.message ||
-        "Ошибка RainRadar API"
-    });
-  }
-};
+  };
