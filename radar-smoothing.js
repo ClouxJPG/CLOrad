@@ -1,19 +1,21 @@
 /* =========================================================
-   CLOrad — RADAR FIELD SMOOTHING
+   CLOrad — RADAR CONTOUR SMOOTHING
    ---------------------------------------------------------
+   Векторное сглаживание границ радарных уровней.
+
    • Кнопка внутри «Настройки»
    • После «Кол. кадров»
    • 0% = оригинальный радар
-   • 1–100% = сглаживание радарного поля
-   • Никаких квадратов
-   • Никаких скруглённых квадратов
-   • Никаких CSS filter / blur
-   • В финальном изображении нет новых цветов
-   • Исходные радарные уровни сохраняются
-   • Маленькие интенсивные ядра не удаляются
-   • Фон не превращается в радар
-   • Обрабатывается всё поле как единое значение
-   • Обработка только после отпускания ползунка
+   • 1–100% = сглаживание
+   • НЕТ CSS blur
+   • НЕТ квадратных ячеек
+   • НЕТ скруглённых квадратов
+   • НЕТ новых цветов
+   • НЕТ исчезновения исходного радара при ошибке
+   • Границы строятся между соседними уровнями
+   • Слабые уровни сохраняются
+   • Фон карты не превращается в радар
+   • Обработка после отпускания ползунка
    ========================================================= */
 
 (() => {
@@ -48,7 +50,7 @@
     "cloradSmoothingValue";
 
   /* =======================================================
-     RADAR PALETTES
+     ORIGINAL OY PALETTE
      ======================================================= */
 
   const SOURCE_OY_COLORS = [
@@ -73,6 +75,10 @@
     "#000000"
   ];
 
+  /* =======================================================
+     DEFAULT RGMC PALETTE
+     ======================================================= */
+
   const DEFAULT_TARGET_COLORS = [
     "#b9c1c7",
     "#a9c7f4",
@@ -95,44 +101,61 @@
     "#777c91"
   ];
 
+  /* =======================================================
+     CLASSIFICATION
+     ======================================================= */
+
+  const COLOR_DISTANCE =
+    30;
+
   /*
-     Первые два значения не сглаживаем.
-     Реальное радарное поле начинается с 2.
+     Слабые серые уровни допускаются
+     только рядом с реальным цветным радаром.
   */
 
-  const RADAR_START = 2;
+  const WEAK_RADAR_DISTANCE =
+    48;
 
   /*
-     Цветовой допуск.
+     После построения маски выполняется
+     только классификационная фильтрация.
 
-     Он специально небольшой, чтобы фон
-     карты никогда не стал радаром.
+     Никакого удаления пикселей радара.
   */
-
-  const MAX_COLOR_DISTANCE = 20;
 
   /* =======================================================
      STATE
      ======================================================= */
 
-  let smoothingValue = 0;
+  let smoothingValue =
+    0;
 
-  let smoothingLayer = null;
+  let smoothingLayer =
+    null;
 
-  let sourceOriginalOpacity = "1";
+  let sourceOriginalOpacity =
+    "1";
 
-  let processing = false;
+  let sourceImageElement =
+    null;
 
-  let processToken = 0;
+  let processing =
+    false;
 
-  let releaseTimer = null;
+  let processToken =
+    0;
 
-  let installed = false;
+  let releaseTimer =
+    null;
 
-  let observerStarted = false;
+  let installed =
+    false;
+
+  let frameObserver =
+    null;
 
   /* =======================================================
-     BASIC HELPERS
+     HELPERS
      ======================================================= */
 
   function $(id) {
@@ -155,7 +178,8 @@
 
   function hexToRGB(hex) {
     if (
-      typeof hex !== "string"
+      typeof hex !==
+      "string"
     ) {
       return null;
     }
@@ -188,31 +212,33 @@
       return null;
     }
 
-    const n =
+    const number =
       parseInt(
         value,
         16
       );
 
     if (
-      !Number.isFinite(n)
+      !Number.isFinite(
+        number
+      )
     ) {
       return null;
     }
 
     return {
       r:
-        (n >> 16) & 255,
+        (number >> 16) & 255,
 
       g:
-        (n >> 8) & 255,
+        (number >> 8) & 255,
 
       b:
-        n & 255
+        number & 255
     };
   }
 
-  function colorDistance(
+  function rgbDistance(
     r,
     g,
     b,
@@ -234,10 +260,6 @@
     );
   }
 
-  /* =======================================================
-     CURRENT PALETTE
-     ======================================================= */
-
   function getCurrentPalette() {
     try {
       if (
@@ -257,9 +279,7 @@
           const colors =
             result.colors
               .slice(0, 19)
-              .map(
-                hexToRGB
-              );
+              .map(hexToRGB);
 
           if (
             colors.every(
@@ -283,10 +303,6 @@
       hexToRGB
     );
   }
-
-  /* =======================================================
-     SOURCE IMAGE
-     ======================================================= */
 
   function getSourceImage() {
     const images =
@@ -324,6 +340,10 @@
     return null;
   }
 
+  /* =======================================================
+     LOAD CURRENT FRAME
+     ======================================================= */
+
   function loadImage(url) {
     return new Promise(
       (
@@ -337,18 +357,20 @@
           "async";
 
         image.onload =
-          () =>
+          () => {
             resolve(
               image
             );
+          };
 
         image.onerror =
-          () =>
+          () => {
             reject(
               new Error(
-                "Не удалось загрузить кадр радара"
+                "Не удалось загрузить кадр"
               )
             );
+          };
 
         image.src =
           url;
@@ -360,26 +382,43 @@
      PALETTE DETECTION
      ======================================================= */
 
-  function detectSourcePalette(
-    imageData
+  function paletteScore(
+    imageData,
+    palette
   ) {
+    if (
+      !palette ||
+      palette.length <
+        19
+    ) {
+      return 0;
+    }
+
     const data =
       imageData.data;
 
-    const colors =
-      SOURCE_OY_COLORS.map(
-        hexToRGB
-      );
+    /*
+       Проверяем не каждый пиксель,
+       а через небольшой шаг.
+       Этого достаточно для выбора
+       исходной палитры.
+    */
 
-    let matches = 0;
+    let score =
+      0;
+
+    const step =
+      16;
 
     for (
       let i = 0;
       i < data.length;
-      i += 4
+      i +=
+        4 * step
     ) {
       if (
-        data[i + 3] < 32
+        data[i + 3] <
+        20
       ) {
         continue;
       }
@@ -398,36 +437,43 @@
 
       for (
         let c = 0;
-        c < colors.length;
+        c < 19;
         c++
       ) {
+        const color =
+          palette[c];
+
+        if (
+          !color
+        ) {
+          continue;
+        }
+
         const d =
-          colorDistance(
+          rgbDistance(
             r,
             g,
             b,
-            colors[c]
+            color
           );
 
         if (
           d < best
         ) {
-          best = d;
+          best =
+            d;
         }
       }
 
       if (
         best <=
-        MAX_COLOR_DISTANCE
+        COLOR_DISTANCE
       ) {
-        matches++;
+        score++;
       }
     }
 
-    return {
-      colors,
-      matches
-    };
+    return score;
   }
 
   function choosePalette(
@@ -437,42 +483,40 @@
       getCurrentPalette();
 
     const source =
-      detectSourcePalette(
-        imageData
+      SOURCE_OY_COLORS.map(
+        hexToRGB
       );
 
-    const pixels =
-      imageData.data.length /
-      4;
+    const targetScore =
+      paletteScore(
+        imageData,
+        target
+      );
 
-    /*
-       Если кадр всё ещё в исходной
-       ОЯ-палитре — используем её.
-    */
+    const sourceScore =
+      paletteScore(
+        imageData,
+        source
+      );
 
     if (
-      source.matches >
-      pixels * 0.01
+      sourceScore >
+      targetScore
     ) {
-      return source.colors;
+      return source;
     }
 
     return target;
   }
 
   /* =======================================================
-     BUILD RADAR FIELD
+     INITIAL LABEL MAP
      -------------------------------------------------------
-     Здесь каждый исходный пиксель получает
-     целочисленный радарный уровень.
-
-     -1 = фон
-      0 = служебный
-      1 = служебный
-      2..18 = радар
+     Каждый пиксель получает уровень
+     0–18 или -1 = не радар.
      ======================================================= */
 
-  function buildField(
+  function buildRawLabels(
     imageData,
     width,
     height,
@@ -481,16 +525,18 @@
     const data =
       imageData.data;
 
-    const field =
+    const total =
+      width * height;
+
+    const labels =
       new Int8Array(
-        width * height
+        total
       );
 
-    field.fill(-1);
+    labels.fill(-1);
 
     /*
-       Кеш цветов очень сильно
-       снижает нагрузку на iPhone.
+       Быстрый кеш RGB -> класс.
     */
 
     const cache =
@@ -515,8 +561,11 @@
         const p =
           index * 4;
 
+        const alpha =
+          data[p + 3];
+
         if (
-          data[p + 3] < 32
+          alpha < 20
         ) {
           continue;
         }
@@ -538,7 +587,7 @@
         if (
           cache.has(key)
         ) {
-          field[index] =
+          labels[index] =
             cache.get(key);
 
           continue;
@@ -550,22 +599,22 @@
         let bestDistance =
           Infinity;
 
-        /*
-           Только настоящие радарные
-           классы.
-        */
-
         for (
-          let c =
-            RADAR_START;
+          let c = 0;
           c < palette.length;
           c++
         ) {
           const color =
             palette[c];
 
+          if (
+            !color
+          ) {
+            continue;
+          }
+
           const d =
-            colorDistance(
+            rgbDistance(
               r,
               g,
               b,
@@ -579,17 +628,17 @@
             bestDistance =
               d;
 
-            best = c;
+            best =
+              c;
           }
         }
 
         if (
-          best <
-          RADAR_START ||
           bestDistance >
-            MAX_COLOR_DISTANCE
+          COLOR_DISTANCE
         ) {
-          best = -1;
+          best =
+            -1;
         }
 
         cache.set(
@@ -597,189 +646,1073 @@
           best
         );
 
-        field[index] =
+        labels[index] =
           best;
       }
     }
 
-    return field;
+    return labels;
   }
 
   /* =======================================================
-     RADAR PRESENCE
+     STRONG RADAR MASK
+     -------------------------------------------------------
+     Классы 2–18 — цветной радар.
      ======================================================= */
 
-  function countRadarPixels(
-    field
+  function buildStrongMask(
+    labels,
+    width,
+    height
   ) {
-    let count = 0;
+    const total =
+      width * height;
+
+    const mask =
+      new Uint8Array(
+        total
+      );
 
     for (
       let i = 0;
-      i < field.length;
+      i < total;
       i++
     ) {
       if (
-        field[i] >=
-        RADAR_START
+        labels[i] >= 2
       ) {
-        count++;
+        mask[i] =
+          1;
       }
     }
 
-    return count;
+    return mask;
   }
 
   /* =======================================================
-     FIELD INTERPOLATION
+     DISTANCE FROM STRONG RADAR
      -------------------------------------------------------
-     НЕ РИСУЕМ КВАДРАТЫ.
+     BFS до WEAK_RADAR_DISTANCE пикселей.
 
-     Вместо этого вычисляем непрерывное
-     значение радарного поля вокруг
-     каждой точки.
-
-     В финальный canvas попадут только
-     существующие классы.
+     Используется только для определения
+     слабых серых уровней.
      ======================================================= */
 
-  function sampleField(
-    field,
+  function buildStrongDistance(
+    strongMask,
     width,
-    height,
-    x,
-    y
+    height
   ) {
-    const x0 =
-      Math.floor(x);
+    const total =
+      width * height;
 
-    const y0 =
-      Math.floor(y);
-
-    const x1 =
-      Math.min(
-        width - 1,
-        x0 + 1
+    const distance =
+      new Int16Array(
+        total
       );
 
-    const y1 =
-      Math.min(
-        height - 1,
-        y0 + 1
+    distance.fill(-1);
+
+    const queue =
+      new Int32Array(
+        total
       );
 
-    const fx =
-      x - x0;
+    let head =
+      0;
 
-    const fy =
-      y - y0;
-
-    function value(
-      px,
-      py
-    ) {
-      if (
-        px < 0 ||
-        py < 0 ||
-        px >= width ||
-        py >= height
-      ) {
-        return -1;
-      }
-
-      return field[
-        py * width + px
-      ];
-    }
-
-    const a =
-      value(
-        x0,
-        y0
-      );
-
-    const b =
-      value(
-        x1,
-        y0
-      );
-
-    const c =
-      value(
-        x0,
-        y1
-      );
-
-    const d =
-      value(
-        x1,
-        y1
-      );
-
-    /*
-       Фон не участвует как числовой
-       уровень.
-
-       Если рядом есть радар,
-       используем только радарные
-       значения.
-    */
-
-    let sum = 0;
-    let weight = 0;
-
-    const values = [
-      [a, (1 - fx) * (1 - fy)],
-      [b, fx * (1 - fy)],
-      [c, (1 - fx) * fy],
-      [d, fx * fy]
-    ];
+    let tail =
+      0;
 
     for (
-      const pair of values
+      let i = 0;
+      i < total;
+      i++
     ) {
-      const v =
-        pair[0];
+      if (
+        strongMask[i]
+      ) {
+        distance[i] =
+          0;
 
-      const w =
-        pair[1];
+        queue[tail++] =
+          i;
+      }
+    }
+
+    while (
+      head < tail
+    ) {
+      const index =
+        queue[head++];
+
+      const d =
+        distance[index];
 
       if (
-        v >=
-        RADAR_START
+        d >=
+        WEAK_RADAR_DISTANCE
       ) {
-        sum +=
-          v * w;
+        continue;
+      }
 
-        weight +=
-          w;
+      const x =
+        index % width;
+
+      const y =
+        (index / width) |
+        0;
+
+      const nextDistance =
+        d + 1;
+
+      if (
+        x > 0
+      ) {
+        const n =
+          index - 1;
+
+        if (
+          distance[n] <
+          0
+        ) {
+          distance[n] =
+            nextDistance;
+
+          queue[tail++] =
+            n;
+        }
+      }
+
+      if (
+        x <
+        width - 1
+      ) {
+        const n =
+          index + 1;
+
+        if (
+          distance[n] <
+          0
+        ) {
+          distance[n] =
+            nextDistance;
+
+          queue[tail++] =
+            n;
+        }
+      }
+
+      if (
+        y > 0
+      ) {
+        const n =
+          index - width;
+
+        if (
+          distance[n] <
+          0
+        ) {
+          distance[n] =
+            nextDistance;
+
+          queue[tail++] =
+            n;
+        }
+      }
+
+      if (
+        y <
+        height - 1
+      ) {
+        const n =
+          index + width;
+
+        if (
+          distance[n] <
+          0
+        ) {
+          distance[n] =
+            nextDistance;
+
+          queue[tail++] =
+            n;
+        }
+      }
+    }
+
+    return distance;
+  }
+
+  /* =======================================================
+     FINAL RADAR LABELS
+     -------------------------------------------------------
+     Серые уровни 0/1 сохраняются только
+     возле реального цветного радара.
+
+     Поэтому фон карты не превращается
+     в огромный серый прямоугольник.
+     ======================================================= */
+
+  function buildFinalLabels(
+    rawLabels,
+    strongDistance,
+    width,
+    height
+  ) {
+    const total =
+      width * height;
+
+    const labels =
+      new Int8Array(
+        total
+      );
+
+    labels.fill(-1);
+
+    for (
+      let i = 0;
+      i < total;
+      i++
+    ) {
+      const value =
+        rawLabels[i];
+
+      if (
+        value >= 2
+      ) {
+        labels[i] =
+          value;
+
+        continue;
+      }
+
+      if (
+        value === 0 ||
+        value === 1
+      ) {
+        const d =
+          strongDistance[i];
+
+        if (
+          d >= 0 &&
+          d <=
+            WEAK_RADAR_DISTANCE
+        ) {
+          labels[i] =
+            value;
+        }
+      }
+    }
+
+    return labels;
+  }
+
+  /* =======================================================
+     BOUNDS
+     ======================================================= */
+
+  function findRadarBounds(
+    labels,
+    width,
+    height
+  ) {
+    let minX =
+      width;
+
+    let minY =
+      height;
+
+    let maxX =
+      -1;
+
+    let maxY =
+      -1;
+
+    let count =
+      0;
+
+    for (
+      let y = 0;
+      y < height;
+      y++
+    ) {
+      const row =
+        y * width;
+
+      for (
+        let x = 0;
+        x < width;
+        x++
+      ) {
+        if (
+          labels[row + x] <
+          0
+        ) {
+          continue;
+        }
+
+        count++;
+
+        if (
+          x < minX
+        ) {
+          minX =
+            x;
+        }
+
+        if (
+          y < minY
+        ) {
+          minY =
+            y;
+        }
+
+        if (
+          x > maxX
+        ) {
+          maxX =
+            x;
+        }
+
+        if (
+          y > maxY
+        ) {
+          maxY =
+            y;
+        }
       }
     }
 
     if (
-      weight <= 0
+      count === 0
     ) {
-      return -1;
+      return null;
     }
 
-    return (
-      sum / weight
-    );
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      count
+    };
   }
 
   /* =======================================================
-     SMOOTH FIELD
+     THRESHOLD MASK
      -------------------------------------------------------
-     Сила определяет размер
-     непрерывной интерполяции.
+     ВАЖНЕЙШАЯ ЧАСТЬ.
 
-     5% = лёгкое изменение.
-     100% = сильное сглаживание.
+     Мы НЕ сглаживаем каждый цвет отдельно.
+
+     Для уровня N строится:
+
+       class >= N
+
+     Поэтому все контуры автоматически
+     вложены друг в друга.
      ======================================================= */
 
-  function getSmoothRadius(
+  function buildThresholdMask(
+    labels,
+    width,
+    height,
+    threshold
+  ) {
+    const total =
+      width * height;
+
+    const mask =
+      new Uint8Array(
+        total
+      );
+
+    for (
+      let i = 0;
+      i < total;
+      i++
+    ) {
+      if (
+        labels[i] >=
+        threshold
+      ) {
+        mask[i] =
+          1;
+      }
+    }
+
+    return mask;
+  }
+
+  /* =======================================================
+     MARCHING SQUARES
+     ======================================================= */
+
+  function buildSegments(
+    mask,
+    width,
+    height,
+    bounds
+  ) {
+    const segments =
+      [];
+
+    if (
+      !bounds
+    ) {
+      return segments;
+    }
+
+    const minX =
+      Math.max(
+        0,
+        bounds.minX - 1
+      );
+
+    const minY =
+      Math.max(
+        0,
+        bounds.minY - 1
+      );
+
+    const maxX =
+      Math.min(
+        width - 2,
+        bounds.maxX + 1
+      );
+
+    const maxY =
+      Math.min(
+        height - 2,
+        bounds.maxY + 1
+      );
+
+    function inside(
+      x,
+      y
+    ) {
+      if (
+        x < 0 ||
+        y < 0 ||
+        x >= width ||
+        y >= height
+      ) {
+        return false;
+      }
+
+      return mask[
+        y * width + x
+      ] !== 0;
+    }
+
+    function add(
+      ax,
+      ay,
+      bx,
+      by
+    ) {
+      segments.push([
+        ax,
+        ay,
+        bx,
+        by
+      ]);
+    }
+
+    for (
+      let y = minY;
+      y <= maxY;
+      y++
+    ) {
+      for (
+        let x = minX;
+        x <= maxX;
+        x++
+      ) {
+        const tl =
+          inside(
+            x,
+            y
+          )
+            ? 1
+            : 0;
+
+        const tr =
+          inside(
+            x + 1,
+            y
+          )
+            ? 1
+            : 0;
+
+        const br =
+          inside(
+            x + 1,
+            y + 1
+          )
+            ? 1
+            : 0;
+
+        const bl =
+          inside(
+            x,
+            y + 1
+          )
+            ? 1
+            : 0;
+
+        const code =
+          tl |
+          (tr << 1) |
+          (br << 2) |
+          (bl << 3);
+
+        if (
+          code === 0 ||
+          code === 15
+        ) {
+          continue;
+        }
+
+        const top = [
+          2 * x + 1,
+          2 * y
+        ];
+
+        const right = [
+          2 * x + 2,
+          2 * y + 1
+        ];
+
+        const bottom = [
+          2 * x + 1,
+          2 * y + 2
+        ];
+
+        const left = [
+          2 * x,
+          2 * y + 1
+        ];
+
+        switch (
+          code
+        ) {
+          case 1:
+            add(
+              left[0],
+              left[1],
+              top[0],
+              top[1]
+            );
+            break;
+
+          case 2:
+            add(
+              top[0],
+              top[1],
+              right[0],
+              right[1]
+            );
+            break;
+
+          case 3:
+            add(
+              left[0],
+              left[1],
+              right[0],
+              right[1]
+            );
+            break;
+
+          case 4:
+            add(
+              right[0],
+              right[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 5:
+            /*
+               Для неоднозначной клетки
+               используем разбиение,
+               сохраняющее два отдельных
+               радара.
+            */
+
+            add(
+              left[0],
+              left[1],
+              top[0],
+              top[1]
+            );
+
+            add(
+              right[0],
+              right[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 6:
+            add(
+              top[0],
+              top[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 7:
+            add(
+              left[0],
+              left[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 8:
+            add(
+              bottom[0],
+              bottom[1],
+              left[0],
+              left[1]
+            );
+            break;
+
+          case 9:
+            add(
+              top[0],
+              top[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 10:
+            add(
+              top[0],
+              top[1],
+              left[0],
+              left[1]
+            );
+
+            add(
+              right[0],
+              right[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 11:
+            add(
+              right[0],
+              right[1],
+              bottom[0],
+              bottom[1]
+            );
+            break;
+
+          case 12:
+            add(
+              right[0],
+              right[1],
+              left[0],
+              left[1]
+            );
+            break;
+
+          case 13:
+            add(
+              top[0],
+              top[1],
+              right[0],
+              right[1]
+            );
+            break;
+
+          case 14:
+            add(
+              top[0],
+              top[1],
+              left[0],
+              left[1]
+            );
+            break;
+        }
+      }
+    }
+
+    return segments;
+  }
+
+  /* =======================================================
+     CHAIN
+     ======================================================= */
+
+  function pointKey(
+    x,
+    y
+  ) {
+    return (
+      x +
+      "," +
+      y
+    );
+  }
+
+  function chainSegments(
+    segments
+  ) {
+    const result =
+      [];
+
+    if (
+      !segments.length
+    ) {
+      return result;
+    }
+
+    const connections =
+      new Map();
+
+    function connect(
+      x,
+      y,
+      index
+    ) {
+      const key =
+        pointKey(
+          x,
+          y
+        );
+
+      let list =
+        connections.get(
+          key
+        );
+
+      if (
+        !list
+      ) {
+        list =
+          [];
+
+        connections.set(
+          key,
+          list
+        );
+      }
+
+      list.push(
+        index
+      );
+    }
+
+    for (
+      let i = 0;
+      i < segments.length;
+      i++
+    ) {
+      const s =
+        segments[i];
+
+      connect(
+        s[0],
+        s[1],
+        i
+      );
+
+      connect(
+        s[2],
+        s[3],
+        i
+      );
+    }
+
+    const used =
+      new Uint8Array(
+        segments.length
+      );
+
+    for (
+      let start = 0;
+      start < segments.length;
+      start++
+    ) {
+      if (
+        used[start]
+      ) {
+        continue;
+      }
+
+      const first =
+        segments[start];
+
+      let startX =
+        first[0];
+
+      let startY =
+        first[1];
+
+      let currentX =
+        first[2];
+
+      let currentY =
+        first[3];
+
+      const points =
+        [];
+
+      points.push([
+        startX / 2,
+        startY / 2
+      ]);
+
+      points.push([
+        currentX / 2,
+        currentY / 2
+      ]);
+
+      used[start] =
+        1;
+
+      let guard =
+        0;
+
+      while (
+        guard++ <
+        segments.length + 8
+      ) {
+        if (
+          currentX === startX &&
+          currentY === startY
+        ) {
+          break;
+        }
+
+        const list =
+          connections.get(
+            pointKey(
+              currentX,
+              currentY
+            )
+          );
+
+        if (
+          !list
+        ) {
+          break;
+        }
+
+        let next =
+          -1;
+
+        for (
+          let i = 0;
+          i < list.length;
+          i++
+        ) {
+          const candidate =
+            list[i];
+
+          if (
+            !used[candidate]
+          ) {
+            next =
+              candidate;
+
+            break;
+          }
+        }
+
+        if (
+          next < 0
+        ) {
+          break;
+        }
+
+        used[next] =
+          1;
+
+        const s =
+          segments[next];
+
+        if (
+          s[0] ===
+            currentX &&
+          s[1] ===
+            currentY
+        ) {
+          currentX =
+            s[2];
+
+          currentY =
+            s[3];
+        } else {
+          currentX =
+            s[0];
+
+          currentY =
+            s[1];
+        }
+
+        points.push([
+          currentX / 2,
+          currentY / 2
+        ]);
+      }
+
+      /*
+         Для сглаживания нужны замкнутые
+         контуры.
+
+         Если контур замкнулся —
+         сохраняем его.
+
+         Если он упирается в край
+         изображения — тоже сохраняем,
+         но замыкаем по краю.
+      */
+
+      if (
+        points.length >= 3
+      ) {
+        const firstPoint =
+          points[0];
+
+        const lastPoint =
+          points[
+            points.length - 1
+          ];
+
+        const closed =
+          Math.abs(
+            firstPoint[0] -
+            lastPoint[0]
+          ) < 0.01 &&
+          Math.abs(
+            firstPoint[1] -
+            lastPoint[1]
+          ) < 0.01;
+
+        if (
+          closed
+        ) {
+          points.pop();
+
+          if (
+            points.length >= 3
+          ) {
+            result.push(
+              points
+            );
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /* =======================================================
+     CONTOUR SIMPLIFICATION
+     -------------------------------------------------------
+     Убираем только дублирующиеся точки.
+     Никакие радарные пиксели здесь
+     не удаляются.
+     ======================================================= */
+
+  function simplifyContour(
+    points
+  ) {
+    if (
+      points.length < 4
+    ) {
+      return points;
+    }
+
+    const result =
+      [];
+
+    let last =
+      null;
+
+    for (
+      const p of points
+    ) {
+      if (
+        !last
+      ) {
+        result.push(
+          p
+        );
+
+        last =
+          p;
+
+        continue;
+      }
+
+      const dx =
+        p[0] -
+        last[0];
+
+      const dy =
+        p[1] -
+        last[1];
+
+      if (
+        Math.abs(dx) >
+          0.001 ||
+        Math.abs(dy) >
+          0.001
+      ) {
+        result.push(
+          p
+        );
+
+        last =
+          p;
+      }
+    }
+
+    return result;
+  }
+
+  /* =======================================================
+     SMOOTH CLOSED CONTOUR
+     -------------------------------------------------------
+     Сначала слегка смещаем точки
+     к соседям.
+
+     Затем рисуем через середины
+     соседних точек.
+
+     Поэтому видимых квадратных
+     радарных клеток не остаётся.
+     ======================================================= */
+
+  function smoothContour(
+    points,
     strength
   ) {
+    let result =
+      simplifyContour(
+        points
+      );
+
+    if (
+      result.length < 4
+    ) {
+      return result;
+    }
+
     const s =
       clamp(
         strength,
@@ -788,763 +1721,248 @@
       ) / 100;
 
     /*
-       Радиус специально ограничен.
+       Очень маленький эффект
+       на малых значениях.
 
-       Нам не нужно уничтожать
-       структуру реального радара.
+       При 5%:
+       почти исходная геометрия.
+
+       При 100%:
+       сильное сглаживание.
     */
 
-    return (
-      0.20 +
-      s * 2.4
-    );
-  }
+    const factor =
+      0.008 +
+      s * 0.105;
 
-  /* =======================================================
-     CONTINUOUS FIELD SAMPLE
-     ======================================================= */
-
-  function sampleSmoothField(
-    field,
-    width,
-    height,
-    x,
-    y,
-    radius
-  ) {
-    /*
-       При маленьком сглаживании
-       достаточно bilinear sample.
-    */
+    let iterations =
+      1;
 
     if (
-      radius <= 0.5
+      strength >= 35
     ) {
-      return sampleField(
-        field,
-        width,
-        height,
-        x,
-        y
-      );
+      iterations =
+        2;
     }
 
-    /*
-       Усредняем значения
-       по небольшому кругу.
+    if (
+      strength >= 70
+    ) {
+      iterations =
+        3;
+    }
 
-       Это используется только для
-       определения ГРАНИЦЫ.
-
-       В canvas никогда не рисуется
-       получившийся промежуточный цвет.
-    */
-
-    const r =
-      Math.min(
-        3,
-        Math.ceil(radius)
-      );
-
-    let sum = 0;
-    let weight = 0;
+    if (
+      strength >= 92
+    ) {
+      iterations =
+        4;
+    }
 
     for (
-      let dy = -r;
-      dy <= r;
-      dy++
+      let pass = 0;
+      pass < iterations;
+      pass++
     ) {
+      const next =
+        new Array(
+          result.length
+        );
+
+      const count =
+        result.length;
+
       for (
-        let dx = -r;
-        dx <= r;
-        dx++
+        let i = 0;
+        i < count;
+        i++
       ) {
-        const distance =
-          Math.sqrt(
-            dx * dx +
-            dy * dy
-          );
-
-        if (
-          distance >
-          radius
-        ) {
-          continue;
-        }
-
-        const sx =
-          x + dx;
-
-        const sy =
-          y + dy;
-
-        if (
-          sx < 0 ||
-          sy < 0 ||
-          sx >= width ||
-          sy >= height
-        ) {
-          continue;
-        }
-
-        const value =
-          field[
-            Math.floor(sy) *
-              width +
-            Math.floor(sx)
+        const previous =
+          result[
+            (i - 1 + count) %
+              count
           ];
 
-        if (
-          value <
-          RADAR_START
-        ) {
-          continue;
-        }
+        const current =
+          result[i];
+
+        const following =
+          result[
+            (i + 1) %
+              count
+          ];
 
         /*
-           Чем ближе исходный пиксель,
-           тем больше его влияние.
+           Локальное сглаживание.
+
+           Не происходит масштабного
+           сжатия всей области.
         */
 
-        const w =
-          1 /
+        const targetX =
           (
-            1 +
-            distance
-          );
+            previous[0] +
+            current[0] +
+            following[0]
+          ) / 3;
 
-        sum +=
-          value * w;
+        const targetY =
+          (
+            previous[1] +
+            current[1] +
+            following[1]
+          ) / 3;
 
-        weight +=
-          w;
+        next[i] = [
+          current[0] +
+            (
+              targetX -
+              current[0]
+            ) *
+              factor,
+
+          current[1] +
+            (
+              targetY -
+              current[1]
+            ) *
+              factor
+        ];
       }
+
+      result =
+        next;
     }
 
-    if (
-      weight <= 0
-    ) {
-      return -1;
-    }
-
-    return (
-      sum / weight
-    );
+    return result;
   }
 
   /* =======================================================
-     CLASS PRESERVATION
-     -------------------------------------------------------
-     Не позволяем сглаживанию
-     уничтожить редкий класс.
-
-     Если исходный класс присутствует
-     в кадре, его центры сохраняются.
+     DRAW CONTOURS
      ======================================================= */
 
-  function collectClassSeeds(
-    field,
-    width,
-    height
+  function drawContours(
+    ctx,
+    contours,
+    color
   ) {
-    const seeds =
-      new Map();
+    if (
+      !contours.length
+    ) {
+      return;
+    }
+
+    ctx.save();
+
+    ctx.beginPath();
 
     for (
-      let i = 0;
-      i < field.length;
-      i++
+      const contour of contours
     ) {
-      const level =
-        field[i];
-
       if (
-        level <
-        RADAR_START
+        contour.length < 3
       ) {
         continue;
       }
 
-      let list =
-        seeds.get(level);
+      const count =
+        contour.length;
 
-      if (
-        !list
-      ) {
-        list = [];
-        seeds.set(
-          level,
-          list
-        );
-      }
+      const first =
+        contour[0];
+
+      const second =
+        contour[1];
 
       /*
-         Не требуется хранить
-         каждый пиксель как объект.
+         Начинаем не с вершины,
+         а с середины первой пары.
+
+         Это создаёт непрерывную
+         кривую без углов квадратов.
       */
 
-      if (
-        list.length < 600
-      ) {
-        const x =
-          i % width;
+      const startX =
+        (
+          first[0] +
+          second[0]
+        ) / 2;
 
-        const y =
-          Math.floor(
-            i / width
-          );
+      const startY =
+        (
+          first[1] +
+          second[1]
+        ) / 2;
 
-        list.push([
-          x,
-          y
-        ]);
-      }
-    }
-
-    return seeds;
-  }
-
-  /* =======================================================
-     RENDER
-     -------------------------------------------------------
-     Суперсэмплинг:
-
-     сначала создаём более плотное
-     непрерывное поле, затем каждый
-     результат получает только один
-     существующий радарный цвет.
-
-     Поэтому на выходе нет новых RGB.
-     ======================================================= */
-
-  function renderSmoothRadar(
-    field,
-    width,
-    height,
-    palette,
-    strength,
-    token
-  ) {
-    /*
-       Увеличение разрешения позволяет
-       получить плавную границу без
-       квадратных ячеек.
-    */
-
-    const scale =
-      strength < 20
-        ? 2
-        : strength < 60
-          ? 2
-          : 3;
-
-    const outWidth =
-      width * scale;
-
-    const outHeight =
-      height * scale;
-
-    const canvas =
-      document.createElement(
-        "canvas"
+      ctx.moveTo(
+        startX,
+        startY
       );
-
-    canvas.width =
-      outWidth;
-
-    canvas.height =
-      outHeight;
-
-    const ctx =
-      canvas.getContext(
-        "2d"
-      );
-
-    if (
-      !ctx
-    ) {
-      return null;
-    }
-
-    ctx.clearRect(
-      0,
-      0,
-      outWidth,
-      outHeight
-    );
-
-    const radius =
-      getSmoothRadius(
-        strength
-      );
-
-    /*
-       Рисуем только существующие
-       радарные классы.
-
-       Фон остаётся прозрачным.
-    */
-
-    const image =
-      ctx.createImageData(
-        outWidth,
-        outHeight
-      );
-
-    const output =
-      image.data;
-
-    /*
-       Для каждого суперпикселя
-       вычисляется непрерывное значение
-       поля.
-
-       После этого оно квантуется
-       обратно к существующему уровню.
-    */
-
-    for (
-      let oy = 0;
-      oy < outHeight;
-      oy++
-    ) {
-      if (
-        token !==
-        processToken
-      ) {
-        return null;
-      }
-
-      const sourceY =
-        oy / scale;
 
       for (
-        let ox = 0;
-        ox < outWidth;
-        ox++
+        let i = 1;
+        i <= count;
+        i++
       ) {
-        const sourceX =
-          ox / scale;
+        const current =
+          contour[
+            i % count
+          ];
 
-        const value =
-          sampleSmoothField(
-            field,
-            width,
-            height,
-            sourceX,
-            sourceY,
-            radius
-          );
+        const next =
+          contour[
+            (i + 1) %
+              count
+          ];
 
-        if (
-          value <
-          RADAR_START
-        ) {
-          continue;
-        }
-
-        /*
-           Округление обратно
-           к существующему классу.
-
-           Никакого нового цвета.
-        */
-
-        let level =
-          Math.round(
-            value
-          );
-
-        level =
-          clamp(
-            level,
-            RADAR_START,
-            palette.length - 1
-          );
-
-        const color =
-          palette[level];
-
-        if (
-          !color
-        ) {
-          continue;
-        }
-
-        const p =
+        const middleX =
           (
-            oy *
-              outWidth +
-            ox
-          ) * 4;
+            current[0] +
+            next[0]
+          ) / 2;
 
-        output[p] =
-          color.r;
+        const middleY =
+          (
+            current[1] +
+            next[1]
+          ) / 2;
 
-        output[p + 1] =
-          color.g;
-
-        output[p + 2] =
-          color.b;
-
-        output[p + 3] =
-          255;
-      }
-    }
-
-    /*
-       Возвращаем исходные редкие
-       интенсивные классы.
-
-       Они не могут исчезнуть
-       из-за интерполяции.
-    */
-
-    const seeds =
-      collectClassSeeds(
-        field,
-        width,
-        height
-      );
-
-    for (
-      const [level, points]
-      of seeds
-    ) {
-      if (
-        token !==
-        processToken
-      ) {
-        return null;
-      }
-
-      const color =
-        palette[level];
-
-      if (
-        !color
-      ) {
-        continue;
-      }
-
-      for (
-        const point of points
-      ) {
-        const x =
-          Math.round(
-            point[0] *
-            scale
-          );
-
-        const y =
-          Math.round(
-            point[1] *
-            scale
-          );
-
-        /*
-           Не рисуем квадрат.
-
-           Сохраняем наличие исходного
-           класса через маленькую
-           радиальную область.
-        */
-
-        const seedRadius =
-          Math.max(
-            1,
-            Math.min(
-              3,
-              Math.ceil(
-                strength /
-                35
-              )
-            )
-          );
-
-        for (
-          let dy =
-            -seedRadius;
-          dy <=
-            seedRadius;
-          dy++
-        ) {
-          for (
-            let dx =
-              -seedRadius;
-            dx <=
-              seedRadius;
-            dx++
-          ) {
-            const distance =
-              Math.sqrt(
-                dx * dx +
-                dy * dy
-              );
-
-            if (
-              distance >
-              seedRadius
-            ) {
-              continue;
-            }
-
-            const px =
-              x + dx;
-
-            const py =
-              y + dy;
-
-            if (
-              px < 0 ||
-              py < 0 ||
-              px >= outWidth ||
-              py >= outHeight
-            ) {
-              continue;
-            }
-
-            const p =
-              (
-                py *
-                  outWidth +
-                px
-              ) * 4;
-
-            /*
-               Только если здесь уже
-               есть радарное значение
-               или это сам центр исходного
-               пикселя.
-            */
-
-            if (
-              dx === 0 &&
-              dy === 0
-            ) {
-              output[p] =
-                color.r;
-
-              output[p + 1] =
-                color.g;
-
-              output[p + 2] =
-                color.b;
-
-              output[p + 3] =
-                255;
-            }
-          }
-        }
-      }
-    }
-
-    /*
-       Масштабированное изображение
-       возвращаем обратно в исходный
-       размер.
-
-       Canvas imageSmoothingEnabled
-       здесь используется только для
-       геометрического ресэмплинга.
-
-       Цвета после него снова
-       квантуются палитрой.
-    */
-
-    const finalCanvas =
-      document.createElement(
-        "canvas"
-      );
-
-    finalCanvas.width =
-      width;
-
-    finalCanvas.height =
-      height;
-
-    const finalCtx =
-      finalCanvas.getContext(
-        "2d"
-      );
-
-    if (
-      !finalCtx
-    ) {
-      return null;
-    }
-
-    finalCtx.clearRect(
-      0,
-      0,
-      width,
-      height
-    );
-
-    /*
-       Это не CSS blur и не размытие
-       радарных значений.
-
-       Здесь только геометрическое
-       уменьшение сверхплотного
-       непрерывного изображения.
-    */
-
-    finalCtx.imageSmoothingEnabled =
-      true;
-
-    finalCtx.imageSmoothingQuality =
-      "high";
-
-    finalCtx.drawImage(
-      canvas,
-      0,
-      0,
-      width,
-      height
-    );
-
-    /*
-       После ресэмплинга снова
-       жёстко возвращаем только
-       существующие цвета палитры.
-
-       Это гарантирует отсутствие
-       новых RGB-цветов.
-    */
-
-    const finalData =
-      finalCtx.getImageData(
-        0,
-        0,
-        width,
-        height
-      );
-
-    const pixels =
-      finalData.data;
-
-    const colorCache =
-      new Map();
-
-    for (
-      let i = 0;
-      i < pixels.length;
-      i += 4
-    ) {
-      if (
-        pixels[i + 3] <
-        20
-      ) {
-        pixels[i + 3] =
-          0;
-
-        continue;
-      }
-
-      const r =
-        pixels[i];
-
-      const g =
-        pixels[i + 1];
-
-      const b =
-        pixels[i + 2];
-
-      const key =
-        (
-          r << 16
-        ) |
-        (
-          g << 8
-        ) |
-        b;
-
-      let level =
-        colorCache.get(
-          key
-        );
-
-      if (
-        level ===
-        undefined
-      ) {
-        let best =
-          RADAR_START;
-
-        let bestDistance =
-          Infinity;
-
-        for (
-          let c =
-            RADAR_START;
-          c < palette.length;
-          c++
-        ) {
-          const d =
-            colorDistance(
-              r,
-              g,
-              b,
-              palette[c]
-            );
-
-          if (
-            d <
-            bestDistance
-          ) {
-            bestDistance =
-              d;
-
-            best = c;
-          }
-        }
-
-        level =
-          best;
-
-        colorCache.set(
-          key,
-          level
+        ctx.quadraticCurveTo(
+          current[0],
+          current[1],
+          middleX,
+          middleY
         );
       }
 
-      const color =
-        palette[level];
-
-      if (
-        !color
-      ) {
-        pixels[i + 3] =
-          0;
-
-        continue;
-      }
-
-      pixels[i] =
-        color.r;
-
-      pixels[i + 1] =
-        color.g;
-
-      pixels[i + 2] =
-        color.b;
-
-      pixels[i + 3] =
-        255;
+      ctx.closePath();
     }
 
-    finalCtx.putImageData(
-      finalData,
-      0,
-      0
+    /*
+       ВАЖНО:
+       никаких alpha,
+       никаких blend,
+       никаких фильтров.
+    */
+
+    ctx.globalAlpha =
+      1;
+
+    ctx.globalCompositeOperation =
+      "source-over";
+
+    ctx.fillStyle =
+      color;
+
+    ctx.fill(
+      "evenodd"
     );
 
-    return finalCanvas;
+    ctx.restore();
   }
 
   /* =======================================================
-     REMOVE SMOOTHED LAYER
+     REMOVE SMOOTHING LAYER
      ======================================================= */
 
   function removeSmoothedLayer() {
@@ -1580,7 +1998,12 @@
       source
     ) {
       source.style.opacity =
-        sourceOriginalOpacity ||
+        "1";
+
+      sourceImageElement =
+        source;
+
+      sourceOriginalOpacity =
         "1";
     }
 
@@ -1589,64 +2012,182 @@
   }
 
   /* =======================================================
-     INSTALL RESULT
+     INSTALL LAYER
+     -------------------------------------------------------
+     Оригинал скрывается ТОЛЬКО после
+     загрузки нового слоя.
+
+     Если новый слой не загрузился —
+     GIF остаётся видимой.
      ======================================================= */
 
   function installSmoothedLayer(
-    dataURL
+    dataURL,
+    token
   ) {
-    if (
-      !window.map
-    ) {
-      return;
-    }
+    return new Promise(
+      resolve => {
+        if (
+          token !==
+          processToken
+        ) {
+          resolve(
+            false
+          );
 
-    removeSmoothedLayer();
-
-    const layer =
-      L.imageOverlay(
-        dataURL,
-        GIF_BOUNDS,
-        {
-          opacity: 1,
-          interactive: false,
-          zIndex: 7,
-          className:
-            "clorad-gif-radar-smoothed"
+          return;
         }
-      );
 
-    layer.addTo(
-      window.map
+        if (
+          !window.map
+        ) {
+          resolve(
+            false
+          );
+
+          return;
+        }
+
+        const layer =
+          L.imageOverlay(
+            dataURL,
+            GIF_BOUNDS,
+            {
+              opacity: 1,
+              interactive: false,
+              zIndex: 7,
+              className:
+                "clorad-gif-radar-smoothed"
+            }
+          );
+
+        let finished =
+          false;
+
+        const cleanup =
+          () => {
+            if (
+              finished
+            ) {
+              return;
+            }
+
+            finished =
+              true;
+          };
+
+        layer.once(
+          "load",
+          () => {
+            if (
+              token !==
+              processToken
+            ) {
+              if (
+                window.map.hasLayer(
+                  layer
+                )
+              ) {
+                window.map.removeLayer(
+                  layer
+                );
+              }
+
+              cleanup();
+
+              resolve(
+                false
+              );
+
+              return;
+            }
+
+            /*
+               Новый слой реально
+               загрузился.
+
+               Только сейчас
+               скрываем GIF.
+            */
+
+            const source =
+              getSourceImage();
+
+            if (
+              source
+            ) {
+              sourceImageElement =
+                source;
+
+              sourceOriginalOpacity =
+                "1";
+
+              source.style.opacity =
+                "0";
+            }
+
+            smoothingLayer =
+              layer;
+
+            try {
+              layer.bringToFront();
+            } catch (
+              error
+            ) {}
+
+            cleanup();
+
+            resolve(
+              true
+            );
+          }
+        );
+
+        layer.once(
+          "error",
+          () => {
+            if (
+              window.map.hasLayer(
+                layer
+              )
+            ) {
+              window.map.removeLayer(
+                layer
+              );
+            }
+
+            /*
+               Оригинал намеренно
+               НЕ скрываем.
+            */
+
+            const source =
+              getSourceImage();
+
+            if (
+              source
+            ) {
+              source.style.opacity =
+                "1";
+            }
+
+            cleanup();
+
+            resolve(
+              false
+            );
+          }
+        );
+
+        layer.addTo(
+          window.map
+        );
+      }
     );
-
-    smoothingLayer =
-      layer;
-
-    const source =
-      getSourceImage();
-
-    if (
-      source
-    ) {
-      sourceOriginalOpacity =
-        source.style.opacity ||
-        "1";
-
-      source.style.opacity =
-        "0";
-    }
-
-    if (
-      typeof layer.bringToFront ===
-      "function"
-    ) {
-      layer.bringToFront();
-    }
   }
 
   /* =======================================================
-     PROCESS FRAME
+     BUILD SMOOTH RADAR
      ======================================================= */
 
   async function processCurrentFrame(
@@ -1678,10 +2219,16 @@
       !source.naturalHeight
     ) {
       setTimeout(
-        () =>
-          processCurrentFrame(
-            strength
-          ),
+        () => {
+          if (
+            token ===
+            processToken
+          ) {
+            processCurrentFrame(
+              strength
+            );
+          }
+        },
         120
       );
 
@@ -1750,6 +2297,7 @@
         canvas.getContext(
           "2d",
           {
+            alpha: true,
             willReadFrequently:
               true
           }
@@ -1762,6 +2310,10 @@
           "Canvas недоступен"
         );
       }
+
+      /*
+         Получаем исходный кадр.
+      */
 
       ctx.clearRect(
         0,
@@ -1793,6 +2345,11 @@
         return;
       }
 
+      /*
+         Определяем, какая палитра
+         реально находится в кадре.
+      */
+
       const palette =
         choosePalette(
           imageData
@@ -1806,8 +2363,12 @@
         return;
       }
 
-      const field =
-        buildField(
+      /*
+         Строим исходную карту классов.
+      */
+
+      const rawLabels =
+        buildRawLabels(
           imageData,
           width,
           height,
@@ -1821,42 +2382,282 @@
         return;
       }
 
-      const radarPixels =
-        countRadarPixels(
-          field
+      /*
+         Сильный радар.
+      */
+
+      const strongMask =
+        buildStrongMask(
+          rawLabels,
+          width,
+          height
         );
 
+      let strongCount =
+        0;
+
+      for (
+        let i = 0;
+        i < strongMask.length;
+        i++
+      ) {
+        strongCount +=
+          strongMask[i];
+      }
+
       /*
-         Защита от пустого изображения.
+         Если реального радара нет,
+         ничего не меняем.
       */
 
       if (
-        radarPixels <
-        1
+        strongCount <
+        5
       ) {
         return;
       }
 
-      const resultCanvas =
-        renderSmoothRadar(
-          field,
+      /*
+         Определяем, какие слабые
+         серые пиксели действительно
+         относятся к радару.
+      */
+
+      const strongDistance =
+        buildStrongDistance(
+          strongMask,
           width,
-          height,
-          palette,
-          strength,
-          token
+          height
         );
 
       if (
-        !resultCanvas ||
         token !==
-          processToken
+        processToken
       ) {
         return;
       }
 
+      const labels =
+        buildFinalLabels(
+          rawLabels,
+          strongDistance,
+          width,
+          height
+        );
+
+      const radarBounds =
+        findRadarBounds(
+          labels,
+          width,
+          height
+        );
+
+      if (
+        !radarBounds
+      ) {
+        return;
+      }
+
+      /*
+         Полностью очищаем canvas.
+
+         Поэтому фон карты/GIF сюда
+         вообще не копируется.
+      */
+
+      ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      /*
+         ====================================================
+         СТРОИМ РАДАР С НАРУЖИ ВНУТРЬ
+         ====================================================
+
+         threshold 0:
+           вся область слабого радара
+
+         threshold 1:
+           уровень >= 1
+
+         threshold 2:
+           уровень >= 2
+
+         ...
+
+         threshold 18:
+           самый сильный уровень
+
+         Каждый следующий уровень
+         рисуется поверх предыдущего.
+
+         Поэтому:
+         • нет отдельных квадратов;
+         • границы непрерывны;
+         • цвета не смешиваются;
+         • уровни не сливаются;
+         • внутренние области остаются
+           внутри внешних.
+         ====================================================
+      */
+
+      for (
+        let threshold = 0;
+        threshold <= 18;
+        threshold++
+      ) {
+        if (
+          token !==
+          processToken
+        ) {
+          return;
+        }
+
+        /*
+           Проверяем, существует ли
+           вообще такой уровень.
+        */
+
+        let exists =
+          false;
+
+        for (
+          let i = 0;
+          i < labels.length;
+          i++
+        ) {
+          if (
+            labels[i] >=
+            threshold
+          ) {
+            exists =
+              true;
+
+            break;
+          }
+        }
+
+        if (
+          !exists
+        ) {
+          continue;
+        }
+
+        const mask =
+          buildThresholdMask(
+            labels,
+            width,
+            height,
+            threshold
+          );
+
+        /*
+           Контуры строятся по общей
+           маске уровня, а не по
+           отдельным цветным пикселям.
+        */
+
+        const segments =
+          buildSegments(
+            mask,
+            width,
+            height,
+            radarBounds
+          );
+
+        if (
+          !segments.length
+        ) {
+          continue;
+        }
+
+        const contours =
+          chainSegments(
+            segments
+          );
+
+        if (
+          !contours.length
+        ) {
+          continue;
+        }
+
+        const smooth =
+          [];
+
+        for (
+          const contour of contours
+        ) {
+          if (
+            contour.length <
+            4
+          ) {
+            continue;
+          }
+
+          const curve =
+            smoothContour(
+              contour,
+              strength
+            );
+
+          if (
+            curve.length >=
+            4
+          ) {
+            smooth.push(
+              curve
+            );
+          }
+        }
+
+        if (
+          !smooth.length
+        ) {
+          continue;
+        }
+
+        const color =
+          palette[
+            threshold
+          ];
+
+        if (
+          !color
+        ) {
+          continue;
+        }
+
+        const cssColor =
+          `rgb(${color.r},${color.g},${color.b})`;
+
+        drawContours(
+          ctx,
+          smooth,
+          cssColor
+        );
+      }
+
+      if (
+        token !==
+        processToken
+      ) {
+        return;
+      }
+
+      /*
+         PNG с прозрачным фоном.
+
+         Здесь нет карты,
+         нет серого прямоугольника,
+         нет CSS blur.
+      */
+
       const dataURL =
-        resultCanvas.toDataURL(
+        canvas.toDataURL(
           "image/png"
         );
 
@@ -1868,17 +2669,50 @@
         return;
       }
 
-      installSmoothedLayer(
-        dataURL
-      );
+      if (
+        token !==
+        processToken
+      ) {
+        return;
+      }
 
+      /*
+         Устанавливаем новый слой.
+
+         Важно:
+         оригинал всё ещё виден,
+         пока PNG реально не загрузился.
+      */
+
+      await installSmoothedLayer(
+        dataURL,
+        token
+      );
     } catch (
       error
     ) {
+      /*
+         Самое важное:
+         при ЛЮБОЙ ошибке оригинальный
+         радар остаётся видимым.
+      */
+
       console.error(
         "CLOrad radar smoothing:",
         error
       );
+
+      const source =
+        getSourceImage();
+
+      if (
+        source
+      ) {
+        source.style.opacity =
+          "1";
+      }
+
+      removeSmoothedLayer();
     } finally {
       if (
         token ===
@@ -1986,8 +2820,8 @@
     `;
 
     /*
-       Сохраняем расположение:
-       сразу после «Кол. кадров».
+       Ставим строго после
+       «Кол. кадров».
     */
 
     const framesSetting =
@@ -2030,6 +2864,7 @@
       "click",
       event => {
         event.preventDefault();
+
         event.stopPropagation();
 
         setting.classList.toggle(
@@ -2039,7 +2874,10 @@
     );
 
     /* =====================================================
-       SLIDER
+       INPUT
+       -----------------------------------------------------
+       Здесь НЕ запускается тяжёлая
+       обработка.
        ===================================================== */
 
     range?.addEventListener(
@@ -2063,26 +2901,9 @@
         }
 
         /*
-           Во время движения
-           ничего тяжёлого не считаем.
+           0% сразу возвращает
+           оригинальный радар.
         */
-
-        if (
-          smoothingLayer
-        ) {
-          removeSmoothedLayer();
-
-          const source =
-            getSourceImage();
-
-          if (
-            source
-          ) {
-            source.style.opacity =
-              sourceOriginalOpacity ||
-              "1";
-          }
-        }
 
         if (
           smoothingValue ===
@@ -2098,7 +2919,13 @@
        ===================================================== */
 
     const release =
-      () => {
+      event => {
+        if (
+          event
+        ) {
+          event.preventDefault();
+        }
+
         clearTimeout(
           releaseTimer
         );
@@ -2121,7 +2948,10 @@
 
     range?.addEventListener(
       "touchend",
-      release
+      release,
+      {
+        passive: false
+      }
     );
 
     range?.addEventListener(
@@ -2134,20 +2964,17 @@
   }
 
   /* =======================================================
-     WATCH GIF FRAME
+     FRAME WATCHER
      ======================================================= */
 
   function watchGIFFrame() {
     if (
-      observerStarted
+      frameObserver
     ) {
       return;
     }
 
-    observerStarted =
-      true;
-
-    const observer =
+    frameObserver =
       new MutationObserver(
         mutations => {
           for (
@@ -2178,6 +3005,13 @@
               continue;
             }
 
+            /*
+               Новый кадр.
+
+               Старый сглаженный слой
+               больше не используется.
+            */
+
             processToken++;
 
             removeSmoothedLayer();
@@ -2185,19 +3019,29 @@
             processing =
               false;
 
+            /*
+               НОВАЯ GIF ВСЕГДА
+               ОСТАЁТСЯ ВИДИМОЙ.
+            */
+
             target.style.opacity =
               "1";
+
+            sourceImageElement =
+              target;
 
             sourceOriginalOpacity =
               "1";
 
             /*
-               Сглаживание автоматически
-               переносится на новый кадр.
+               Если сглаживание включено,
+               после появления нового
+               кадра строим его заново.
             */
 
             if (
-              smoothingValue > 0
+              smoothingValue >
+              0
             ) {
               clearTimeout(
                 releaseTimer
@@ -2210,14 +3054,14 @@
                       smoothingValue
                     );
                   },
-                  120
+                  180
                 );
             }
           }
         }
       );
 
-    observer.observe(
+    frameObserver.observe(
       document.body,
       {
         subtree: true,
