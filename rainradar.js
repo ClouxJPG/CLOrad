@@ -1,26 +1,14 @@
 /* =========================================================
-   CLOrad — RainRadar
-   ---------------------------------------------------------
-   Отдельный верхний продукт:
-
-   Осадки-мм/ч
-   ДМРЛ композит
-   RainRadar
-   Слои
-
-   Источник:
-   https://rainradar.ru
-
-   Сервер:
-   /api/rainradar
-
-   ВАЖНО:
-   index.html НЕ изменяется.
+   CLOrad — RainRadar Russia Composite
+   Автоматический timestamp
    ========================================================= */
 
 (() => {
-
   "use strict";
+
+  /* =======================================================
+     CONFIG
+     ======================================================= */
 
   const API = "/api/rainradar";
 
@@ -30,339 +18,182 @@
   ];
 
   const MIN_ZOOM = 3;
+  const MIN_NATIVE_ZOOM = 3;
   const MAX_NATIVE_ZOOM = 5;
   const MAX_ZOOM = 14;
 
-  const REFRESH_MS = 60 * 1000;
-  const PLAY_MS = 700;
+  const REFRESH_TIME = 60 * 1000;
+
+  /* =======================================================
+     STATE
+     ======================================================= */
+
+  let rainRadarNav = null;
+
+  let rainRadarLayer = null;
 
   let timestamps = [];
-  let currentIndex = 0;
+  let currentIndex = -1;
 
-  let layer = null;
-
-  let playing = false;
-  let playTimer = null;
+  let active = false;
 
   let refreshTimer = null;
 
   let loading = false;
 
   /* =======================================================
-     PALETTE
-     ======================================================= */
-
-  const RGMC_OY_PALETTE = [
-    "#b9c1c7",
-    "#a9c7f4",
-    "#63eda5",
-    "#43cf89",
-    "#4db84e",
-    "#fff89c",
-    "#75a6ef",
-    "#5279ed",
-    "#504a9b",
-    "#ffc0a8",
-    "#fa82a0",
-    "#ff4d4d",
-    "#db9248",
-    "#ad7544",
-    "#924b48",
-    "#f2aaf0",
-    "#e85ae7",
-    "#ca3cc7",
-    "#777c91"
-  ];
-
-  /* =======================================================
-     STYLE
-     ======================================================= */
-
-  const style = document.createElement("style");
-
-  style.textContent = `
-
-    .clorad-rainradar,
-    .clorad-rainradar img {
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      -webkit-image-rendering: pixelated;
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
-    }
-
-    .clorad-rainradar img {
-      image-rendering: pixelated;
-      transform: translateZ(0);
-      -webkit-transform: translateZ(0);
-    }
-
-    #rainRadarNav.active {
-      color: #fff;
-    }
-
-    .rr-status {
-      position: fixed;
-      z-index: 2147483646;
-      left: 50%;
-      bottom: 125px;
-      transform: translateX(-50%);
-      background: #202930;
-      color: #fff;
-      padding: 9px 14px;
-      border-radius: 8px;
-      border: 1px solid #3d4850;
-      white-space: nowrap;
-      max-width: calc(100% - 30px);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 13px;
-      pointer-events: none;
-    }
-
-    .rr-legend {
-      position: absolute;
-      left: 50%;
-      bottom: 94px;
-      transform: translateX(-50%);
-      z-index: 1000;
-      display: none;
-      padding: 8px 10px;
-      background: rgba(10,15,20,.92);
-      border: 1px solid rgba(255,255,255,.12);
-      border-radius: 10px;
-      box-shadow: 0 4px 18px rgba(0,0,0,.35);
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 10px;
-      pointer-events: none;
-    }
-
-    .rr-legend-row {
-      display: flex;
-      align-items: center;
-      gap: 0;
-    }
-
-    .rr-color {
-      width: 17px;
-      height: 9px;
-      display: block;
-    }
-
-    .rr-legend-labels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 4px;
-      font-size: 9px;
-      opacity: .82;
-    }
-
-  `;
-
-  document.head.appendChild(style);
-
-  /* =======================================================
      HELPERS
      ======================================================= */
 
-  function getMap() {
-
-    if (
-      typeof window.map !== "undefined" &&
-      window.map
-    ) {
-      return window.map;
-    }
-
-    if (
-      typeof map !== "undefined" &&
-      map
-    ) {
-      return map;
-    }
-
-    return null;
+  function $(id) {
+    return document.getElementById(id);
   }
 
-  function status(text) {
+  function getMap() {
+    return window.map || null;
+  }
 
-    const old = document.querySelector(".rr-status");
-
-    if (old) {
-      old.remove();
-    }
-
-    if (!text) {
+  function showMessage(text) {
+    if (
+      typeof window.msg === "function"
+    ) {
+      window.msg(text);
       return;
     }
 
-    const box = document.createElement("div");
+    const el =
+      document.createElement("div");
 
-    box.className = "rr-status";
-    box.textContent = text;
+    el.textContent = text;
 
-    document.body.appendChild(box);
+    el.style.cssText =
+      [
+        "position:fixed",
+        "z-index:2147483646",
+        "left:50%",
+        "bottom:125px",
+        "transform:translateX(-50%)",
+        "background:#202930",
+        "color:#fff",
+        "padding:9px 14px",
+        "border-radius:8px",
+        "border:1px solid #3d4850",
+        "white-space:nowrap",
+        "max-width:calc(100% - 30px)",
+        "overflow:hidden",
+        "text-overflow:ellipsis"
+      ].join(";");
 
-    setTimeout(() => {
+    document.body.appendChild(el);
 
-      if (box.parentNode) {
-        box.remove();
-      }
-
-    }, 2500);
-  }
-
-  function errorStatus(error) {
-
-    console.error(
-      "CLOrad RainRadar:",
-      error
-    );
-
-    const message =
-      error &&
-      error.message
-        ? error.message
-        : String(error);
-
-    status(
-      "RainRadar: " + message
+    setTimeout(
+      () => el.remove(),
+      2200
     );
   }
 
   /* =======================================================
-     NAV BUTTON
+     NAV
      ======================================================= */
 
-  function createNavButton() {
+  function createNav() {
+    if (
+      $("rainRadarNav")
+    ) {
+      rainRadarNav =
+        $("rainRadarNav");
 
-    const nav =
-      document.getElementById("nav");
-
-    const rainProduct =
-      document.getElementById("rainProduct");
-
-    const gifRadarNav =
-      document.getElementById("gifRadarNav");
-
-    if (!nav) {
-      return null;
+      return;
     }
 
-    let button =
-      document.getElementById("rainRadarNav");
+    const rainButton =
+      $("rainProduct");
 
-    if (button) {
-      return button;
+    if (!rainButton) {
+      return;
     }
 
-    button =
+    rainRadarNav =
       document.createElement("button");
 
-    button.id = "rainRadarNav";
-    button.className = "n";
+    rainRadarNav.id =
+      "rainRadarNav";
 
-    button.innerHTML = `
-      <svg viewBox="0 0 24 24">
-        <path d="M5 19h14M7 15h10M9 11h6M11 7h2"/>
-      </svg>
-      RainRadar
-    `;
+    rainRadarNav.className =
+      "n";
 
-    if (
-      gifRadarNav &&
-      gifRadarNav.parentNode === nav
-    ) {
+    rainRadarNav.type =
+      "button";
 
-      gifRadarNav.insertAdjacentElement(
-        "afterend",
-        button
-      );
+    rainRadarNav.innerHTML =
+      `
+        <svg viewBox="0 0 24 24">
+          <path d="M4 17h16M4 12h16M4 7h16"/>
+        </svg>
+        RainRadar
+      `;
 
-    } else if (
-      rainProduct &&
-      rainProduct.parentNode === nav
-    ) {
-
-      rainProduct.insertAdjacentElement(
-        "afterend",
-        button
-      );
-
-    } else {
-
-      nav.appendChild(button);
-
-    }
-
-    button.addEventListener(
-      "click",
-      event => {
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        setActiveButton();
-
-        showRainRadar();
-
-      },
-      false
+    rainButton.insertAdjacentElement(
+      "afterend",
+      rainRadarNav
     );
 
-    return button;
-  }
+    rainRadarNav.onclick =
+      event => {
+        event.stopPropagation();
 
-  function setActiveButton() {
+        activate();
 
-    const button =
-      document.getElementById(
-        "rainRadarNav"
-      );
-
-    if (!button) {
-      return;
-    }
-
-    document
-      .querySelectorAll(".nav .n")
-      .forEach(el => {
-        el.classList.remove("active");
-      });
-
-    button.classList.add("active");
+        showRainRadar();
+      };
   }
 
   /* =======================================================
-     DEACTIVATE OTHER RADARS
+     ACTIVE NAV
      ======================================================= */
 
-  function stopOtherRadarLayers() {
+  function activate() {
+    active = true;
+
+    document
+      .querySelectorAll(
+        ".nav .n"
+      )
+      .forEach(button => {
+        button.classList.remove(
+          "active"
+        );
+      });
+
+    if (rainRadarNav) {
+      rainRadarNav.classList.add(
+        "active"
+      );
+    }
+
+    /*
+     * Выключаем другие продукты,
+     * если они предоставляют публичные
+     * функции остановки.
+     */
 
     try {
-
       if (
-        window.CLOradStopRadar &&
-        typeof window.CLOradStopRadar === "function"
+        typeof window.CLOradStopRadar ===
+        "function"
       ) {
         window.CLOradStopRadar();
       }
-
-    } catch (_) {}
+    } catch {}
 
     try {
-
       if (
-        window.CLOradDeactivateGIF &&
-        typeof window.CLOradDeactivateGIF === "function"
+        typeof window.CLOradDeactivateGIF ===
+        "function"
       ) {
         window.CLOradDeactivateGIF();
       }
-
-    } catch (_) {}
-
+    } catch {}
   }
 
   /* =======================================================
@@ -370,257 +201,49 @@
      ======================================================= */
 
   function tileUrl(timestamp) {
-
     return (
-      API +
-      "?timestamp=" +
-      encodeURIComponent(timestamp) +
-      "&z={z}" +
-      "&x={x}" +
-      "&y={y}"
+      `${API}` +
+      `?timestamp=${encodeURIComponent(timestamp)}` +
+      `&z={z}` +
+      `&x={x}` +
+      `&y={y}`
     );
   }
 
   /* =======================================================
-     MANIFEST
-     ======================================================= */
-
-  function normalizeManifest(data) {
-
-    let result = [];
-
-    function add(value) {
-
-      if (
-        typeof value === "string" ||
-        typeof value === "number"
-      ) {
-
-        const s =
-          String(value).trim();
-
-        if (s) {
-          result.push(s);
-        }
-
-        return;
-      }
-
-      if (
-        value &&
-        typeof value === "object"
-      ) {
-
-        const valueTimestamp =
-          value.timestamp ??
-          value.time ??
-          value.ts ??
-          value.datetime ??
-          value.date ??
-          value.id;
-
-        if (
-          typeof valueTimestamp === "string" ||
-          typeof valueTimestamp === "number"
-        ) {
-
-          result.push(
-            String(valueTimestamp)
-          );
-
-          return;
-        }
-      }
-    }
-
-    if (Array.isArray(data)) {
-
-      data.forEach(add);
-
-    } else if (
-      data &&
-      typeof data === "object"
-    ) {
-
-      const arrays = [
-
-        data.frames,
-        data.times,
-        data.timestamps,
-        data.images,
-        data.items,
-        data.data
-
-      ];
-
-      for (
-        const arr of arrays
-      ) {
-
-        if (
-          Array.isArray(arr) &&
-          arr.length
-        ) {
-
-          arr.forEach(add);
-
-        }
-
-      }
-
-      add(data.timestamp);
-      add(data.time);
-      add(data.latest);
-      add(data.current);
-
-    }
-
-    result =
-      result
-        .map(x => String(x).trim())
-        .filter(Boolean);
-
-    result =
-      [...new Set(result)];
-
-    return result;
-  }
-
-  async function loadManifest() {
-
-    const controller =
-      new AbortController();
-
-    const timeout =
-      setTimeout(
-        () => controller.abort(),
-        12000
-      );
-
-    try {
-
-      const response =
-        await fetch(
-          API + "?manifest=1",
-          {
-            method: "GET",
-            cache: "no-store",
-            headers: {
-              "Accept":
-                "application/json"
-            },
-            signal:
-              controller.signal
-          }
-        );
-
-      if (!response.ok) {
-
-        throw new Error(
-          "manifest HTTP " +
-          response.status
-        );
-
-      }
-
-      const data =
-        await response.json();
-
-      const next =
-        normalizeManifest(data);
-
-      if (!next.length) {
-
-        throw new Error(
-          "manifest не содержит кадров"
-        );
-
-      }
-
-      timestamps = next;
-
-      /*
-       * Сервер уже отдаёт кадры
-       * в хронологическом порядке.
-       *
-       * На всякий случай сортируем
-       * только если значения похожи
-       * на Unix timestamps.
-       */
-
-      const numeric =
-        timestamps.every(
-          x =>
-            /^\d+$/.test(x)
-        );
-
-      if (numeric) {
-
-        timestamps.sort(
-          (a, b) =>
-            Number(a) - Number(b)
-        );
-
-      }
-
-      currentIndex =
-        timestamps.length - 1;
-
-      updateTimeline();
-
-      return timestamps;
-
-    } finally {
-
-      clearTimeout(timeout);
-
-    }
-  }
-
-  /* =======================================================
-     LEAFLET LAYER
+     CREATE LAYER
      ======================================================= */
 
   function createLayer(timestamp) {
-
     const map =
       getMap();
 
     if (!map) {
-
       throw new Error(
         "Leaflet map не найден"
       );
-
     }
 
-    if (!timestamp) {
-
-      throw new Error(
-        "RainRadar timestamp отсутствует"
-      );
-
-    }
-
-    if (layer) {
-
+    if (rainRadarLayer) {
       try {
-        map.removeLayer(layer);
-      } catch (_) {}
-
-      layer = null;
+        map.removeLayer(
+          rainRadarLayer
+        );
+      } catch {}
     }
 
-    layer =
+    rainRadarLayer =
       L.tileLayer(
         tileUrl(timestamp),
         {
+          bounds:
+            RR_BOUNDS,
 
           minZoom:
             MIN_ZOOM,
 
           minNativeZoom:
-            MIN_ZOOM,
+            MIN_NATIVE_ZOOM,
 
           maxNativeZoom:
             MAX_NATIVE_ZOOM,
@@ -628,81 +251,100 @@
           maxZoom:
             MAX_ZOOM,
 
-          tileSize:
-            256,
-
-          opacity:
-            1,
+          noWrap:
+            true,
 
           zIndex:
             620,
 
-          noWrap:
-            true,
-
-          bounds:
-            RR_BOUNDS,
-
-          updateWhenZooming:
-            true,
+          keepBuffer:
+            2,
 
           updateWhenIdle:
             true,
 
-          keepBuffer:
-            2,
-
-          detectRetina:
+          updateWhenZooming:
             false,
 
           crossOrigin:
-            false,
+            true,
 
-          className:
-            "clorad-rainradar"
-
+          errorTileUrl:
+            ""
         }
       );
 
-    layer.on(
-      "loading",
-      () => {
-        status(
-          "Загрузка RainRadar..."
-        );
-      }
+    rainRadarLayer.addTo(
+      map
     );
 
-    layer.on(
-      "load",
-      () => {
-        status(
-          "RainRadar загружен"
+    return rainRadarLayer;
+  }
+
+  /* =======================================================
+     LOAD FRAMES
+     ======================================================= */
+
+  async function loadFrames() {
+    const response =
+      await fetch(
+        `${API}?manifest=1&t=${Date.now()}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+    let data = null;
+
+    try {
+      data =
+        await response.json();
+    } catch {
+      throw new Error(
+        `RainRadar API вернул HTTP ${response.status}`
+      );
+    }
+
+    if (
+      !response.ok ||
+      !data ||
+      data.ok === false
+    ) {
+      throw new Error(
+        data?.error ||
+        `RainRadar API HTTP ${response.status}`
+      );
+    }
+
+    const frames =
+      Array.isArray(data.frames)
+        ? data.frames
+        : [];
+
+    if (!frames.length) {
+      throw new Error(
+        "RainRadar не вернул кадры"
+      );
+    }
+
+    timestamps =
+      frames
+        .map(Number)
+        .filter(
+          value =>
+            Number.isFinite(value)
+        )
+        .sort(
+          (a, b) => a - b
         );
-      }
-    );
 
-    layer.on(
-      "tileerror",
-      event => {
+    if (!timestamps.length) {
+      throw new Error(
+        "Не удалось получить timestamp RainRadar"
+      );
+    }
 
-        console.error(
-          "RainRadar tile error:",
-          event
-        );
-
-        status(
-          "Ошибка загрузки RainRadar-тайла"
-        );
-
-      }
-    );
-
-    layer.addTo(map);
-
-    updateTimeLabel();
-
-    return layer;
+    return timestamps;
   }
 
   /* =======================================================
@@ -710,7 +352,6 @@
      ======================================================= */
 
   async function showRainRadar() {
-
     if (loading) {
       return;
     }
@@ -719,11 +360,8 @@
       getMap();
 
     if (!map) {
-
-      errorStatus(
-        new Error(
-          "Карта ещё не готова"
-        )
+      showMessage(
+        "Карта ещё не готова"
       );
 
       return;
@@ -731,75 +369,53 @@
 
     loading = true;
 
+    showMessage(
+      "Загрузка RainRadar..."
+    );
+
     try {
-
-      stopOtherRadarLayers();
-
-      status(
-        "Загрузка RainRadar..."
-      );
-
-      await loadManifest();
-
-      if (!timestamps.length) {
-
-        throw new Error(
-          "Нет доступных кадров"
-        );
-
-      }
+      await loadFrames();
 
       currentIndex =
         timestamps.length - 1;
 
+      const timestamp =
+        timestamps[currentIndex];
+
       createLayer(
-        timestamps[currentIndex]
+        timestamp
       );
 
       updateTimeline();
 
+      startRefresh();
+
+      showMessage(
+        "RainRadar загружен"
+      );
     } catch (error) {
+      console.error(
+        "RainRadar:",
+        error
+      );
 
-      errorStatus(error);
-
+      showMessage(
+        error?.message ||
+        "Ошибка загрузки RainRadar"
+      );
     } finally {
-
       loading = false;
-
     }
   }
 
   /* =======================================================
-     HIDE
-     ======================================================= */
-
-  function hideRainRadar() {
-
-    const map =
-      getMap();
-
-    if (
-      map &&
-      layer
-    ) {
-
-      try {
-        map.removeLayer(layer);
-      } catch (_) {}
-
-      layer = null;
-    }
-
-    stopPlay();
-  }
-
-  /* =======================================================
-     FRAME
+     SET FRAME
      ======================================================= */
 
   function setFrame(index) {
-
-    if (!timestamps.length) {
+    if (
+      !timestamps.length
+    ) {
       return;
     }
 
@@ -815,28 +431,12 @@
     currentIndex =
       index;
 
-    const map =
-      getMap();
+    const timestamp =
+      timestamps[currentIndex];
 
-    if (!map) {
-      return;
-    }
-
-    if (layer) {
-
-      layer.setUrl(
-        tileUrl(
-          timestamps[currentIndex]
-        )
-      );
-
-    } else {
-
-      createLayer(
-        timestamps[currentIndex]
-      );
-
-    }
+    createLayer(
+      timestamp
+    );
 
     updateTimeline();
   }
@@ -846,113 +446,42 @@
      ======================================================= */
 
   function updateTimeline() {
-
     const range =
-      document.getElementById(
-        "range"
+      document.querySelector(
+        ".timeline input[type='range']"
       );
 
-    if (range) {
-
-      range.min =
-        "0";
-
-      range.max =
-        String(
-          Math.max(
-            0,
-            timestamps.length - 1
-          )
-        );
-
-      range.value =
-        String(currentIndex);
-
-    }
-
-    updateTimeLabel();
-  }
-
-  function updateTimeLabel() {
-
-    const label =
-      document.getElementById(
-        "timeLabel"
-      );
-
-    if (
-      !label ||
-      !timestamps.length
-    ) {
+    if (!range) {
       return;
     }
 
-    const value =
-      timestamps[currentIndex];
+    range.min =
+      "0";
 
-    const numeric =
-      /^\d+$/.test(
-        String(value)
+    range.max =
+      String(
+        Math.max(
+          0,
+          timestamps.length - 1
+        )
       );
 
-    let date;
+    range.step =
+      "1";
 
-    if (numeric) {
-
-      const n =
-        Number(value);
-
-      date =
-        new Date(
-          n < 100000000000
-            ? n * 1000
-            : n
-        );
-
-    } else {
-
-      date =
-        new Date(value);
-
-    }
-
-    if (
-      !Number.isNaN(
-        date.getTime()
-      )
-    ) {
-
-      label.textContent =
-        date.toLocaleString(
-          "ru-RU",
-          {
-            day:
-              "2-digit",
-
-            month:
-              "2-digit",
-
-            hour:
-              "2-digit",
-
-            minute:
-              "2-digit"
-          }
-        );
-
-    } else {
-
-      label.textContent =
-        String(value);
-
-    }
+    range.value =
+      String(
+        Math.max(
+          0,
+          currentIndex
+        )
+      );
   }
 
-  function hookRange() {
-
+  function hookTimeline() {
     const range =
-      document.getElementById(
-        "range"
+      document.querySelector(
+        ".timeline input[type='range']"
       );
 
     if (!range) {
@@ -960,283 +489,167 @@
     }
 
     if (
-      range.dataset.rrHooked
+      range.dataset.rainRadarHooked
     ) {
       return;
     }
 
-    range.dataset.rrHooked =
+    range.dataset.rainRadarHooked =
       "1";
 
     range.addEventListener(
       "input",
       () => {
+        if (!active) {
+          return;
+        }
 
         setFrame(
-          Number(range.value)
+          Number(
+            range.value
+          )
         );
-
       }
     );
   }
 
   /* =======================================================
-     PLAY
+     AUTO REFRESH
      ======================================================= */
 
-  function stopPlay() {
+  function startRefresh() {
+    stopRefresh();
 
-    playing =
-      false;
+    refreshTimer =
+      setInterval(
+        async () => {
+          if (!active) {
+            return;
+          }
 
-    if (playTimer) {
+          try {
+            const oldLatest =
+              timestamps[
+                timestamps.length - 1
+              ];
 
+            await loadFrames();
+
+            const newLatest =
+              timestamps[
+                timestamps.length - 1
+              ];
+
+            /*
+             * Если появился новый кадр,
+             * сразу переключаемся на него.
+             */
+
+            if (
+              newLatest !==
+              oldLatest
+            ) {
+              currentIndex =
+                timestamps.length - 1;
+
+              createLayer(
+                newLatest
+              );
+
+              updateTimeline();
+
+              showMessage(
+                "RainRadar: новый кадр"
+              );
+            }
+          } catch (
+            error
+          ) {
+            console.warn(
+              "RainRadar refresh:",
+              error
+            );
+          }
+        },
+        REFRESH_TIME
+      );
+  }
+
+  function stopRefresh() {
+    if (
+      refreshTimer
+    ) {
       clearInterval(
-        playTimer
+        refreshTimer
       );
 
-      playTimer =
+      refreshTimer =
         null;
     }
   }
 
-  function startPlay() {
-
-    if (
-      playing ||
-      !timestamps.length
-    ) {
-      return;
-    }
-
-    playing =
-      true;
-
-    playTimer =
-      setInterval(
-        () => {
-
-          let next =
-            currentIndex + 1;
-
-          if (
-            next >=
-            timestamps.length
-          ) {
-            next = 0;
-          }
-
-          setFrame(next);
-
-        },
-        PLAY_MS
-      );
-  }
-
-  function hookPlay() {
-
-    const play =
-      document.getElementById(
-        "play"
-      );
-
-    if (!play) {
-      return;
-    }
-
-    if (
-      play.dataset.rrHooked
-    ) {
-      return;
-    }
-
-    play.dataset.rrHooked =
-      "1";
-
-    play.addEventListener(
-      "click",
-      () => {
-
-        if (playing) {
-          stopPlay();
-        } else {
-          startPlay();
-        }
-
-      }
-    );
-  }
-
   /* =======================================================
-     OLD SIDEBAR CONTROL
+     PUBLIC STOP
      ======================================================= */
 
-  function removeOldSidebarControl() {
+  function stop() {
+    active = false;
 
-    const selectors = [
+    stopRefresh();
 
-      "#rainRadarLayer",
-      "#rainradarLayer",
-      "#rainRadar",
-      ".rainradar-layer",
-      ".rainradar-control"
+    const map =
+      getMap();
 
-    ];
-
-    selectors.forEach(
-      selector => {
-
-        document
-          .querySelectorAll(
-            selector
-          )
-          .forEach(
-            el => {
-
-              if (
-                el.id !==
-                "rainRadarNav"
-              ) {
-                el.remove();
-              }
-
-            }
-          );
-
-      }
-    );
-  }
-
-  /* =======================================================
-     REFRESH
-     ======================================================= */
-
-  async function refresh() {
-
-    if (loading) {
-      return;
+    if (
+      map &&
+      rainRadarLayer
+    ) {
+      try {
+        map.removeLayer(
+          rainRadarLayer
+        );
+      } catch {}
     }
 
-    try {
-
-      const oldLatest =
-        timestamps[
-          timestamps.length - 1
-        ];
-
-      await loadManifest();
-
-      const newLatest =
-        timestamps[
-          timestamps.length - 1
-        ];
-
-      if (
-        newLatest &&
-        newLatest !== oldLatest
-      ) {
-
-        currentIndex =
-          timestamps.length - 1;
-
-        if (layer) {
-
-          layer.setUrl(
-            tileUrl(
-              timestamps[
-                currentIndex
-              ]
-            )
-          );
-
-          updateTimeline();
-
-        }
-
-      }
-
-    } catch (error) {
-
-      console.error(
-        "CLOrad RainRadar refresh:",
-        error
-      );
-
-    }
+    rainRadarLayer =
+      null;
   }
 
   /* =======================================================
      INIT
      ======================================================= */
 
-  async function init() {
+  function init() {
+    createNav();
 
-    let tries =
-      0;
+    hookTimeline();
 
-    const wait =
-      setInterval(
-        async () => {
+    /*
+     * Timeline в index.html может
+     * появиться позже.
+     */
 
-          tries++;
+    setTimeout(
+      hookTimeline,
+      500
+    );
 
-          const map =
-            getMap();
+    setTimeout(
+      hookTimeline,
+      1500
+    );
+  }
 
-          const nav =
-            document.getElementById(
-              "nav"
-            );
-
-          if (
-            map &&
-            nav
-          ) {
-
-            clearInterval(
-              wait
-            );
-
-            createNavButton();
-
-            hookRange();
-
-            hookPlay();
-
-            removeOldSidebarControl();
-
-            /*
-             * Не грузим тайлы при старте.
-             * Загружаем RainRadar только
-             * после нажатия кнопки.
-             */
-
-            refreshTimer =
-              setInterval(
-                refresh,
-                REFRESH_MS
-              );
-
-            return;
-          }
-
-          if (
-            tries > 100
-          ) {
-
-            clearInterval(
-              wait
-            );
-
-            console.error(
-              "CLOrad RainRadar: init timeout"
-            );
-
-          }
-
-        },
-        100
-      );
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      init
+    );
+  } else {
+    init();
   }
 
   /* =======================================================
@@ -1244,35 +657,22 @@
      ======================================================= */
 
   window.CLOradRainRadar = {
-
     show:
       showRainRadar,
 
-    hide:
-      hideRainRadar,
+    stop,
 
-    refresh:
-      refresh,
-
-    setFrame:
-      setFrame,
+    reload:
+      showRainRadar,
 
     getFrames:
-      () =>
-        timestamps.slice(),
+      () => timestamps.slice(),
 
-    getCurrentFrame:
+    getCurrent:
       () =>
         timestamps[
           currentIndex
-        ] || null,
-
-    getLayer:
-      () =>
-        layer
-
+        ] || null
   };
-
-  init();
 
 })();
