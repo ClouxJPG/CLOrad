@@ -1,36 +1,19 @@
 /* =========================================================
-   CLOrad — CONTOUR RADAR SMOOTHING
-   =========================================================
-
-   Радар:
-      raster pixels
-           ↓
-      color classes
-           ↓
-      binary masks
-           ↓
-      marching squares
-           ↓
-      closed contours
-           ↓
-      contour simplification
-           ↓
-      smooth cubic curves
-           ↓
-      solid radar areas
-
+   CLOrad — RADAR CONTOUR SMOOTHING
+   ---------------------------------------------------------
    ВАЖНО:
 
-   • квадратные пиксели НЕ рисуются
-   • каждый класс превращается в цельную область
-   • границы являются непрерывными линиями
-   • углы и ступеньки сглаживаются геометрически
-   • CSS blur отсутствует
-   • цвета не смешиваются
-   • исходный GIF не остаётся под сглаженным слоем
-   • настройка находится внутри «Настройки»
-   • настройка находится после «Кол. кадров»
-   • иконки нет
+   • Не использует CSS blur
+   • Не перекрашивает фон
+   • Не превращает весь GIF в один цвет
+   • Не создаёт квадратов
+   • Работает только с цветными радарными классами
+   • Серые классы 0–1 сохраняются как есть
+   • Контуры строятся через marching-squares
+   • Затем сглаживаются Chaikin-кривыми
+   • 0% = исходный кадр
+   • Обработка запускается после отпускания ползунка
+   • Результат остаётся географически привязан к GIF
    ========================================================= */
 
 (() => {
@@ -40,85 +23,36 @@
      CONFIG
      ======================================================= */
 
-  const CONFIG = {
-    min: 0,
-    max: 100,
-    step: 5,
+  const GIF_BOUNDS = [
+    [38.2155955810, 14.9892981264],
+    [69.6543707199, 72.9237642948]
+  ];
 
-    /*
-      Упрощение исходного контура.
+  const SETTING_ID = "cloradSmoothingSetting";
+  const BUTTON_ID = "cloradSmoothingButton";
+  const PANEL_ID = "cloradSmoothingPanel";
+  const RANGE_ID = "cloradSmoothingRange";
+  const VALUE_ID = "cloradSmoothingValue";
 
-      Чем больше значение,
-      тем меньше исходных ступенек
-      остаётся перед построением кривой.
-    */
+  const SOURCE_CLASS_START = 2;
 
-    simplifyMin: 0.35,
-    simplifyMax: 5.5,
+  const MIN_COLOR_DISTANCE = 34;
 
-    /*
-      Сила изгиба итоговой кривой.
-    */
+  let smoothingValue = 0;
 
-    curveMin: 0.10,
-    curveMax: 0.34,
-
-    /*
-      Радиус предварительного
-      сглаживания CLASS MAP.
-
-      Это не blur изображения.
-      Это изменение принадлежности
-      пограничных ячеек к классу
-      до построения контура.
-    */
-
-    morphologyMin: 0,
-    morphologyMax: 3,
-
-    /*
-      Очень маленькие отдельные
-      острова убираются только
-      при сильном сглаживании.
-    */
-
-    tinyAreaMin: 0,
-    tinyAreaMax: 10,
-
-    /*
-      Толщина внутреннего перекрытия
-      контуров для устранения
-      субпиксельных щелей между
-      соседними цветовыми областями.
-    */
-
-    seamOverlapMin: 0.0,
-    seamOverlapMax: 1.15,
-
-    cacheLimit: 4
-  };
-
-  /* =======================================================
-     STATE
-     ======================================================= */
-
-  let strength = 0;
-
-  let currentLayer = null;
-  let currentSource = null;
-
-  let currentProcessedURL = null;
+  let smoothingLayer = null;
 
   let processing = false;
 
   let processToken = 0;
 
-  let uiReady = false;
-  let leafletReady = false;
-  let mapReady = false;
+  let releaseTimer = null;
 
-  const cache = new Map();
-  const cacheOrder = [];
+  let sourceImageOpacity = null;
+
+  let sourceImageElement = null;
+
+  let installed = false;
 
   /* =======================================================
      HELPERS
@@ -135,444 +69,198 @@
     );
   }
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  /* =======================================================
-     UI STYLE
-     ======================================================= */
-
-  function installStyle() {
-    if ($("clorad-smoothing-style")) {
-      return;
+  function rgbFromHex(hex) {
+    if (
+      typeof hex !== "string"
+    ) {
+      return null;
     }
 
-    const style = document.createElement("style");
-
-    style.id = "clorad-smoothing-style";
-
-    style.textContent = `
-      #cloradSmoothingSetting {
-        width: 100%;
-      }
-
-      #cloradSmoothingButton {
-        width: 100%;
-        min-height: 44px;
-
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-
-        padding: 0 14px;
-
-        border: 0;
-        outline: 0;
-
-        background: transparent;
-        color: inherit;
-
-        font: inherit;
-        text-align: left;
-
-        cursor: pointer;
-
-        -webkit-tap-highlight-color:
-          transparent;
-      }
-
-      #cloradSmoothingButton:active {
-        opacity: .7;
-      }
-
-      #cloradSmoothingArrow {
-        font-size: 22px;
-        line-height: 1;
-
-        opacity: .55;
-
-        transition:
-          transform .16s ease;
-      }
-
-      #cloradSmoothingSetting.open
-      #cloradSmoothingArrow {
-        transform:
-          rotate(90deg);
-      }
-
-      #cloradSmoothingPanel {
-        display: none;
-        padding: 0 14px 13px;
-      }
-
-      #cloradSmoothingSetting.open
-      #cloradSmoothingPanel {
-        display: block;
-      }
-
-      #cloradSmoothingValue {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-
-        margin-bottom: 7px;
-
-        font-size: 12px;
-
-        color:
-          rgba(255,255,255,.55);
-      }
-
-      #cloradSmoothingValueNumber {
-        color:
-          rgba(255,255,255,.9);
-
-        font-weight: 600;
-      }
-
-      #cloradSmoothingRange {
-        display: block;
-
-        width: 100%;
-        height: 24px;
-
-        margin: 0;
-        padding: 0;
-
-        appearance: none;
-        -webkit-appearance: none;
-
-        background: transparent;
-
-        cursor: pointer;
-      }
-
-      #cloradSmoothingRange::-webkit-slider-runnable-track {
-        height: 4px;
-        border-radius: 4px;
-        background:
-          rgba(255,255,255,.16);
-      }
-
-      #cloradSmoothingRange::-webkit-slider-thumb {
-        appearance: none;
-        -webkit-appearance: none;
-
-        width: 18px;
-        height: 18px;
-
-        margin-top: -7px;
-
-        border: 0;
-        border-radius: 50%;
-
-        background: #fff;
-
-        box-shadow:
-          0 1px 5px rgba(0,0,0,.35);
-      }
-
-      #cloradSmoothingRange::-moz-range-track {
-        height: 4px;
-        border-radius: 4px;
-        background:
-          rgba(255,255,255,.16);
-      }
-
-      #cloradSmoothingRange::-moz-range-thumb {
-        width: 18px;
-        height: 18px;
-
-        border: 0;
-        border-radius: 50%;
-
-        background: #fff;
-      }
-
-      #cloradSmoothingStatus {
-        min-height: 15px;
-        margin-top: 5px;
-
-        font-size: 11px;
-
-        color:
-          rgba(255,255,255,.4);
-      }
-
-      body.light
-      #cloradSmoothingValue {
-        color:
-          rgba(0,0,0,.5);
-      }
-
-      body.light
-      #cloradSmoothingValueNumber {
-        color:
-          rgba(0,0,0,.78);
-      }
-
-      body.light
-      #cloradSmoothingStatus {
-        color:
-          rgba(0,0,0,.4);
-      }
-
-      body.light
-      #cloradSmoothingRange::-webkit-slider-runnable-track {
-        background:
-          rgba(0,0,0,.14);
-      }
-
-      body.light
-      #cloradSmoothingRange::-moz-range-track {
-        background:
-          rgba(0,0,0,.14);
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  /* =======================================================
-     SETTINGS UI
-     ======================================================= */
-
-  function createUI() {
-    installStyle();
-
-    const settings = $("settings");
-
-    if (!settings) {
-      return false;
-    }
-
-    if ($("cloradSmoothingSetting")) {
-      uiReady = true;
-      return true;
-    }
-
-    const setting = document.createElement("div");
-
-    setting.className = "setting";
-    setting.id = "cloradSmoothingSetting";
-
-    setting.innerHTML = `
-      <button
-        id="cloradSmoothingButton"
-        type="button"
-        aria-expanded="false"
-      >
-        <span>
-          Сглаживание радара
-        </span>
-
-        <span id="cloradSmoothingArrow">
-          ›
-        </span>
-      </button>
-
-      <div
-        id="cloradSmoothingPanel"
-        class="settingBody"
-      >
-        <div id="cloradSmoothingValue">
-          <span>
-            Сила сглаживания
-          </span>
-
-          <strong
-            id="cloradSmoothingValueNumber"
-          >
-            0%
-          </strong>
-        </div>
-
-        <input
-          id="cloradSmoothingRange"
-          type="range"
-          min="0"
-          max="100"
-          step="5"
-          value="0"
-        >
-
-        <div
-          id="cloradSmoothingStatus"
-        ></div>
-      </div>
-    `;
-
-    const framesSetting =
-      $("framesSetting");
-
-    if (framesSetting) {
-      framesSetting.after(setting);
-    } else {
-      settings.appendChild(setting);
-    }
-
-    const button =
-      $("cloradSmoothingButton");
-
-    const range =
-      $("cloradSmoothingRange");
-
-    button.addEventListener(
-      "click",
-      event => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const opened =
-          setting.classList.contains(
-            "open"
-          );
-
-        document
-          .querySelectorAll(
-            ".setting.open"
+    let value =
+      hex
+        .trim()
+        .replace("#", "");
+
+    if (
+      value.length === 3
+    ) {
+      value =
+        value
+          .split("")
+          .map(
+            x => x + x
           )
-          .forEach(other => {
-            if (other !== setting) {
-              other.classList.remove(
-                "open"
-              );
-
-              const otherButton =
-                other.querySelector(
-                  ".settingHead,button"
-                );
-
-              if (otherButton) {
-                otherButton.setAttribute(
-                  "aria-expanded",
-                  "false"
-                );
-              }
-            }
-          });
-
-        setting.classList.toggle(
-          "open",
-          !opened
-        );
-
-        button.setAttribute(
-          "aria-expanded",
-          String(!opened)
-        );
-      }
-    );
-
-    range.addEventListener(
-      "input",
-      () => {
-        strength =
-          Number(range.value) || 0;
-
-        updateValue();
-
-        setStatus(
-          strength === 0
-            ? ""
-            : "Отпустите ползунок"
-        );
-      }
-    );
-
-    range.addEventListener(
-      "change",
-      () => {
-        strength =
-          Number(range.value) || 0;
-
-        updateValue();
-
-        processCurrent();
-      }
-    );
-
-    uiReady = true;
-
-    updateValue();
-
-    return true;
-  }
-
-  function updateValue() {
-    const value =
-      $("cloradSmoothingValueNumber");
-
-    if (value) {
-      value.textContent =
-        `${strength}%`;
-    }
-  }
-
-  function setStatus(text) {
-    const status =
-      $("cloradSmoothingStatus");
-
-    if (status) {
-      status.textContent =
-        text || "";
-    }
-  }
-
-  function startUIWatcher() {
-    if (uiReady) {
-      return;
+          .join("");
     }
 
-    const observer =
-      new MutationObserver(
-        () => {
-          if (
-            !uiReady &&
-            createUI()
-          ) {
-            observer.disconnect();
-          }
-        }
+    if (
+      value.length !== 6
+    ) {
+      return null;
+    }
+
+    const number =
+      parseInt(
+        value,
+        16
       );
 
-    observer.observe(
-      document.documentElement,
-      {
-        childList: true,
-        subtree: true
-      }
-    );
+    if (
+      !Number.isFinite(number)
+    ) {
+      return null;
+    }
 
-    createUI();
+    return {
+      r:
+        (number >> 16) &
+        255,
+
+      g:
+        (number >> 8) &
+        255,
+
+      b:
+        number &
+        255
+    };
+  }
+
+  function getCurrentPalette() {
+    if (
+      typeof window.CLOradGetCurrentPalette ===
+      "function"
+    ) {
+      const palette =
+        window.CLOradGetCurrentPalette();
+
+      if (
+        palette &&
+        Array.isArray(
+          palette.colors
+        )
+      ) {
+        return palette.colors
+          .map(
+            rgbFromHex
+          )
+          .filter(Boolean);
+      }
+    }
+
+    const fallback = [
+      "#b9c1c7",
+      "#a9c7f4",
+      "#63eda5",
+      "#43cf89",
+      "#4db84e",
+      "#fff89c",
+      "#75a6ef",
+      "#5279ed",
+      "#504a9b",
+      "#ffc0a8",
+      "#fa82a0",
+      "#ff4d4d",
+      "#db9248",
+      "#ad7544",
+      "#924b48",
+      "#f2aaf0",
+      "#e85ae7",
+      "#ca3cc7",
+      "#777c91"
+    ];
+
+    return fallback
+      .map(
+        rgbFromHex
+      )
+      .filter(Boolean);
   }
 
   /* =======================================================
-     IMAGE LOADING
+     FIND ORIGINAL GIF IMAGE
+     ======================================================= */
+
+  function getSourceImage() {
+    const images =
+      Array.from(
+        document.querySelectorAll(
+          "img.clorad-gif-radar-image"
+        )
+      );
+
+    if (
+      !images.length
+    ) {
+      return null;
+    }
+
+    /*
+       Наш собственный слой имеет
+       другой CSS-класс, поэтому
+       здесь всегда берём именно
+       оригинальный GIF-layer.
+    */
+
+    for (
+      let i = images.length - 1;
+      i >= 0;
+      i--
+    ) {
+      const image =
+        images[i];
+
+      if (
+        image &&
+        image.dataset &&
+        image.dataset.cloradSmoothing !==
+          "1"
+      ) {
+        return image;
+      }
+    }
+
+    return null;
+  }
+
+  /* =======================================================
+     LOAD IMAGE
      ======================================================= */
 
   function loadImage(url) {
     return new Promise(
-      (resolve, reject) => {
+      (
+        resolve,
+        reject
+      ) => {
         const image =
           new Image();
 
-        image.crossOrigin =
-          "anonymous";
+        /*
+           Для обычного same-origin
+           URL это не мешает.
+        */
 
-        image.onload = () => {
-          resolve(image);
-        };
-
-        image.onerror = () => {
-          reject(
-            new Error(
-              "Radar image load failed"
+        if (
+          !String(url)
+            .startsWith(
+              "data:"
             )
-          );
-        };
+        ) {
+          image.crossOrigin =
+            "anonymous";
+        }
+
+        image.onload =
+          () => resolve(image);
+
+        image.onerror =
+          () =>
+            reject(
+              new Error(
+                "Не удалось загрузить кадр для сглаживания"
+              )
+            );
 
         image.src = url;
       }
@@ -580,135 +268,50 @@
   }
 
   /* =======================================================
-     COLOR PALETTE
+     COLOR DISTANCE
      ======================================================= */
 
-  function buildPalette(data) {
-    const counts =
-      new Map();
-
-    for (
-      let i = 0;
-      i < data.length;
-      i += 4
-    ) {
-      if (
-        data[i + 3] < 160
-      ) {
-        continue;
-      }
-
-      const r =
-        data[i];
-
-      const g =
-        data[i + 1];
-
-      const b =
-        data[i + 2];
-
-      const key =
-        (
-          r << 16
-        ) |
-        (
-          g << 8
-        ) |
-        b;
-
-      counts.set(
-        key,
-        (
-          counts.get(key) ||
-          0
-        ) + 1
-      );
-    }
-
-    const colors = [];
-
-    counts.forEach(
-      (count, key) => {
-        colors.push({
-          r:
-            (key >> 16) & 255,
-
-          g:
-            (key >> 8) & 255,
-
-          b:
-            key & 255,
-
-          count
-        });
-      }
-    );
-
-    colors.sort(
-      (a, b) =>
-        b.count - a.count
-    );
-
-    /*
-      Достаточно много классов,
-      чтобы не терять реальные
-      оттенки радара.
-    */
-
-    return colors.slice(
-      0,
-      64
-    );
-  }
-
-  function nearestColor(
+  function colorDistance(
     r,
     g,
     b,
-    palette
+    color
   ) {
-    let best = 0;
-    let bestDistance =
-      Infinity;
+    const dr =
+      r - color.r;
 
-    for (
-      let i = 0;
-      i < palette.length;
-      i++
-    ) {
-      const p =
-        palette[i];
+    const dg =
+      g - color.g;
 
-      const dr =
-        r - p.r;
+    const db =
+      b - color.b;
 
-      const dg =
-        g - p.g;
-
-      const db =
-        b - p.b;
-
-      const distance =
-        dr * dr +
-        dg * dg +
-        db * db;
-
-      if (
-        distance <
-        bestDistance
-      ) {
-        bestDistance =
-          distance;
-
-        best = i;
-      }
-    }
-
-    return best;
+    return Math.sqrt(
+      dr * dr +
+      dg * dg +
+      db * db
+    );
   }
 
   /* =======================================================
-     LABEL MAP
+     BUILD LABEL MAP
+     -------------------------------------------------------
+     Очень важно:
+
+     Мы НЕ пытаемся определить
+     каждый неизвестный пиксель
+     как радарный.
+
+     Если цвет не похож на один
+     из цветов палитры — он остаётся
+     нетронутым.
+
+     Классы 0 и 1 намеренно
+     не сглаживаются.
+
+     Поэтому серый фон больше
+     не может превратиться
+     в огромный прямоугольник.
      ======================================================= */
 
   function buildLabelMap(
@@ -717,558 +320,563 @@
     height,
     palette
   ) {
+    const data =
+      imageData.data;
+
     const labels =
-      new Int16Array(
+      new Int8Array(
         width * height
       );
 
-    labels.fill(-1);
+    labels.fill(
+      -1
+    );
+
+    /*
+       Боксы каждого класса.
+    */
+
+    const boxes =
+      [];
+
+    for (
+      let i = 0;
+      i < palette.length;
+      i++
+    ) {
+      boxes.push({
+        minX: width,
+        minY: height,
+        maxX: -1,
+        maxY: -1,
+        count: 0
+      });
+    }
+
+    /*
+       LUT для уже встреченных
+       RGB-комбинаций.
+
+       Это сильно сокращает
+       количество вычислений
+       на iPhone.
+    */
+
+    const colorCache =
+      new Map();
 
     for (
       let y = 0;
       y < height;
       y++
     ) {
+      const row =
+        y * width;
+
       for (
         let x = 0;
         x < width;
         x++
       ) {
+        const index =
+          row + x;
+
         const p =
-          (
-            y * width +
-            x
-          ) * 4;
+          index * 4;
 
         const alpha =
-          imageData[p + 3];
+          data[p + 3];
+
+        /*
+           Полностью прозрачный
+           пиксель никогда не является
+           радарным классом.
+        */
 
         if (
-          alpha < 160
+          alpha < 16
         ) {
           continue;
         }
 
-        labels[
-          y * width + x
-        ] =
-          nearestColor(
-            imageData[p],
-            imageData[p + 1],
-            imageData[p + 2],
-            palette
-          );
-      }
-    }
+        const r =
+          data[p];
 
-    return labels;
-  }
+        const g =
+          data[p + 1];
 
-  /* =======================================================
-     WORKING RESOLUTION
-     ======================================================= */
+        const b =
+          data[p + 2];
 
-  function getWorkingScale() {
-    if (
-      strength < 40
-    ) {
-      return 1;
-    }
+        /*
+           Сначала пробуем
+           быстрый ключ.
+        */
 
-    if (
-      strength < 75
-    ) {
-      return 1;
-    }
+        const key =
+          (
+            r << 16
+          ) |
+          (
+            g << 8
+          ) |
+          b;
 
-    return 2;
-  }
+        let classIndex;
 
-  function reduceLabels(
-    labels,
-    width,
-    height,
-    scale
-  ) {
-    if (
-      scale === 1
-    ) {
-      return {
-        labels,
-        width,
-        height
-      };
-    }
-
-    const outWidth =
-      Math.ceil(
-        width / scale
-      );
-
-    const outHeight =
-      Math.ceil(
-        height / scale
-      );
-
-    const output =
-      new Int16Array(
-        outWidth *
-        outHeight
-      );
-
-    output.fill(-1);
-
-    for (
-      let y = 0;
-      y < outHeight;
-      y++
-    ) {
-      for (
-        let x = 0;
-        x < outWidth;
-        x++
-      ) {
-        const votes =
-          new Map();
-
-        for (
-          let yy = 0;
-          yy < scale;
-          yy++
+        if (
+          colorCache.has(
+            key
+          )
         ) {
-          for (
-            let xx = 0;
-            xx < scale;
-            xx++
-          ) {
-            const sx =
-              x * scale +
-              xx;
-
-            const sy =
-              y * scale +
-              yy;
-
-            if (
-              sx >= width ||
-              sy >= height
-            ) {
-              continue;
-            }
-
-            const cls =
-              labels[
-                sy * width +
-                sx
-              ];
-
-            if (
-              cls < 0
-            ) {
-              continue;
-            }
-
-            votes.set(
-              cls,
-              (
-                votes.get(cls) ||
-                0
-              ) + 1
+          classIndex =
+            colorCache.get(
+              key
             );
-          }
-        }
+        } else {
+          let best =
+            -1;
 
-        let best =
-          -1;
+          let bestDistance =
+            Infinity;
 
-        let bestVotes =
-          0;
+          /*
+             Начинаем с 2.
 
-        votes.forEach(
-          (count, cls) => {
+             0 и 1 сохраняются
+             оригинальными.
+          */
+
+          for (
+            let i =
+              SOURCE_CLASS_START;
+            i < palette.length;
+            i++
+          ) {
+            const distance =
+              colorDistance(
+                r,
+                g,
+                b,
+                palette[i]
+              );
+
             if (
-              count >
-              bestVotes
+              distance <
+              bestDistance
             ) {
-              bestVotes =
-                count;
+              bestDistance =
+                distance;
 
               best =
-                cls;
+                i;
             }
           }
-        );
 
-        output[
-          y * outWidth + x
-        ] = best;
+          /*
+             Если цвет слишком далеко
+             от палитры — это НЕ радар.
+
+             Критически важно для фона.
+          */
+
+          if (
+            best < 0 ||
+            bestDistance >
+              MIN_COLOR_DISTANCE
+          ) {
+            best =
+              -1;
+          }
+
+          colorCache.set(
+            key,
+            best
+          );
+
+          classIndex =
+            best;
+        }
+
+        if (
+          classIndex < 0
+        ) {
+          continue;
+        }
+
+        labels[index] =
+          classIndex;
+
+        const box =
+          boxes[classIndex];
+
+        if (
+          x < box.minX
+        ) {
+          box.minX = x;
+        }
+
+        if (
+          y < box.minY
+        ) {
+          box.minY = y;
+        }
+
+        if (
+          x > box.maxX
+        ) {
+          box.maxX = x;
+        }
+
+        if (
+          y > box.maxY
+        ) {
+          box.maxY = y;
+        }
+
+        box.count++;
       }
     }
 
     return {
-      labels: output,
-      width: outWidth,
-      height: outHeight
+      labels,
+      boxes
     };
   }
 
   /* =======================================================
-     MORPHOLOGICAL CLASS SMOOTHING
+     MARCHING SQUARES
      ======================================================= */
 
-  function morphologyRadius() {
-    return Math.round(
-      lerp(
-        CONFIG.morphologyMin,
-        CONFIG.morphologyMax,
-        strength / 100
-      )
-    );
-  }
-
-  function smoothLabels(
-    source,
+  function buildSegmentsForClass(
+    labels,
     width,
-    height
+    height,
+    classIndex,
+    box
   ) {
-    const radius =
-      morphologyRadius();
+    const segments =
+      [];
 
     if (
-      radius <= 0
+      !box ||
+      box.count <= 0
     ) {
-      return source;
+      return segments;
     }
 
-    let current =
-      source.slice();
+    /*
+       Небольшой запас вокруг
+       bounding box.
+    */
 
-    const passes =
-      strength >= 80
-        ? 2
-        : 1;
+    const minX =
+      Math.max(
+        0,
+        box.minX - 1
+      );
 
-    for (
-      let pass = 0;
-      pass < passes;
-      pass++
+    const minY =
+      Math.max(
+        0,
+        box.minY - 1
+      );
+
+    const maxX =
+      Math.min(
+        width - 2,
+        box.maxX
+      );
+
+    const maxY =
+      Math.min(
+        height - 2,
+        box.maxY
+      );
+
+    function inside(
+      x,
+      y
     ) {
-      const next =
-        current.slice();
-
-      for (
-        let y = 0;
-        y < height;
-        y++
+      if (
+        x < 0 ||
+        y < 0 ||
+        x >= width ||
+        y >= height
       ) {
-        for (
-          let x = 0;
-          x < width;
-          x++
-        ) {
-          const index =
-            y * width + x;
-
-          const own =
-            current[index];
-
-          if (
-            own < 0
-          ) {
-            continue;
-          }
-
-          let boundary =
-            false;
-
-          for (
-            let dy = -1;
-            dy <= 1;
-            dy++
-          ) {
-            for (
-              let dx = -1;
-              dx <= 1;
-              dx++
-            ) {
-              if (
-                dx === 0 &&
-                dy === 0
-              ) {
-                continue;
-              }
-
-              const nx =
-                x + dx;
-
-              const ny =
-                y + dy;
-
-              if (
-                nx < 0 ||
-                ny < 0 ||
-                nx >= width ||
-                ny >= height
-              ) {
-                boundary =
-                  true;
-
-                continue;
-              }
-
-              if (
-                current[
-                  ny * width +
-                  nx
-                ] !== own
-              ) {
-                boundary =
-                  true;
-              }
-            }
-          }
-
-          if (
-            !boundary
-          ) {
-            continue;
-          }
-
-          const votes =
-            new Map();
-
-          for (
-            let dy = -radius;
-            dy <= radius;
-            dy++
-          ) {
-            for (
-              let dx = -radius;
-              dx <= radius;
-              dx++
-            ) {
-              if (
-                dx * dx +
-                dy * dy >
-                radius * radius
-              ) {
-                continue;
-              }
-
-              const nx =
-                x + dx;
-
-              const ny =
-                y + dy;
-
-              if (
-                nx < 0 ||
-                ny < 0 ||
-                nx >= width ||
-                ny >= height
-              ) {
-                continue;
-              }
-
-              const cls =
-                current[
-                  ny * width +
-                  nx
-                ];
-
-              if (
-                cls < 0
-              ) {
-                continue;
-              }
-
-              const distance =
-                Math.sqrt(
-                  dx * dx +
-                  dy * dy
-                );
-
-              const weight =
-                1 /
-                (
-                  1 +
-                  distance
-                );
-
-              votes.set(
-                cls,
-                (
-                  votes.get(cls) ||
-                  0
-                ) + weight
-              );
-            }
-          }
-
-          let best =
-            own;
-
-          let bestScore =
-            votes.get(own) ||
-            0;
-
-          votes.forEach(
-            (score, cls) => {
-              if (
-                score >
-                bestScore * 1.25
-              ) {
-                best =
-                  cls;
-
-                bestScore =
-                  score;
-              }
-            }
-          );
-
-          next[index] =
-            best;
-        }
+        return false;
       }
 
-      current =
-        next;
+      return (
+        labels[
+          y * width + x
+        ] ===
+        classIndex
+      );
     }
 
-    return current;
-  }
+    /*
+       Координаты умножены
+       на 2, чтобы все точки
+       были целыми.
 
-  /* =======================================================
-     CONTOUR SEGMENTS
-     ======================================================= */
+       Это исключает проблемы
+       с floating-point keys.
+    */
 
-  function segment(
-    result,
-    ax,
-    ay,
-    bx,
-    by
-  ) {
-    result.push({
+    function addSegment(
       ax,
       ay,
       bx,
       by
-    });
-  }
-
-  /*
-    Получаем только границу
-    конкретного цветового класса.
-
-    Здесь НЕ рисуется ни одного
-    квадрата.
-  */
-
-  function buildBoundarySegments(
-    labels,
-    width,
-    height,
-    classId
-  ) {
-    const result = [];
+    ) {
+      segments.push([
+        ax,
+        ay,
+        bx,
+        by
+      ]);
+    }
 
     for (
-      let y = 0;
-      y < height;
+      let y = minY;
+      y <= maxY;
       y++
     ) {
       for (
-        let x = 0;
-        x < width;
+        let x = minX;
+        x <= maxX;
         x++
       ) {
+        const tl =
+          inside(
+            x,
+            y
+          )
+            ? 1
+            : 0;
+
+        const tr =
+          inside(
+            x + 1,
+            y
+          )
+            ? 1
+            : 0;
+
+        const br =
+          inside(
+            x + 1,
+            y + 1
+          )
+            ? 1
+            : 0;
+
+        const bl =
+          inside(
+            x,
+            y + 1
+          )
+            ? 1
+            : 0;
+
+        const code =
+          tl |
+          (tr << 1) |
+          (br << 2) |
+          (bl << 3);
+
         if (
-          labels[
-            y * width + x
-          ] !== classId
+          code === 0 ||
+          code === 15
         ) {
           continue;
         }
 
-        const top =
-          y > 0 &&
-          labels[
-            (y - 1) *
-              width +
-            x
-          ] === classId;
+        /*
+           Точки:
 
-        const right =
-          x < width - 1 &&
-          labels[
-            y * width +
-            x + 1
-          ] === classId;
+           top    = (2x+1, 2y)
+           right  = (2x+2, 2y+1)
+           bottom = (2x+1, 2y+2)
+           left   = (2x,   2y+1)
+        */
 
-        const bottom =
-          y < height - 1 &&
-          labels[
-            (y + 1) *
-              width +
-            x
-          ] === classId;
+        const topX =
+          2 * x + 1;
 
-        const left =
-          x > 0 &&
-          labels[
-            y * width +
-            x - 1
-          ] === classId;
+        const topY =
+          2 * y;
 
-        if (!top) {
-          segment(
-            result,
-            x,
-            y,
-            x + 1,
-            y
-          );
-        }
+        const rightX =
+          2 * x + 2;
 
-        if (!right) {
-          segment(
-            result,
-            x + 1,
-            y,
-            x + 1,
-            y + 1
-          );
-        }
+        const rightY =
+          2 * y + 1;
 
-        if (!bottom) {
-          segment(
-            result,
-            x + 1,
-            y + 1,
-            x,
-            y + 1
-          );
-        }
+        const bottomX =
+          2 * x + 1;
 
-        if (!left) {
-          segment(
-            result,
-            x,
-            y + 1,
-            x,
-            y
-          );
+        const bottomY =
+          2 * y + 2;
+
+        const leftX =
+          2 * x;
+
+        const leftY =
+          2 * y + 1;
+
+        switch (
+          code
+        ) {
+          case 1:
+            addSegment(
+              leftX,
+              leftY,
+              topX,
+              topY
+            );
+            break;
+
+          case 2:
+            addSegment(
+              topX,
+              topY,
+              rightX,
+              rightY
+            );
+            break;
+
+          case 3:
+            addSegment(
+              leftX,
+              leftY,
+              rightX,
+              rightY
+            );
+            break;
+
+          case 4:
+            addSegment(
+              rightX,
+              rightY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 5:
+            addSegment(
+              leftX,
+              leftY,
+              topX,
+              topY
+            );
+
+            addSegment(
+              rightX,
+              rightY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 6:
+            addSegment(
+              topX,
+              topY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 7:
+            addSegment(
+              leftX,
+              leftY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 8:
+            addSegment(
+              bottomX,
+              bottomY,
+              leftX,
+              leftY
+            );
+            break;
+
+          case 9:
+            addSegment(
+              topX,
+              topY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 10:
+            addSegment(
+              topX,
+              topY,
+              leftX,
+              leftY
+            );
+
+            addSegment(
+              rightX,
+              rightY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 11:
+            addSegment(
+              rightX,
+              rightY,
+              bottomX,
+              bottomY
+            );
+            break;
+
+          case 12:
+            addSegment(
+              rightX,
+              rightY,
+              leftX,
+              leftY
+            );
+            break;
+
+          case 13:
+            addSegment(
+              topX,
+              topY,
+              rightX,
+              rightY
+            );
+            break;
+
+          case 14:
+            addSegment(
+              topX,
+              topY,
+              leftX,
+              leftY
+            );
+            break;
         }
       }
     }
 
-    return result;
+    return segments;
   }
 
   /* =======================================================
-     SEGMENT CHAINING
+     SEGMENT KEY
      ======================================================= */
 
   function pointKey(
@@ -1276,14 +884,29 @@
     y
   ) {
     return (
-      `${x},${y}`
+      x +
+      ":" +
+      y
     );
   }
+
+  /* =======================================================
+     CHAIN SEGMENTS
+     ======================================================= */
 
   function chainSegments(
     segments
   ) {
-    const lookup =
+    const result =
+      [];
+
+    if (
+      !segments.length
+    ) {
+      return result;
+    }
+
+    const starts =
       new Map();
 
     for (
@@ -1291,25 +914,27 @@
       i < segments.length;
       i++
     ) {
-      const s =
+      const segment =
         segments[i];
 
       const key =
         pointKey(
-          s.ax,
-          s.ay
+          segment[0],
+          segment[1]
         );
 
       if (
-        !lookup.has(key)
+        !starts.has(
+          key
+        )
       ) {
-        lookup.set(
+        starts.set(
           key,
           []
         );
       }
 
-      lookup
+      starts
         .get(key)
         .push(i);
     }
@@ -1319,69 +944,90 @@
         segments.length
       );
 
-    const contours = [];
+    /*
+       Сначала пытаемся
+       строить замкнутые контуры.
+    */
 
     for (
-      let i = 0;
-      i < segments.length;
-      i++
+      let startIndex = 0;
+      startIndex <
+        segments.length;
+      startIndex++
     ) {
       if (
-        used[i]
+        used[startIndex]
       ) {
         continue;
       }
 
       const first =
-        segments[i];
+        segments[
+          startIndex
+        ];
 
-      used[i] = 1;
+      const points =
+        [];
 
-      const points = [
-        [
-          first.ax,
-          first.ay
-        ],
-        [
-          first.bx,
-          first.by
-        ]
-      ];
+      let currentIndex =
+        startIndex;
+
+      let guard =
+        0;
 
       const startX =
-        first.ax;
+        first[0];
 
       const startY =
-        first.ay;
+        first[1];
 
-      let x =
-        first.bx;
+      let currentX =
+        first[2];
 
-      let y =
-        first.by;
+      let currentY =
+        first[3];
 
-      let guard = 0;
+      points.push([
+        startX / 2,
+        startY / 2
+      ]);
+
+      used[
+        currentIndex
+      ] = 1;
+
+      points.push([
+        currentX / 2,
+        currentY / 2
+      ]);
 
       while (
-        guard <
-        segments.length + 5
+        guard++ <
+        segments.length + 10
       ) {
-        guard++;
-
         if (
-          x === startX &&
-          y === startY
+          currentX ===
+            startX &&
+          currentY ===
+            startY
         ) {
           break;
         }
 
+        const key =
+          pointKey(
+            currentX,
+            currentY
+          );
+
         const candidates =
-          lookup.get(
-            pointKey(x, y)
+          starts.get(
+            key
           );
 
         if (
-          !candidates
+          !candidates ||
+          !candidates.length
         ) {
           break;
         }
@@ -1389,13 +1035,22 @@
         let nextIndex =
           -1;
 
+        /*
+           Обычно здесь только
+           один следующий сегмент.
+
+           Если несколько —
+           выбираем первый
+           неиспользованный.
+        */
+
         for (
-          let j = 0;
-          j < candidates.length;
-          j++
+          let i = 0;
+          i < candidates.length;
+          i++
         ) {
           const candidate =
-            candidates[j];
+            candidates[i];
 
           if (
             !used[candidate]
@@ -1408,72 +1063,140 @@
         }
 
         if (
-          nextIndex === -1
+          nextIndex < 0
         ) {
           break;
         }
+
+        used[
+          nextIndex
+        ] = 1;
 
         const next =
           segments[
             nextIndex
           ];
 
-        used[
-          nextIndex
-        ] = 1;
+        currentX =
+          next[2];
 
-        x =
-          next.bx;
-
-        y =
-          next.by;
+        currentY =
+          next[3];
 
         points.push([
-          x,
-          y
+          currentX / 2,
+          currentY / 2
         ]);
       }
 
+      /*
+         Оставляем только
+         действительно замкнутые
+         контуры.
+
+         Открытые обрывки не
+         рисуем — именно это
+         помогает убрать пропуски.
+      */
+
       if (
         points.length >= 4 &&
-        x === startX &&
-        y === startY
+        Math.abs(
+          points[0][0] -
+          points[
+            points.length - 1
+          ][0]
+        ) < 0.01 &&
+        Math.abs(
+          points[0][1] -
+          points[
+            points.length - 1
+          ][1]
+        ) < 0.01
       ) {
         points.pop();
 
-        contours.push(
+        result.push(
           points
         );
       }
     }
 
-    return contours;
+    return result;
   }
 
   /* =======================================================
-     GEOMETRY
+     REMOVE DUPLICATE POINTS
      ======================================================= */
 
-  function distance(
-    a,
-    b
-  ) {
-    const dx =
-      a[0] - b[0];
-
-    const dy =
-      a[1] - b[1];
-
-    return Math.sqrt(
-      dx * dx +
-      dy * dy
-    );
-  }
-
-  function polygonArea(
+  function cleanContour(
     points
   ) {
-    let area = 0;
+    if (
+      points.length <
+      3
+    ) {
+      return [];
+    }
+
+    const result =
+      [];
+
+    let previous =
+      null;
+
+    for (
+      const point of points
+    ) {
+      if (
+        previous &&
+        Math.abs(
+          point[0] -
+          previous[0]
+        ) < 0.01 &&
+        Math.abs(
+          point[1] -
+          previous[1]
+        ) < 0.01
+      ) {
+        continue;
+      }
+
+      result.push(
+        point
+      );
+
+      previous =
+        point;
+    }
+
+    return result;
+  }
+
+  /* =======================================================
+     CHAIKIN SMOOTHING
+     ======================================================= */
+
+  function chaikin(
+    points,
+    amount
+  ) {
+    if (
+      points.length <
+      3
+    ) {
+      return points;
+    }
+
+    const result =
+      [];
+
+    const t =
+      clamp(
+        amount,
+        0.01,
+        0.45
+      );
 
     for (
       let i = 0;
@@ -1486,829 +1209,269 @@
       const b =
         points[
           (i + 1) %
-          points.length
+            points.length
         ];
 
-      area +=
-        a[0] * b[1] -
-        b[0] * a[1];
-    }
+      const q = [
+        a[0] +
+          (b[0] - a[0]) *
+            t,
 
-    return Math.abs(area) / 2;
-  }
-
-  function perpendicularDistance(
-    point,
-    start,
-    end
-  ) {
-    const x =
-      point[0];
-
-    const y =
-      point[1];
-
-    const x1 =
-      start[0];
-
-    const y1 =
-      start[1];
-
-    const x2 =
-      end[0];
-
-    const y2 =
-      end[1];
-
-    const dx =
-      x2 - x1;
-
-    const dy =
-      y2 - y1;
-
-    if (
-      dx === 0 &&
-      dy === 0
-    ) {
-      return distance(
-        point,
-        start
-      );
-    }
-
-    const t =
-      (
-        (x - x1) * dx +
-        (y - y1) * dy
-      ) /
-      (
-        dx * dx +
-        dy * dy
-      );
-
-    const px =
-      x1 + t * dx;
-
-    const py =
-      y1 + t * dy;
-
-    return distance(
-      point,
-      [
-        px,
-        py
-      ]
-    );
-  }
-
-  function rdp(
-    points,
-    epsilon
-  ) {
-    if (
-      points.length < 3
-    ) {
-      return points.slice();
-    }
-
-    let maxDistance =
-      epsilon;
-
-    let index =
-      -1;
-
-    const first =
-      points[0];
-
-    const last =
-      points[
-        points.length - 1
+        a[1] +
+          (b[1] - a[1]) *
+            t
       ];
 
-    for (
-      let i = 1;
-      i < points.length - 1;
-      i++
-    ) {
-      const d =
-        perpendicularDistance(
-          points[i],
-          first,
-          last
-        );
+      const r = [
+        b[0] -
+          (b[0] - a[0]) *
+            t,
 
-      if (
-        d > maxDistance
-      ) {
-        maxDistance =
-          d;
-
-        index =
-          i;
-      }
-    }
-
-    if (
-      index === -1
-    ) {
-      return [
-        first,
-        last
+        b[1] -
+          (b[1] - a[1]) *
+            t
       ];
+
+      result.push(
+        q,
+        r
+      );
     }
 
-    const left =
-      rdp(
-        points.slice(
-          0,
-          index + 1
-        ),
-        epsilon
-      );
-
-    const right =
-      rdp(
-        points.slice(
-          index
-        ),
-        epsilon
-      );
-
-    left.pop();
-
-    return left.concat(
-      right
-    );
-  }
-
-  /*
-    Упрощаем замкнутый контур,
-    не превращая его обратно
-    в набор квадратов.
-  */
-
-  function simplifyClosed(
-    points,
-    epsilon
-  ) {
-    if (
-      points.length < 8
-    ) {
-      return points;
-    }
-
-    let farthestIndex =
-      0;
-
-    let farthestDistance =
-      0;
-
-    const origin =
-      points[0];
-
-    for (
-      let i = 1;
-      i < points.length;
-      i++
-    ) {
-      const d =
-        distance(
-          origin,
-          points[i]
-        );
-
-      if (
-        d >
-        farthestDistance
-      ) {
-        farthestDistance =
-          d;
-
-        farthestIndex =
-          i;
-      }
-    }
-
-    const firstPart =
-      points.slice(
-        0,
-        farthestIndex + 1
-      );
-
-    const secondPart =
-      points.slice(
-        farthestIndex
-      );
-
-    const a =
-      rdp(
-        firstPart,
-        epsilon
-      );
-
-    const b =
-      rdp(
-        secondPart,
-        epsilon
-      );
-
-    if (
-      b.length
-    ) {
-      b.shift();
-    }
-
-    return a.concat(b);
+    return result;
   }
 
   /* =======================================================
-     SMOOTH CLOSED CURVE
+     SMOOTH CONTOUR
      ======================================================= */
 
-  function drawSmoothContour(
-    ctx,
+  function smoothContour(
     points,
-    outputScale,
-    tension
+    strength
   ) {
-    const count =
-      points.length;
+    let result =
+      cleanContour(
+        points
+      );
 
     if (
-      count < 3
+      result.length <
+      4
+    ) {
+      return result;
+    }
+
+    const normalized =
+      strength /
+      100;
+
+    /*
+       Даже 5% уже слегка
+       округляет углы.
+
+       При этом форма практически
+       не меняется.
+    */
+
+    const amount =
+      0.07 +
+      normalized *
+        0.31;
+
+    let iterations =
+      1;
+
+    if (
+      strength >= 25
+    ) {
+      iterations = 2;
+    }
+
+    if (
+      strength >= 55
+    ) {
+      iterations = 3;
+    }
+
+    if (
+      strength >= 80
+    ) {
+      iterations = 4;
+    }
+
+    for (
+      let i = 0;
+      i < iterations;
+      i++
+    ) {
+      result =
+        chaikin(
+          result,
+          amount
+        );
+    }
+
+    return result;
+  }
+
+  /* =======================================================
+     DRAW SMOOTH CONTOURS
+     ======================================================= */
+
+  function drawContours(
+    ctx,
+    contours,
+    color,
+    strength
+  ) {
+    if (
+      !contours.length
     ) {
       return;
     }
 
-    function get(index) {
-      return points[
-        (
-          index +
-          count
-        ) %
-        count
-      ];
-    }
+    ctx.save();
 
-    const start =
-      get(0);
+    ctx.beginPath();
 
-    ctx.moveTo(
-      start[0] *
-        outputScale,
-      start[1] *
-        outputScale
-    );
+    /*
+       Все контуры класса
+       идут в один Path.
+
+       evenodd позволяет
+       сохранять отверстия.
+    */
 
     for (
-      let i = 0;
-      i < count;
-      i++
+      const contour of contours
     ) {
-      const p0 =
-        get(i - 1);
-
-      const p1 =
-        get(i);
-
-      const p2 =
-        get(i + 1);
-
-      const p3 =
-        get(i + 2);
-
-      const c1x =
-        p1[0] +
-        (
-          p2[0] -
-          p0[0]
-        ) *
-        tension;
-
-      const c1y =
-        p1[1] +
-        (
-          p2[1] -
-          p0[1]
-        ) *
-        tension;
-
-      const c2x =
-        p2[0] -
-        (
-          p3[0] -
-          p1[0]
-        ) *
-        tension;
-
-      const c2y =
-        p2[1] -
-        (
-          p3[1] -
-          p1[1]
-        ) *
-        tension;
-
-      ctx.bezierCurveTo(
-        c1x *
-          outputScale,
-        c1y *
-          outputScale,
-
-        c2x *
-          outputScale,
-        c2y *
-          outputScale,
-
-        p2[0] *
-          outputScale,
-        p2[1] *
-          outputScale
-      );
-    }
-
-    ctx.closePath();
-  }
-
-  /* =======================================================
-     CLASS COLLECTION
-     ======================================================= */
-
-  function collectClasses(
-    labels
-  ) {
-    const counts =
-      new Map();
-
-    for (
-      let i = 0;
-      i < labels.length;
-      i++
-    ) {
-      const cls =
-        labels[i];
-
       if (
-        cls < 0
+        contour.length <
+        3
       ) {
         continue;
       }
 
-      counts.set(
-        cls,
-        (
-          counts.get(cls) ||
-          0
-        ) + 1
+      const first =
+        contour[0];
+
+      ctx.moveTo(
+        first[0],
+        first[1]
       );
-    }
-
-    /*
-      Большие области первыми,
-      маленькие интенсивные ядра
-      поверх.
-    */
-
-    return Array.from(
-      counts.entries()
-    ).sort(
-      (a, b) =>
-        b[1] - a[1]
-    );
-  }
-
-  /* =======================================================
-     VECTOR-LIKE RENDER
-     ======================================================= */
-
-  function renderContours(
-    labels,
-    width,
-    height,
-    palette,
-    originalWidth,
-    originalHeight,
-    workingScale
-  ) {
-    const canvas =
-      document.createElement(
-        "canvas"
-      );
-
-    canvas.width =
-      originalWidth;
-
-    canvas.height =
-      originalHeight;
-
-    const ctx =
-      canvas.getContext(
-        "2d"
-      );
-
-    /*
-      Очень важно:
-
-      НИКАКОГО fillRect().
-
-      НИКАКОГО рисования отдельных
-      радарных пикселей.
-
-      Только Path2D / Bezier.
-    */
-
-    ctx.imageSmoothingEnabled =
-      true;
-
-    const classes =
-      collectClasses(
-        labels
-      );
-
-    const tension =
-      lerp(
-        CONFIG.curveMin,
-        CONFIG.curveMax,
-        strength / 100
-      );
-
-    const epsilon =
-      lerp(
-        CONFIG.simplifyMin,
-        CONFIG.simplifyMax,
-        strength / 100
-      );
-
-    const tinyArea =
-      lerp(
-        CONFIG.tinyAreaMin,
-        CONFIG.tinyAreaMax,
-        strength / 100
-      );
-
-    /*
-      Чем сильнее сглаживание,
-      тем небольшое перекрытие
-      соседних контуров.
-
-      Это убирает тонкие щели
-      между соседними областями.
-    */
-
-    const seamOverlap =
-      lerp(
-        CONFIG.seamOverlapMin,
-        CONFIG.seamOverlapMax,
-        strength / 100
-      );
-
-    for (
-      let c = 0;
-      c < classes.length;
-      c++
-    ) {
-      const classId =
-        classes[c][0];
-
-      const color =
-        palette[classId];
-
-      if (!color) {
-        continue;
-      }
-
-      const segments =
-        buildBoundarySegments(
-          labels,
-          width,
-          height,
-          classId
-        );
-
-      if (
-        !segments.length
-      ) {
-        continue;
-      }
-
-      const contours =
-        chainSegments(
-          segments
-        );
 
       for (
-        let i = 0;
-        i < contours.length;
+        let i = 1;
+        i < contour.length;
         i++
       ) {
-        const raw =
-          contours[i];
-
-        const area =
-          polygonArea(
-            raw
-          );
-
-        if (
-          strength > 75 &&
-          area < tinyArea
-        ) {
-          continue;
-        }
-
-        let contour =
-          simplifyClosed(
-            raw,
-            epsilon
-          );
-
-        if (
-          contour.length < 3
-        ) {
-          continue;
-        }
-
-        /*
-          Немного расширяем сам
-          математический путь только
-          на границе.
-
-          Это не делает квадраты.
-          Это предотвращает щели
-          между соседними цветами.
-        */
-
-        if (
-          seamOverlap > 0
-        ) {
-          let cx = 0;
-          let cy = 0;
-
-          for (
-            let p = 0;
-            p < contour.length;
-            p++
-          ) {
-            cx +=
-              contour[p][0];
-
-            cy +=
-              contour[p][1];
-          }
-
-          cx /=
-            contour.length;
-
-          cy /=
-            contour.length;
-
-          contour =
-            contour.map(
-              point => {
-                const dx =
-                  point[0] - cx;
-
-                const dy =
-                  point[1] - cy;
-
-                const length =
-                  Math.sqrt(
-                    dx * dx +
-                    dy * dy
-                  );
-
-                if (
-                  length < 0.001
-                ) {
-                  return point;
-                }
-
-                /*
-                  Расширение очень
-                  маленькое и зависит
-                  от силы сглаживания.
-                */
-
-                const factor =
-                  (
-                    length +
-                    seamOverlap
-                  ) /
-                  length;
-
-                return [
-                  cx +
-                    dx *
-                    factor,
-
-                  cy +
-                    dy *
-                    factor
-                ];
-              }
-            );
-        }
-
-        ctx.beginPath();
-
-        drawSmoothContour(
-          ctx,
-          contour,
-          workingScale,
-          tension
+        ctx.lineTo(
+          contour[i][0],
+          contour[i][1]
         );
-
-        const fill =
-          `rgb(
-            ${color.r},
-            ${color.g},
-            ${color.b}
-          )`;
-
-        ctx.fillStyle =
-          fill;
-
-        /*
-          Сам контур дополнительно
-          слегка прокладываем тем же
-          цветом.
-
-          Поэтому между соседними
-          областями не появляется
-          прозрачная щель.
-        */
-
-        ctx.strokeStyle =
-          fill;
-
-        ctx.lineWidth =
-          seamOverlap *
-          1.5;
-
-        ctx.lineJoin =
-          "round";
-
-        ctx.lineCap =
-          "round";
-
-        ctx.fill(
-          "nonzero"
-        );
-
-        if (
-          seamOverlap > 0
-        ) {
-          ctx.stroke();
-        }
       }
+
+      ctx.closePath();
     }
 
-    return canvas;
+    ctx.fillStyle =
+      color;
+
+    ctx.strokeStyle =
+      color;
+
+    /*
+       Небольшое перекрытие
+       тем же самым цветом.
+
+       Никаких новых RGB-цветов
+       здесь не создаётся.
+    */
+
+    ctx.lineWidth =
+      1.15 +
+      strength *
+        0.018;
+
+    ctx.lineJoin =
+      "round";
+
+    ctx.lineCap =
+      "round";
+
+    ctx.fill(
+      "evenodd"
+    );
+
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   /* =======================================================
-     CACHE
+     PROCESS FRAME
      ======================================================= */
 
-  function cacheKey(
-    source,
-    value
+  async function processCurrentFrame(
+    strength
   ) {
-    return (
-      `${source}::${value}`
-    );
-  }
+    const token =
+      ++processToken;
 
-  function getCached(
-    key
-  ) {
     if (
-      !cache.has(key)
-    ) {
-      return null;
-    }
-
-    return cache.get(key);
-  }
-
-  function putCached(
-    key,
-    url
-  ) {
-    if (
-      cache.has(key)
-    ) {
-      cache.delete(key);
-    }
-
-    cache.set(
-      key,
-      url
-    );
-
-    cacheOrder.push(
-      key
-    );
-
-    while (
-      cacheOrder.length >
-      CONFIG.cacheLimit
-    ) {
-      const oldKey =
-        cacheOrder.shift();
-
-      const oldURL =
-        cache.get(
-          oldKey
-        );
-
-      cache.delete(
-        oldKey
-      );
-
-      if (
-        oldURL &&
-        oldURL !== currentProcessedURL
-      ) {
-        try {
-          URL.revokeObjectURL(
-            oldURL
-          );
-        } catch (_) {}
-      }
-    }
-  }
-
-  function clearCache() {
-    cache.forEach(
-      url => {
-        if (
-          url ===
-          currentProcessedURL
-        ) {
-          return;
-        }
-
-        try {
-          URL.revokeObjectURL(
-            url
-          );
-        } catch (_) {}
-      }
-    );
-
-    cache.clear();
-    cacheOrder.length = 0;
-  }
-
-  /* =======================================================
-     PROCESS IMAGE
-     ======================================================= */
-
-  async function processImage(
-    source,
-    token
-  ) {
-    if (
-      !source ||
       strength <= 0
     ) {
-      return null;
+      restoreOriginal();
+
+      return;
     }
 
-    const key =
-      cacheKey(
-        source,
-        strength
-      );
+    if (
+      processing
+    ) {
+      return;
+    }
 
-    const cached =
-      getCached(key);
+    const source =
+      getSourceImage();
 
     if (
-      cached
+      !source
     ) {
-      return cached;
+      return;
+    }
+
+    if (
+      !source.complete ||
+      !source.naturalWidth ||
+      !source.naturalHeight
+    ) {
+      setTimeout(
+        () =>
+          processCurrentFrame(
+            strength
+          ),
+        150
+      );
+
+      return;
     }
 
     processing =
       true;
 
-    setStatus(
-      "Построение контуров…"
-    );
-
     try {
       const image =
         await loadImage(
-          source
+          source.currentSrc ||
+          source.src
         );
 
       if (
         token !==
         processToken
       ) {
-        return null;
+        return;
       }
 
       const width =
@@ -2319,24 +1482,26 @@
         image.naturalHeight ||
         image.height;
 
-      /*
-        Исходный GIF читается
-        только один раз.
-      */
+      if (
+        !width ||
+        !height
+      ) {
+        return;
+      }
 
-      const sourceCanvas =
+      const canvas =
         document.createElement(
           "canvas"
         );
 
-      sourceCanvas.width =
+      canvas.width =
         width;
 
-      sourceCanvas.height =
+      canvas.height =
         height;
 
-      const sourceContext =
-        sourceCanvas.getContext(
+      const ctx =
+        canvas.getContext(
           "2d",
           {
             willReadFrequently:
@@ -2344,53 +1509,48 @@
           }
         );
 
-      sourceContext.drawImage(
+      if (
+        !ctx
+      ) {
+        throw new Error(
+          "Canvas недоступен"
+        );
+      }
+
+      ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      ctx.drawImage(
         image,
         0,
-        0
+        0,
+        width,
+        height
       );
 
       const imageData =
-        sourceContext.getImageData(
+        ctx.getImageData(
           0,
           0,
           width,
           height
         );
 
-      if (
-        token !==
-        processToken
-      ) {
-        return null;
-      }
-
-      /*
-        Определяем реальные цвета
-        данного GIF-кадра.
-      */
-
       const palette =
-        buildPalette(
-          imageData.data
-        );
+        getCurrentPalette();
 
       if (
-        !palette.length
+        palette.length <
+        3
       ) {
-        return null;
+        return;
       }
 
-      /*
-        Каждый непрозрачный пиксель
-        получает класс.
-
-        После этого сам растр
-        больше не используется
-        для финальной отрисовки.
-      */
-
-      const labels =
+      const map =
         buildLabelMap(
           imageData,
           width,
@@ -2402,665 +1562,713 @@
         token !==
         processToken
       ) {
-        return null;
+        return;
       }
 
-      const workingScale =
-        getWorkingScale();
+      const labels =
+        map.labels;
 
-      const reduced =
-        reduceLabels(
-          labels,
-          width,
-          height,
-          workingScale
-        );
+      /*
+         Если радарных цветных
+         пикселей вообще нет —
+         ничего не меняем.
+      */
 
-      if (
-        token !==
-        processToken
+      let coloredPixels =
+        0;
+
+      for (
+        let i = 0;
+        i < labels.length;
+        i++
       ) {
-        return null;
+        if (
+          labels[i] >=
+          SOURCE_CLASS_START
+        ) {
+          coloredPixels++;
+        }
       }
 
-      const smoothed =
-        smoothLabels(
-          reduced.labels,
-          reduced.width,
-          reduced.height
-        );
-
       if (
-        token !==
-        processToken
+        coloredPixels <
+        20
       ) {
-        return null;
+        return;
       }
 
       /*
-        ФИНАЛЬНАЯ ОТРИСОВКА:
+         Удаляем из изображения
+         ТОЛЬКО цветные радарные
+         классы.
 
-        никаких квадратов.
-
-        Только непрерывные
-        замкнутые кривые.
+         Серый фон и прочие
+         неизвестные пиксели
+         остаются полностью
+         нетронутыми.
       */
 
-      const output =
-        renderContours(
-          smoothed,
-          reduced.width,
-          reduced.height,
-          palette,
-          width,
-          height,
-          workingScale
-        );
+      const data =
+        imageData.data;
 
-      if (
-        token !==
-        processToken
-      ) {
-        return null;
-      }
-
-      const url =
-        await new Promise(
-          resolve => {
-            output.toBlob(
-              blob => {
-                if (!blob) {
-                  resolve(null);
-                  return;
-                }
-
-                resolve(
-                  URL.createObjectURL(
-                    blob
-                  )
-                );
-              },
-              "image/png"
-            );
-          }
-        );
-
-      if (
-        !url ||
-        token !==
-        processToken
+      for (
+        let i = 0;
+        i < labels.length;
+        i++
       ) {
         if (
-          url
+          labels[i] >=
+          SOURCE_CLASS_START
         ) {
-          try {
-            URL.revokeObjectURL(
-              url
-            );
-          } catch (_) {}
-        }
-
-        return null;
-      }
-
-      putCached(
-        key,
-        url
-      );
-
-      return url;
-    } finally {
-      processing =
-        false;
-    }
-  }
-
-  /* =======================================================
-     ORIGINAL / PROCESSED LAYER
-     ======================================================= */
-
-  async function applyToLayer(
-    layer
-  ) {
-    if (
-      !layer
-    ) {
-      return;
-    }
-
-    const source =
-      layer.__cloradOriginalURL ||
-      layer._url;
-
-    if (
-      !source
-    ) {
-      return;
-    }
-
-    currentLayer =
-      layer;
-
-    currentSource =
-      source;
-
-    /*
-      0% = настоящий исходный GIF.
-    */
-
-    if (
-      strength <= 0
-    ) {
-      ++processToken;
-
-      layer.__cloradSmoothingInternal =
-        true;
-
-      try {
-        layer.setUrl(
-          source
-        );
-      } finally {
-        layer.__cloradSmoothingInternal =
-          false;
-      }
-
-      currentProcessedURL =
-        null;
-
-      setStatus("");
-
-      return;
-    }
-
-    const token =
-      ++processToken;
-
-    const processed =
-      await processImage(
-        source,
-        token
-      );
-
-    if (
-      token !==
-      processToken ||
-      !processed
-    ) {
-      return;
-    }
-
-    currentProcessedURL =
-      processed;
-
-    /*
-      Критически важно:
-
-      здесь мы НЕ оставляем
-      исходную картинку вторым
-      слоем.
-
-      Тот же Leaflet ImageOverlay
-      получает новый URL.
-    */
-
-    layer.__cloradSmoothingInternal =
-      true;
-
-    try {
-      layer.setUrl(
-        processed
-      );
-    } finally {
-      layer.__cloradSmoothingInternal =
-        false;
-    }
-
-    setStatus(
-      `Применено: ${strength}%`
-    );
-  }
-
-  function processCurrent() {
-    if (
-      !currentLayer
-    ) {
-      scanLayers();
-    }
-
-    if (
-      !currentLayer
-    ) {
-      setStatus(
-        "Радарный кадр ещё не загружен"
-      );
-
-      return;
-    }
-
-    applyToLayer(
-      currentLayer
-    );
-  }
-
-  /* =======================================================
-     RESTORE
-     ======================================================= */
-
-  function restoreOriginal(
-    layer
-  ) {
-    if (
-      !layer
-    ) {
-      return;
-    }
-
-    const source =
-      layer.__cloradOriginalURL ||
-      currentSource;
-
-    if (
-      !source
-    ) {
-      return;
-    }
-
-    ++processToken;
-
-    layer.__cloradSmoothingInternal =
-      true;
-
-    try {
-      layer.setUrl(
-        source
-      );
-    } finally {
-      layer.__cloradSmoothingInternal =
-        false;
-    }
-
-    currentProcessedURL =
-      null;
-  }
-
-  /* =======================================================
-     RADAR LAYER DETECTION
-     ======================================================= */
-
-  function isRadarLayer(
-    layer
-  ) {
-    if (
-      !layer
-    ) {
-      return false;
-    }
-
-    const options =
-      layer.options ||
-      {};
-
-    const className =
-      options.className ||
-      "";
-
-    return (
-      className.includes(
-        "clorad-gif-radar-image"
-      ) ||
-      className.includes(
-        "clorad-radar-raster"
-      )
-    );
-  }
-
-  /* =======================================================
-     LEAFLET HOOK
-     ======================================================= */
-
-  function installLeafletHook() {
-    if (
-      leafletReady
-    ) {
-      return true;
-    }
-
-    if (
-      !window.L ||
-      !L.ImageOverlay
-    ) {
-      return false;
-    }
-
-    const prototype =
-      L.ImageOverlay.prototype;
-
-    if (
-      !prototype.setUrl ||
-      !prototype.onAdd
-    ) {
-      return false;
-    }
-
-    const originalSetUrl =
-      prototype.setUrl;
-
-    const originalOnAdd =
-      prototype.onAdd;
-
-    prototype.onAdd =
-      function(map) {
-        const result =
-          originalOnAdd.call(
-            this,
-            map
-          );
-
-        if (
-          isRadarLayer(this)
-        ) {
-          if (
-            !this.__cloradOriginalURL
-          ) {
-            this.__cloradOriginalURL =
-              this._url;
-          }
-
-          currentLayer =
-            this;
-
-          currentSource =
-            this.__cloradOriginalURL;
-
-          if (
-            strength > 0
-          ) {
-            setTimeout(
-              () => {
-                if (
-                  currentLayer ===
-                  this
-                ) {
-                  applyToLayer(
-                    this
-                  );
-                }
-              },
-              0
-            );
-          }
-        }
-
-        return result;
-      };
-
-    prototype.setUrl =
-      function(url) {
-        /*
-          Это реальная смена кадра
-          GIF-анимации.
-
-          Новый URL становится
-          новым исходным кадром.
-        */
-
-        if (
-          isRadarLayer(this) &&
-          !this.__cloradSmoothingInternal
-        ) {
-          this.__cloradOriginalURL =
-            url;
-
-          currentLayer =
-            this;
-
-          currentSource =
-            url;
-
-          currentProcessedURL =
-            null;
-
-          const result =
-            originalSetUrl.call(
-              this,
-              url
-            );
-
-          if (
-            strength > 0
-          ) {
-            setTimeout(
-              () => {
-                if (
-                  currentLayer ===
-                  this
-                ) {
-                  applyToLayer(
-                    this
-                  );
-                }
-              },
-              0
-            );
-          }
-
-          return result;
-        }
-
-        return originalSetUrl.call(
-          this,
-          url
-        );
-      };
-
-    leafletReady =
-      true;
-
-    return true;
-  }
-
-  /* =======================================================
-     MAP
-     ======================================================= */
-
-  function scanLayers() {
-    if (
-      !window.map ||
-      !window.map._layers
-    ) {
-      return;
-    }
-
-    Object.keys(
-      window.map._layers
-    ).forEach(
-      id => {
-        const layer =
-          window.map._layers[id];
-
-        if (
-          isRadarLayer(layer)
-        ) {
-          currentLayer =
-            layer;
-
-          currentSource =
-            layer.__cloradOriginalURL ||
-            layer._url;
+          const p =
+            i * 4;
+
+          data[p + 3] =
+            0;
         }
       }
-    );
-  }
 
-  function installMapHooks() {
-    if (
-      mapReady
-    ) {
-      return true;
-    }
+      ctx.putImageData(
+        imageData,
+        0,
+        0
+      );
 
-    if (
-      !window.map
-    ) {
-      return false;
-    }
+      /*
+         Теперь поверх оригинала
+         строим настоящие
+         сглаженные контуры.
+      */
 
-    window.map.on(
-      "layeradd",
-      event => {
-        const layer =
-          event.layer;
-
+      for (
+        let classIndex =
+          SOURCE_CLASS_START;
+        classIndex <
+          palette.length;
+        classIndex++
+      ) {
         if (
-          !isRadarLayer(layer)
+          token !==
+          processToken
         ) {
           return;
         }
 
-        currentLayer =
-          layer;
-
-        currentSource =
-          layer.__cloradOriginalURL ||
-          layer._url;
+        const box =
+          map.boxes[
+            classIndex
+          ];
 
         if (
-          strength > 0
+          !box ||
+          box.count <= 0
         ) {
-          setTimeout(
-            () => {
-              if (
-                currentLayer ===
-                layer
-              ) {
-                applyToLayer(
-                  layer
-                );
-              }
-            },
-            0
+          continue;
+        }
+
+        const segments =
+          buildSegmentsForClass(
+            labels,
+            width,
+            height,
+            classIndex,
+            box
           );
-        }
-      }
-    );
 
-    window.map.on(
-      "layerremove",
-      event => {
         if (
-          event.layer ===
-          currentLayer
+          !segments.length
         ) {
-          currentLayer =
-            null;
-
-          currentSource =
-            null;
-
-          currentProcessedURL =
-            null;
+          continue;
         }
+
+        const contours =
+          chainSegments(
+            segments
+          );
+
+        if (
+          !contours.length
+        ) {
+          continue;
+        }
+
+        const smoothContours =
+          contours
+            .map(
+              contour =>
+                smoothContour(
+                  contour,
+                  strength
+                )
+            )
+            .filter(
+              contour =>
+                contour.length >=
+                3
+            );
+
+        if (
+          !smoothContours.length
+        ) {
+          continue;
+        }
+
+        const color =
+          palette[
+            classIndex
+          ];
+
+        if (
+          !color
+        ) {
+          continue;
+        }
+
+        drawContours(
+          ctx,
+          smoothContours,
+          `rgb(${color.r},${color.g},${color.b})`,
+          strength
+        );
       }
-    );
 
-    mapReady =
-      true;
+      if (
+        token !==
+        processToken
+      ) {
+        return;
+      }
 
-    scanLayers();
+      const result =
+        canvas.toDataURL(
+          "image/png"
+        );
 
-    return true;
+      if (
+        !result ||
+        result ===
+          "data:,"
+      ) {
+        return;
+      }
+
+      installSmoothedLayer(
+        result
+      );
+
+    } catch (
+      error
+    ) {
+      console.error(
+        "CLOrad smoothing:",
+        error
+      );
+    } finally {
+      if (
+        token ===
+        processToken
+      ) {
+        processing =
+          false;
+      }
+    }
   }
 
-  function waitForMap() {
+  /* =======================================================
+     SMOOTHED LEAFLET LAYER
+     ======================================================= */
+
+  function installSmoothedLayer(
+    url
+  ) {
     if (
       !window.map
     ) {
-      setTimeout(
-        waitForMap,
-        250
+      return;
+    }
+
+    removeSmoothedLayer();
+
+    smoothingLayer =
+      L.imageOverlay(
+        url,
+        GIF_BOUNDS,
+        {
+          opacity: 1,
+          interactive: false,
+          zIndex: 7,
+          className:
+            "clorad-gif-radar-smoothed"
+        }
       );
+
+    smoothingLayer.addTo(
+      window.map
+    );
+
+    /*
+       Исходный GIF скрываем
+       только после того, как
+       новый слой уже готов.
+    */
+
+    sourceImageElement =
+      getSourceImage();
+
+    if (
+      sourceImageElement
+    ) {
+      if (
+        sourceImageOpacity ===
+        null
+      ) {
+        sourceImageOpacity =
+          sourceImageElement.style.opacity ||
+          "1";
+      }
+
+      sourceImageElement.style.opacity =
+        "0";
+    }
+
+    if (
+      typeof smoothingLayer.bringToFront ===
+      "function"
+    ) {
+      smoothingLayer.bringToFront();
+    }
+  }
+
+  /* =======================================================
+     REMOVE SMOOTHED LAYER
+     ======================================================= */
+
+  function removeSmoothedLayer() {
+    if (
+      smoothingLayer &&
+      window.map &&
+      window.map.hasLayer(
+        smoothingLayer
+      )
+    ) {
+      window.map.removeLayer(
+        smoothingLayer
+      );
+    }
+
+    smoothingLayer =
+      null;
+  }
+
+  /* =======================================================
+     RESTORE ORIGINAL
+     ======================================================= */
+
+  function restoreOriginal() {
+    processToken++;
+
+    removeSmoothedLayer();
+
+    const source =
+      getSourceImage();
+
+    if (
+      source
+    ) {
+      source.style.opacity =
+        "1";
+    }
+
+    sourceImageElement =
+      source;
+
+    sourceImageOpacity =
+      null;
+
+    processing =
+      false;
+  }
+
+  /* =======================================================
+     INSTALL UI
+     ======================================================= */
+
+  function installSetting() {
+    if (
+      installed
+    ) {
+      return;
+    }
+
+    const settings =
+      document.getElementById(
+        "settings"
+      );
+
+    if (
+      !settings
+    ) {
+      return;
+    }
+
+    if (
+      document.getElementById(
+        SETTING_ID
+      )
+    ) {
+      installed =
+        true;
 
       return;
     }
 
-    installLeafletHook();
-    installMapHooks();
-    scanLayers();
+    const setting =
+      document.createElement(
+        "div"
+      );
+
+    setting.className =
+      "setting";
+
+    setting.id =
+      SETTING_ID;
+
+    setting.innerHTML = `
+      <button
+        class="settingHead"
+        id="${BUTTON_ID}"
+        type="button"
+      >
+        <span>Сглаживание радара</span>
+        <span class="settingArrow">›</span>
+      </button>
+
+      <div
+        class="settingBody"
+        id="${PANEL_ID}"
+      >
+        <div
+          style="
+            font-size:12px;
+            color:#9da7ad;
+            margin-bottom:10px;
+          "
+        >
+          Сглаживание контуров
+        </div>
+
+        <input
+          id="${RANGE_ID}"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
+          style="
+            width:100%;
+            accent-color:#53e39b;
+          "
+        >
+
+        <div
+          id="${VALUE_ID}"
+          style="
+            margin-top:7px;
+            font-size:13px;
+            color:#dfe4e7;
+            text-align:right;
+          "
+        >
+          0%
+        </div>
+      </div>
+    `;
+
+    const framesSetting =
+      document.getElementById(
+        "framesSetting"
+      );
+
+    /*
+       Именно сюда:
+
+       Настройки
+       ├─ Кол. кадров
+       └─ Сглаживание радара
+    */
+
+    if (
+      framesSetting
+    ) {
+      framesSetting.after(
+        setting
+      );
+    } else {
+      settings.appendChild(
+        setting
+      );
+    }
+
+    const button =
+      document.getElementById(
+        BUTTON_ID
+      );
+
+    const range =
+      document.getElementById(
+        RANGE_ID
+      );
+
+    const value =
+      document.getElementById(
+        VALUE_ID
+      );
+
+    /*
+       Открытие / закрытие
+       настройки.
+    */
+
+    button?.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        setting.classList.toggle(
+          "open"
+        );
+      }
+    );
+
+    /*
+       Ползунок.
+
+       Во время движения
+       НЕ запускаем тяжёлую
+       обработку.
+    */
+
+    range?.addEventListener(
+      "input",
+      () => {
+        const next =
+          Number(
+            range.value
+          );
+
+        smoothingValue =
+          clamp(
+            next,
+            0,
+            100
+          );
+
+        if (
+          value
+        ) {
+          value.textContent =
+            smoothingValue +
+            "%";
+        }
+
+        /*
+           При начале нового
+           движения убираем
+           старый результат.
+
+           Поэтому старый кадр
+           никогда не остаётся
+           поверх нового.
+        */
+
+        if (
+          smoothingLayer
+        ) {
+          removeSmoothedLayer();
+
+          const source =
+            getSourceImage();
+
+          if (
+            source
+          ) {
+            source.style.opacity =
+              "1";
+          }
+        }
+
+        /*
+           0% сразу возвращает
+           оригинал.
+        */
+
+        if (
+          smoothingValue ===
+          0
+        ) {
+          restoreOriginal();
+
+          return;
+        }
+      }
+    );
+
+    /*
+       Обработка только после
+       отпускания ползунка.
+    */
+
+    const scheduleRelease =
+      () => {
+        clearTimeout(
+          releaseTimer
+        );
+
+        releaseTimer =
+          setTimeout(
+            () => {
+              processCurrentFrame(
+                smoothingValue
+              );
+            },
+            220
+          );
+      };
+
+    range?.addEventListener(
+      "pointerup",
+      scheduleRelease
+    );
+
+    range?.addEventListener(
+      "touchend",
+      scheduleRelease
+    );
+
+    range?.addEventListener(
+      "mouseup",
+      scheduleRelease
+    );
+
+    installed =
+      true;
   }
 
   /* =======================================================
-     PUBLIC API
+     FRAME CHANGE OBSERVER
      ======================================================= */
 
-  window.CLOradRadarSmoothing = {
-    getStrength() {
-      return strength;
-    },
+  function watchGIFFrame() {
+    /*
+       Когда gif-radar.js меняет
+       src исходного ImageOverlay,
+       ждём загрузки нового кадра.
 
-    setStrength(value) {
-      strength =
-        Math.round(
-          clamp(
-            Number(value) || 0,
-            CONFIG.min,
-            CONFIG.max
-          ) /
-          CONFIG.step
-        ) *
-        CONFIG.step;
+       Само сглаживание при этом
+       автоматически не запускается:
+       оно запускается только после
+       отпускания ползунка.
+    */
 
-      const range =
-        $("cloradSmoothingRange");
+    const observer =
+      new MutationObserver(
+        mutations => {
+          for (
+            const mutation of mutations
+          ) {
+            if (
+              mutation.type !==
+              "attributes"
+            ) {
+              continue;
+            }
 
-      if (range) {
-        range.value =
-          String(strength);
+            if (
+              mutation.attributeName !==
+              "src"
+            ) {
+              continue;
+            }
+
+            const target =
+              mutation.target;
+
+            if (
+              !target.matches?.(
+                "img.clorad-gif-radar-image"
+              )
+            ) {
+              continue;
+            }
+
+            /*
+               Если кадр переключили,
+               старый сглаженный слой
+               больше не соответствует
+               GIF.
+            */
+
+            if (
+              smoothingLayer
+            ) {
+              removeSmoothedLayer();
+            }
+
+            target.style.opacity =
+              "1";
+
+            /*
+               Если пользователь не
+               двигает ползунок и
+               сглаживание было включено,
+               новый кадр не обрабатываем
+               автоматически.
+
+               Это специально снижает
+               нагрузку на iPhone.
+            */
+          }
+        }
+      );
+
+    observer.observe(
+      document.body,
+      {
+        subtree: true,
+        attributes: true,
+        attributeFilter: [
+          "src"
+        ]
       }
-
-      updateValue();
-
-      processCurrent();
-    },
-
-    process() {
-      processCurrent();
-    },
-
-    restore() {
-      if (
-        currentLayer
-      ) {
-        restoreOriginal(
-          currentLayer
-        );
-      }
-
-      setStatus("");
-    },
-
-    clearCache() {
-      clearCache();
-    }
-  };
+    );
+  }
 
   /* =======================================================
      INIT
      ======================================================= */
 
   function init() {
-    installStyle();
+    installSetting();
 
-    createUI();
+    if (
+      !installed
+    ) {
+      setTimeout(
+        init,
+        250
+      );
 
-    startUIWatcher();
+      return;
+    }
 
-    installLeafletHook();
-
-    installMapHooks();
-
-    waitForMap();
+    watchGIFFrame();
   }
+
+  /*
+     Запускаем после загрузки
+     gif-radar.js и интерфейса.
+  */
 
   if (
     document.readyState ===
@@ -3076,5 +2284,91 @@
   } else {
     init();
   }
+
+  /* =======================================================
+     PUBLIC API
+     ======================================================= */
+
+  window.CLOradRadarSmoothing = {
+    getValue() {
+      return smoothingValue;
+    },
+
+    setValue(value) {
+      smoothingValue =
+        clamp(
+          Number(value) || 0,
+          0,
+          100
+        );
+
+      const range =
+        document.getElementById(
+          RANGE_ID
+        );
+
+      const valueElement =
+        document.getElementById(
+          VALUE_ID
+        );
+
+      if (
+        range
+      ) {
+        range.value =
+          smoothingValue;
+      }
+
+      if (
+        valueElement
+      ) {
+        valueElement.textContent =
+          smoothingValue +
+          "%";
+      }
+
+      if (
+        smoothingValue ===
+        0
+      ) {
+        restoreOriginal();
+      } else {
+        processCurrentFrame(
+          smoothingValue
+        );
+      }
+    },
+
+    restore() {
+      smoothingValue =
+        0;
+
+      const range =
+        document.getElementById(
+          RANGE_ID
+        );
+
+      const value =
+        document.getElementById(
+          VALUE_ID
+        );
+
+      if (
+        range
+      ) {
+        range.value =
+          "0";
+      }
+
+      if (
+        value
+      ) {
+        value.textContent =
+          "0%";
+      }
+
+      restoreOriginal();
+    }
+  };
 
 })();
