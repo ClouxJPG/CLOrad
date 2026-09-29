@@ -134,9 +134,6 @@
   let nav =
     null;
 
-  /*
-   * ЕДИНСТВЕННЫЙ RainRadar layer.
-   */
   let layer =
     null;
 
@@ -170,10 +167,6 @@
   let requestId =
     0;
 
-  /*
-   * Версия текущей операции
-   * переключения кадра.
-   */
   let frameRequestId =
     0;
 
@@ -192,25 +185,15 @@
   let legendSaved =
     false;
 
-  /*
-   * Исходные серые тайлы.
-   */
   const grayCache =
     new Map();
 
-  /*
-   * Уже окрашенные тайлы.
-   */
   const colorCache =
     new Map();
 
   const MAX_CACHE =
     600;
 
-  /*
-   * Карта времени для реально
-   * загруженного состояния слоя.
-   */
   let displayedTimestamp =
     null;
 
@@ -367,9 +350,8 @@
        * RainRadar не имеет собственных
        * переходов между кадрами.
        *
-       * При этом НЕ трогаем
-       * .leaflet-zoom-animated:
-       * Leaflet сам управляет zoom transform.
+       * Zoom-трансформацию Leaflet
+       * НЕ переопределяем.
        */
       .clorad-rainradar-layer,
       .clorad-rainradar-layer *,
@@ -384,14 +366,15 @@
       }
 
       /*
-       * НИКАКИХ:
-       * transform-origin
-       * transform
-       * width/height override
-       * pixelated
+       * Leaflet полностью управляет:
+       * - width
+       * - height
+       * - position
+       * - transform
+       * - zoom scaling
        *
-       * Leaflet сам выставляет геометрию
-       * и масштабирует tile container.
+       * Никаких ручных геометрических
+       * переопределений здесь нет.
        */
       canvas.clorad-rainradar-tile {
         display: block !important;
@@ -401,9 +384,7 @@
         border: 0 !important;
 
         /*
-         * Обычная интерполяция браузера.
-         * Благодаря этому радар плавно
-         * масштабируется при zoom.
+         * Плавная интерполяция при zoom.
          */
         image-rendering: auto !important;
 
@@ -579,6 +560,14 @@
     timestamp,
     coords
   ) {
+    /*
+     * Для RainRadar источник остаётся
+     * нативным Z=5.
+     *
+     * coords.z здесь нормализуется
+     * на уровне слоя, поэтому API
+     * получает именно исходный Z=5.
+     */
     return (
       API +
       "?timestamp=" +
@@ -1331,9 +1320,6 @@
 
   /* =======================================================
      RAINRADAR GRID LAYER
-     
-     ВАЖНО:
-     Этот объект создаётся ОДИН РАЗ.
      ======================================================= */
 
   const RainRadarLayer =
@@ -1378,9 +1364,6 @@
           map
         );
 
-        /*
-         * НИКАКОГО setOpacity(0).
-         */
         this.setOpacity(
           1
         );
@@ -1429,13 +1412,8 @@
       },
 
       /*
-       * Leaflet сам располагает canvas
-       * в своей tile-сетке.
-       *
-       * Мы НЕ задаём:
-       * - transform
-       * - transform-origin
-       * - pixelated
+       * Leaflet полностью управляет
+       * геометрией canvas.
        */
       createTile(
         coords,
@@ -1447,8 +1425,11 @@
           );
 
         /*
-         * Только внутренний bitmap.
-         * CSS-геометрию выставит Leaflet.
+         * Только bitmap-размер.
+         *
+         * CSS width/height НЕ задаём:
+         * Leaflet сам установит
+         * правильную геометрию тайла.
          */
         tile.width =
           TILE_SIZE;
@@ -1471,15 +1452,6 @@
         tile.style.border =
           "0";
 
-        /*
-         * ВАЖНО:
-         * НЕ ставим pixelated.
-         *
-         * Leaflet сможет плавно
-         * масштабировать весь tile
-         * при zoom.
-         */
-
         const ctx =
           tile.getContext(
             "2d"
@@ -1496,22 +1468,50 @@
           return tile;
         }
 
+        /*
+         * Это относится только к
+         * отрисовке bitmap внутри
+         * самого canvas.
+         *
+         * При map zoom масштабируется
+         * сам canvas браузером.
+         */
         ctx.imageSmoothingEnabled =
           false;
 
         const timestamp =
           this._timestamp;
 
+        /*
+         * Leaflet при minNativeZoom =
+         * maxNativeZoom = 5 держит
+         * исходную тайловую сетку на Z=5.
+         *
+         * Поэтому запрос к API остаётся
+         * строго Z=5.
+         */
+        const sourceCoords = {
+          z:
+            this._tileZoom ??
+            RR_NATIVE_ZOOM,
+
+          x:
+            coords.x,
+
+          y:
+            coords.y
+        };
+
+        /*
+         * В API всё равно передаём
+         * нативный Z=5.
+         */
+        sourceCoords.z =
+          RR_NATIVE_ZOOM;
+
         getColoredTile(
           timestamp,
-          {
-            z:
-              RR_NATIVE_ZOOM,
-            x:
-              coords.x,
-            y:
-              coords.y
-          }
+          sourceCoords
         )
           .then(
             source => {
@@ -1624,6 +1624,14 @@
         updateWhenIdle:
           true,
 
+        /*
+         * Leaflet во время zoom
+         * масштабирует существующую
+         * tile-сетку плавно.
+         *
+         * После окончания zoom
+         * обновляется реальная сетка.
+         */
         updateWhenZooming:
           false,
 
@@ -1698,8 +1706,15 @@
             {
               x:
                 entry.coords.x,
+
               y:
                 entry.coords.y,
+
+              /*
+               * ВАЖНО:
+               * сохраняем реальный z
+               * из Leaflet.
+               */
               z:
                 entry.coords.z
             }
@@ -1743,17 +1758,24 @@
       return [];
     }
 
+    /*
+     * Запоминаем tileZoom.
+     *
+     * Если пользователь успел изменить
+     * zoom во время загрузки кадра,
+     * подготовленный набор нельзя
+     * применять к новой сетке.
+     */
+    const capturedTileZoom =
+      layer
+        ? layer._tileZoom
+        : null;
+
     const prepared =
       new Array(
         visible.length
       );
 
-    /*
-     * Никакого изменения DOM.
-     *
-     * Только загрузка следующего
-     * изображения в offscreen canvas.
-     */
     await Promise.all(
       visible.map(
         async (
@@ -1772,10 +1794,16 @@
             await getColoredTile(
               timestamp,
               {
+                /*
+                 * API всегда получает
+                 * исходную сетку Z=5.
+                 */
                 z:
                   RR_NATIVE_ZOOM,
+
                 x:
                   item.coords.x,
+
                 y:
                   item.coords.y
               }
@@ -1854,6 +1882,19 @@
       return null;
     }
 
+    /*
+     * Критическая проверка:
+     * пока грузились изображения,
+     * Leaflet мог перестроить сетку.
+     */
+    if (
+      layer &&
+      layer._tileZoom !==
+        capturedTileZoom
+    ) {
+      return null;
+    }
+
     return prepared;
   }
 
@@ -1877,10 +1918,35 @@
         item.key
       ];
 
-    return !!(
-      current &&
-      current.el ===
+    if (
+      !current ||
+      current.el !==
         item.canvas
+    ) {
+      return false;
+    }
+
+    if (
+      !current.coords
+    ) {
+      return false;
+    }
+
+    /*
+     * Проверяем настоящие
+     * Leaflet coordinates.
+     *
+     * Это предотвращает запись
+     * подготовленного старого тайла
+     * в другой tile после zoom/pan.
+     */
+    return (
+      current.coords.x ===
+        item.coords.x &&
+      current.coords.y ===
+        item.coords.y &&
+      current.coords.z ===
+        item.coords.z
     );
   }
 
@@ -1908,9 +1974,11 @@
     }
 
     /*
-     * Проверяем, что Leaflet не успел
-     * заменить tile DOM во время
-     * подготовки кадра.
+     * Сначала проверяем ВСЮ сетку.
+     *
+     * Если хотя бы один canvas
+     * уже заменён Leaflet,
+     * ничего не записываем.
      */
     for (
       const item of
@@ -1928,10 +1996,8 @@
     /*
      * Один JS execution task.
      *
-     * Здесь все существующие canvas
-     * получают новое содержимое,
-     * но сами DOM-элементы остаются
-     * теми же.
+     * DOM-элементы canvas не меняются.
+     * Меняется только их bitmap.
      */
     for (
       const item of
@@ -1985,13 +2051,9 @@
     }
 
     /*
-     * КРИТИЧНО:
-     * теперь новые tile, которые
+     * Теперь новые tile, которые
      * Leaflet создаст после pan/zoom,
-     * будут загружаться уже для
-     * нового времени.
-     *
-     * При этом слой остаётся тем же.
+     * будут брать уже новый timestamp.
      */
     if (
       layer
@@ -2093,11 +2155,7 @@
     );
 
     /*
-     * ПЕРВЫЙ КАДР:
-     *
-     * Используем обычную загрузку
-     * Leaflet. Дальше слой уже
-     * никогда не пересоздаётся.
+     * ПЕРВЫЙ КАДР
      */
     if (
       !displayedTimestamp
@@ -2123,7 +2181,7 @@
       }
 
       /*
-       * Первый слой уже отображает
+       * Первый слой уже показывает
        * нужный timestamp.
        */
       if (
@@ -2145,10 +2203,7 @@
     }
 
     /*
-     * ПОСЛЕДУЮЩИЕ КАДРЫ:
-     *
-     * Сначала полностью готовим
-     * их в памяти.
+     * ПОСЛЕДУЮЩИЕ КАДРЫ
      */
     let prepared;
 
@@ -2185,7 +2240,7 @@
 
     /*
      * Только теперь меняем
-     * содержимое существующих canvas.
+     * существующие canvas.
      */
     const ok =
       commitPreparedFrame(
@@ -2873,10 +2928,6 @@
       const index =
         currentIndex;
 
-      /*
-       * Принудительно разрешаем
-       * перерисовать текущий кадр.
-       */
       displayedTimestamp =
         null;
 
