@@ -5,25 +5,24 @@
    - grayscale source
    - reflectivity palette
    - black = transparent
-   - nearest-neighbor / pixelated rendering
-   - square pixels
+   - pixelated rendering
    - atomic frame loading
-   - frame timeline
+   - working global timeline
    - playback
    - automatic refresh
-   - отключение при открытии другого слоя
+   - automatic stop when another layer opens
 
    Настройки:
    - Накрутка RainRadar: 1..30
    - По умолчанию: 23
-   - Изменение применяется кнопкой "Применить"
+   - Применяется кнопкой "Применить"
 
    ЛЕГЕНДА:
-   - RainRadar → О / Отражаемость
+   - RainRadar → О
    - другой слой → ОЯ
 
    ВАЖНО:
-   index.html НЕ изменяется.
+   index.html НЕ ИЗМЕНЯЕТСЯ.
    ========================================================= */
 
 (() => {
@@ -63,16 +62,18 @@
 
   function loadBoost() {
     try {
-      const stored = Number(
-        localStorage.getItem(BOOST_STORAGE_KEY)
+      const value = Number(
+        localStorage.getItem(
+          BOOST_STORAGE_KEY
+        )
       );
 
-      if (Number.isFinite(stored)) {
+      if (Number.isFinite(value)) {
         return Math.max(
           BOOST_MIN,
           Math.min(
             BOOST_MAX,
-            Math.round(stored)
+            Math.round(value)
           )
         );
       }
@@ -167,21 +168,34 @@
   let playback = false;
   let playbackBusy = false;
 
+  /*
+   * requestId = поколение всего RainRadar-сеанса.
+   *
+   * frameRequestId = поколение конкретного запрошенного
+   * кадра. При смене кадра НЕ инвалидирует уже отображаемый
+   * старый слой.
+   */
+
   let requestId = 0;
+  let frameRequestId = 0;
 
   let suppressTimelineInput = false;
 
   let settingsControl = null;
 
   /*
-   * ВАЖНО:
-   * Состояние обычного таймлайна сохраняем ДО RainRadar.
+   * Оригинальные обработчики index.html.
    *
-   * Благодаря этому RainRadar не ломает таймлайн
-   * других слоёв.
+   * RainRadar временно подменяет:
+   *   #range.oninput
+   *   #play.onclick
+   *
+   * После выхода из RainRadar они возвращаются.
    */
 
-  let originalTimelineState = null;
+  let savedRangeOnInput = null;
+  let savedPlayOnClick = null;
+  let timelineHandlersSaved = false;
 
   /* =======================================================
      CACHE
@@ -193,14 +207,14 @@
   const MAX_CACHE_ITEMS = 600;
 
   /* =======================================================
-     LEGEND STATE
+     LEGEND
      ======================================================= */
 
   let originalLegend = null;
   let legendSaved = false;
 
   /* =======================================================
-     BASIC HELPERS
+     HELPERS
      ======================================================= */
 
   function $(id) {
@@ -217,7 +231,8 @@
       return;
     }
 
-    const el = document.createElement("div");
+    const el =
+      document.createElement("div");
 
     el.textContent = text;
 
@@ -252,9 +267,7 @@
 
   function installSharpRendering() {
     if (
-      document.getElementById(
-        "cloradRainRadarSharpCSS"
-      )
+      $("cloradRainRadarSharpCSS")
     ) {
       return;
     }
@@ -266,15 +279,6 @@
       "cloradRainRadarSharpCSS";
 
     style.textContent = `
-      .leaflet-layer canvas,
-      .leaflet-tile-container canvas,
-      .leaflet-tile-container img,
-      .leaflet-image-layer {
-        image-rendering: pixelated !important;
-        image-rendering: -moz-crisp-edges !important;
-        -ms-interpolation-mode: nearest-neighbor !important;
-      }
-
       canvas.clorad-rainradar-tile {
         image-rendering: pixelated !important;
         image-rendering: -moz-crisp-edges !important;
@@ -291,7 +295,7 @@
      CACHE
      ======================================================= */
 
-  function trimMapCache(cache) {
+  function trimCache(cache) {
     while (
       cache.size >
       MAX_CACHE_ITEMS
@@ -375,7 +379,9 @@
      COLORIZE
      ======================================================= */
 
-  function colorizeImageData(imageData) {
+  function colorizeImageData(
+    imageData
+  ) {
     const width =
       imageData.width;
 
@@ -383,7 +389,9 @@
       imageData.height;
 
     const canvas =
-      document.createElement("canvas");
+      document.createElement(
+        "canvas"
+      );
 
     canvas.width = width;
     canvas.height = height;
@@ -423,7 +431,14 @@
       const sourceValue =
         src[i];
 
-      if (sourceValue <= 0) {
+      /*
+       * Чёрный RainRadar-фон =
+       * полная прозрачность.
+       */
+
+      if (
+        sourceValue <= 0
+      ) {
         dst[i] = 0;
         dst[i + 1] = 0;
         dst[i + 2] = 0;
@@ -453,10 +468,17 @@
           paletteIndex
         ];
 
-      dst[i] = color.r;
-      dst[i + 1] = color.g;
-      dst[i + 2] = color.b;
-      dst[i + 3] = 255;
+      dst[i] =
+        color.r;
+
+      dst[i + 1] =
+        color.g;
+
+      dst[i + 2] =
+        color.b;
+
+      dst[i + 3] =
+        255;
     }
 
     ctx.putImageData(
@@ -466,6 +488,23 @@
     );
 
     return canvas;
+  }
+
+  /* =======================================================
+     TILE URL
+     ======================================================= */
+
+  function tileUrl(
+    timestamp,
+    coords
+  ) {
+    return (
+      `${API}` +
+      `?timestamp=${encodeURIComponent(timestamp)}` +
+      `&z=${coords.z}` +
+      `&x=${coords.x}` +
+      `&y=${coords.y}`
+    );
   }
 
   /* =======================================================
@@ -557,7 +596,7 @@
               imageData
             );
 
-            trimMapCache(
+            trimCache(
               grayscaleCache
             );
 
@@ -594,13 +633,11 @@
     timestamp,
     coords
   ) {
-    const cacheKey =
+    const key =
       `${timestamp}/${coords.z}/${coords.x}/${coords.y}/${rainRadarBoost}`;
 
     const cached =
-      coloredCache.get(
-        cacheKey
-      );
+      coloredCache.get(key);
 
     if (cached) {
       return cached;
@@ -618,32 +655,15 @@
       );
 
     coloredCache.set(
-      cacheKey,
+      key,
       canvas
     );
 
-    trimMapCache(
+    trimCache(
       coloredCache
     );
 
     return canvas;
-  }
-
-  /* =======================================================
-     TILE URL
-     ======================================================= */
-
-  function tileUrl(
-    timestamp,
-    coords
-  ) {
-    return (
-      `${API}` +
-      `?timestamp=${encodeURIComponent(timestamp)}` +
-      `&z=${coords.z}` +
-      `&x=${coords.x}` +
-      `&y=${coords.y}`
-    );
   }
 
   /* =======================================================
@@ -768,12 +788,10 @@
       row &&
       safety < 5
     ) {
-      const text =
-        row.textContent ||
-        "";
-
       if (
-        text.trim().length > 0
+        (row.textContent || "")
+          .trim()
+          .length
       ) {
         return row;
       }
@@ -837,10 +855,9 @@
       (node =
         walker.nextNode())
     ) {
-      const text =
-        node.nodeValue.trim();
-
-      if (text) {
+      if (
+        node.nodeValue.trim()
+      ) {
         nodes.push(node);
       }
     }
@@ -916,8 +933,8 @@
       }
 
       if (
-        swatch.textContent.trim() &&
-        swatch.children.length === 0
+        swatch.children.length === 0 &&
+        swatch.textContent.trim()
       ) {
         swatch.textContent =
           REFLECTIVITY_LABELS[
@@ -948,27 +965,6 @@
       "ОЯ",
       "О"
     );
-
-    const titles =
-      legend.querySelectorAll(
-        ".legend-title," +
-          ".legend-header," +
-          ".legendTitle," +
-          ".legendHeader," +
-          "h3," +
-          "h4"
-      );
-
-    for (
-      const title of titles
-    ) {
-      if (
-        title.textContent.trim() ===
-        "ОЯ"
-      ) {
-        title.textContent = "О";
-      }
-    }
   }
 
   function restoreOriginalLegend() {
@@ -1016,7 +1012,6 @@
             event.stopPropagation();
 
             activate();
-
             showRainRadar();
           };
       }
@@ -1066,45 +1061,84 @@
         event.stopPropagation();
 
         activate();
-
         showRainRadar();
       };
   }
 
   /* =======================================================
-     TIMELINE STATE SAVE
+     TIMELINE
      ======================================================= */
 
   function getTimelineRange() {
-    return document.querySelector(
-      ".timeline input[type='range']"
+    return $("range");
+  }
+
+  function getTimelinePlay() {
+    return $("play");
+  }
+
+  function formatRainRadarTime(
+    timestamp
+  ) {
+    const date =
+      new Date(
+        Number(timestamp) * 1000
+      );
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return "—";
+    }
+
+    return date.toLocaleString(
+      "ru-RU",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }
     );
   }
 
-  function saveTimelineState() {
-    if (originalTimelineState) {
-      return;
+  function saveTimelineHandlers() {
+    if (
+      timelineHandlersSaved
+    ) {
+      return true;
     }
 
     const range =
       getTimelineRange();
 
-    if (!range) {
-      return;
+    const play =
+      getTimelinePlay();
+
+    if (
+      !range ||
+      !play
+    ) {
+      return false;
     }
 
-    originalTimelineState = {
-      min: range.min,
-      max: range.max,
-      step: range.step,
-      value: range.value,
-      disabled: range.disabled
-    };
+    savedRangeOnInput =
+      range.oninput;
+
+    savedPlayOnClick =
+      play.onclick;
+
+    timelineHandlersSaved =
+      true;
+
+    return true;
   }
 
-  function restoreTimelineState() {
+  function restoreTimelineHandlers() {
     if (
-      !originalTimelineState
+      !timelineHandlersSaved
     ) {
       return;
     }
@@ -1112,36 +1146,213 @@
     const range =
       getTimelineRange();
 
-    if (!range) {
-      originalTimelineState =
-        null;
+    const play =
+      getTimelinePlay();
 
+    if (range) {
+      range.oninput =
+        savedRangeOnInput;
+    }
+
+    if (play) {
+      play.onclick =
+        savedPlayOnClick;
+    }
+
+    savedRangeOnInput =
+      null;
+
+    savedPlayOnClick =
+      null;
+
+    timelineHandlersSaved =
+      false;
+  }
+
+  function updateTimeline() {
+    if (!active) {
+      return;
+    }
+
+    const range =
+      getTimelineRange();
+
+    if (!range) {
       return;
     }
 
     suppressTimelineInput =
       true;
 
-    range.min =
-      originalTimelineState.min;
+    range.min = "0";
 
     range.max =
-      originalTimelineState.max;
+      String(
+        Math.max(
+          0,
+          timestamps.length - 1
+        )
+      );
 
-    range.step =
-      originalTimelineState.step;
+    range.step = "1";
 
     range.value =
-      originalTimelineState.value;
+      String(
+        Math.max(
+          0,
+          currentIndex
+        )
+      );
 
     range.disabled =
-      originalTimelineState.disabled;
+      timestamps.length <= 1;
+
+    const times =
+      $("times");
+
+    if (times) {
+      times.innerHTML =
+        timestamps
+          .map(
+            timestamp =>
+              `<span>${formatRainRadarTime(timestamp)}</span>`
+          )
+          .join(" ");
+    }
+
+    const label =
+      $("timeLabel");
+
+    if (
+      label &&
+      timestamps[
+        currentIndex
+      ]
+    ) {
+      label.textContent =
+        formatRainRadarTime(
+          timestamps[
+            currentIndex
+          ]
+        );
+    }
 
     suppressTimelineInput =
       false;
+  }
 
-    originalTimelineState =
-      null;
+  function updatePlayButton() {
+    if (!active) {
+      return;
+    }
+
+    const button =
+      getTimelinePlay();
+
+    if (!button) {
+      return;
+    }
+
+    if (playback) {
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24">' +
+        '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' +
+        "</svg>";
+    } else {
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24">' +
+        '<path d="M7 4l13 8-13 8z"/>' +
+        "</svg>";
+    }
+  }
+
+  function hookTimeline() {
+    if (!active) {
+      return;
+    }
+
+    const range =
+      getTimelineRange();
+
+    const play =
+      getTimelinePlay();
+
+    if (
+      !range ||
+      !play
+    ) {
+      return;
+    }
+
+    if (
+      !saveTimelineHandlers()
+    ) {
+      return;
+    }
+
+    /*
+     * ВАЖНО:
+     * именно oninput, а не addEventListener.
+     * index.html использует range.oninput.
+     */
+
+    range.oninput =
+      () => {
+        if (
+          !active ||
+          suppressTimelineInput
+        ) {
+          return;
+        }
+
+        stopPlayback();
+
+        const index =
+          Number(
+            range.value
+          );
+
+        if (
+          !Number.isFinite(
+            index
+          )
+        ) {
+          return;
+        }
+
+        setFrame(index);
+      };
+
+    /*
+     * ВАЖНО:
+     * именно onclick, потому что index.html
+     * использует play.onclick.
+     */
+
+    play.onclick =
+      event => {
+        if (!active) {
+          if (
+            typeof savedPlayOnClick ===
+            "function"
+          ) {
+            savedPlayOnClick.call(
+              play,
+              event
+            );
+          }
+
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        togglePlayback();
+      };
+
+    updateTimeline();
+    updatePlayButton();
   }
 
   /* =======================================================
@@ -1149,14 +1360,8 @@
      ======================================================= */
 
   function activate() {
-    /*
-     * Сохраняем обычный таймлайн
-     * ДО любых изменений RainRadar.
-     */
-
-    saveTimelineState();
-
     ++requestId;
+    ++frameRequestId;
 
     active = true;
 
@@ -1197,6 +1402,12 @@
         window.CLOradDeactivateGIF();
       }
     } catch {}
+
+    /*
+     * Только здесь RainRadar получает
+     * управление глобальным таймлайном.
+     */
+    hookTimeline();
   }
 
   /* =======================================================
@@ -1311,8 +1522,16 @@
           this._frameReady =
             false;
 
-          this._rainRadarRequestId =
-            requestId;
+          /*
+           * Только поколение активации.
+           *
+           * Здесь НЕ используется frameRequestId,
+           * иначе смена кадра могла бы сломать
+           * уже отображаемый старый слой.
+           */
+
+          this._activationRequestId =
+            options.activationRequestId;
         },
 
       createTile:
@@ -1354,7 +1573,9 @@
           );
 
           const ctx =
-            tile.getContext("2d");
+            tile.getContext(
+              "2d"
+            );
 
           if (!ctx) {
             this._pendingTiles.delete(
@@ -1383,17 +1604,22 @@
           const timestamp =
             this.options.timestamp;
 
-          const layerRequestId =
-            this._rainRadarRequestId;
+          const activationId =
+            this._activationRequestId;
 
           buildColoredTile(
             timestamp,
             coords
           )
             .then(canvas => {
+              /*
+               * Если RainRadar уже выключен,
+               * текущий слой становится неактуальным.
+               */
+
               if (
                 !active ||
-                layerRequestId !==
+                activationId !==
                   requestId
               ) {
                 this._pendingTiles.delete(
@@ -1416,8 +1642,8 @@
               ctx.clearRect(
                 0,
                 0,
-                256,
-                256
+                tile.width,
+                tile.height
               );
 
               ctx.drawImage(
@@ -1475,6 +1701,11 @@
             map
           );
 
+          /*
+           * Новый слой всегда невидим
+           * до полной загрузки.
+           */
+
           this.setOpacity(0);
         },
 
@@ -1486,28 +1717,14 @@
             return;
           }
 
+          /*
+           * Ждём ВСЕ созданные тайлы.
+           */
+
           if (
             this._pendingTiles.size !==
             0
           ) {
-            return;
-          }
-
-          if (
-            this._failedTiles.size
-          ) {
-            this._frameReady =
-              true;
-
-            this.fire(
-              "frameready",
-              {
-                ready: false,
-                failed:
-                  this._failedTiles.size
-              }
-            );
-
             return;
           }
 
@@ -1517,8 +1734,13 @@
           this.fire(
             "frameready",
             {
-              ready: true,
-              failed: 0
+              ready:
+                this._failedTiles
+                  .size === 0,
+
+              failed:
+                this._failedTiles
+                  .size
             }
           );
         }
@@ -1528,8 +1750,12 @@
      CREATE FRAME
      ======================================================= */
 
-  function createLayer(timestamp) {
-    const map = getMap();
+  function createLayer(
+    timestamp,
+    frameToken
+  ) {
+    const map =
+      getMap();
 
     if (!map) {
       throw new Error(
@@ -1537,43 +1763,77 @@
       );
     }
 
+    /*
+     * rainRadarLayer = ТЕКУЩИЙ ВИДИМЫЙ кадр.
+     *
+     * Не заменяем его сразу.
+     * Это главный фикс отсутствия дыр.
+     */
+
     const oldLayer =
       rainRadarLayer;
 
-    const layerId =
-      ++requestId;
+    const activationId =
+      requestId;
 
     const layer =
       new RainRadarLayer({
         tileSize: 256,
-        bounds: RR_BOUNDS,
-        minZoom: MIN_ZOOM,
-        maxZoom: MAX_ZOOM,
+
+        bounds:
+          RR_BOUNDS,
+
+        minZoom:
+          MIN_ZOOM,
+
+        maxZoom:
+          MAX_ZOOM,
+
         minNativeZoom:
           MIN_NATIVE_ZOOM,
+
         maxNativeZoom:
           MAX_NATIVE_ZOOM,
+
         noWrap: true,
+
         zIndex: 620,
+
         keepBuffer: 1,
+
         updateWhenIdle: true,
-        updateWhenZooming: false,
+
+        updateWhenZooming:
+          false,
+
         updateInterval: 100,
-        timestamp
+
+        timestamp,
+
+        activationRequestId:
+          activationId,
+
+        frameRequestId:
+          frameToken
       });
 
     layer.setOpacity(0);
 
-    rainRadarLayer =
-      layer;
-
     layer.once(
       "frameready",
       event => {
+        /*
+         * Этот запрос уже устарел.
+         * Удаляем только его новый слой.
+         * Старый видимый кадр не трогаем.
+         */
+
         if (
-          layerId !==
+          !active ||
+          activationId !==
             requestId ||
-          !active
+          frameToken !==
+            frameRequestId
         ) {
           if (
             map.hasLayer(layer)
@@ -1585,6 +1845,11 @@
 
           return;
         }
+
+        /*
+         * Новый кадр не загрузился полностью.
+         * Оставляем старый.
+         */
 
         if (
           !event.ready
@@ -1597,15 +1862,6 @@
             );
           }
 
-          if (
-            rainRadarLayer ===
-            layer
-          ) {
-            rainRadarLayer =
-              oldLayer ||
-              null;
-          }
-
           showMessage(
             "Кадр RainRadar загружен не полностью"
           );
@@ -1614,28 +1870,60 @@
         }
 
         /*
-         * СНАЧАЛА показываем новый кадр.
+         * СНАЧАЛА показываем новый.
          */
 
         layer.setOpacity(1);
 
         /*
-         * И ТОЛЬКО ПОТОМ убираем старый.
+         * ПОТОМ удаляем старый.
          */
 
         if (
           oldLayer &&
           oldLayer !== layer &&
-          map.hasLayer(oldLayer)
+          map.hasLayer(
+            oldLayer
+          )
         ) {
           map.removeLayer(
             oldLayer
           );
         }
+
+        /*
+         * Теперь новый кадр становится
+         * официально текущим.
+         */
+
+        rainRadarLayer =
+          layer;
       }
     );
 
     layer.addTo(map);
+
+    /*
+     * Защита от случая, когда тайлы
+     * уже были взяты из кеша.
+     */
+
+    if (
+      layer._frameReady
+    ) {
+      layer.fire(
+        "frameready",
+        {
+          ready:
+            layer._failedTiles
+              .size === 0,
+
+          failed:
+            layer._failedTiles
+              .size
+        }
+      );
+    }
 
     return layer;
   }
@@ -1649,7 +1937,8 @@
       await fetch(
         `${API}?manifest=1&t=${Date.now()}`,
         {
-          cache: "no-store"
+          cache:
+            "no-store"
         }
       );
 
@@ -1682,7 +1971,9 @@
         ? data.frames
         : [];
 
-    if (!frames.length) {
+    if (
+      !frames.length
+    ) {
       throw new Error(
         "RainRadar не вернул кадры"
       );
@@ -1697,7 +1988,9 @@
             typeof frame ===
               "string"
           ) {
-            return Number(frame);
+            return Number(
+              frame
+            );
           }
 
           return Number(
@@ -1715,13 +2008,245 @@
             a - b
         );
 
-    if (!timestamps.length) {
+    if (
+      !timestamps.length
+    ) {
       throw new Error(
         "Не удалось получить timestamp RainRadar"
       );
     }
 
     return timestamps;
+  }
+
+  /* =======================================================
+     SET FRAME
+     ======================================================= */
+
+  async function setFrame(index) {
+    if (
+      !timestamps.length ||
+      !active
+    ) {
+      return false;
+    }
+
+    const targetIndex =
+      Math.max(
+        0,
+        Math.min(
+          timestamps.length - 1,
+          Number(index)
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        targetIndex
+      )
+    ) {
+      return false;
+    }
+
+    /*
+     * Индекс старого реально отображаемого кадра.
+     */
+
+    const previousIndex =
+      currentIndex;
+
+    /*
+     * Новый запрос кадра получает
+     * собственный token.
+     */
+
+    const frameToken =
+      ++frameRequestId;
+
+    currentIndex =
+      targetIndex;
+
+    updateTimeline();
+
+    const layer =
+      createLayer(
+        timestamps[
+          targetIndex
+        ],
+        frameToken
+      );
+
+    return new Promise(
+      resolve => {
+        let finished =
+          false;
+
+        const finish =
+          event => {
+            if (
+              finished
+            ) {
+              return;
+            }
+
+            finished =
+              true;
+
+            const ready =
+              Boolean(
+                event?.ready
+              );
+
+            /*
+             * Если именно последний запрос
+             * закончился ошибкой — возвращаем
+             * таймлайн на старый кадр.
+             */
+
+            if (
+              !ready &&
+              active &&
+              frameToken ===
+                frameRequestId &&
+              currentIndex ===
+                targetIndex
+            ) {
+              currentIndex =
+                previousIndex;
+
+              updateTimeline();
+            }
+
+            resolve(
+              ready
+            );
+          };
+
+        layer.once(
+          "frameready",
+          finish
+        );
+
+        /*
+         * Если событие уже произошло
+         * до установки listener.
+         */
+
+        if (
+          layer._frameReady
+        ) {
+          finish({
+            ready:
+              layer._failedTiles
+                .size === 0
+          });
+        }
+      }
+    );
+  }
+
+  /* =======================================================
+     PLAYBACK
+     ======================================================= */
+
+  function stopPlayback() {
+    playback =
+      false;
+
+    playbackBusy =
+      false;
+
+    if (
+      playbackTimer
+    ) {
+      clearTimeout(
+        playbackTimer
+      );
+    }
+
+    playbackTimer =
+      null;
+
+    updatePlayButton();
+  }
+
+  async function playbackStep() {
+    if (
+      !active ||
+      !playback ||
+      playbackBusy
+    ) {
+      return;
+    }
+
+    playbackBusy =
+      true;
+
+    const next =
+      currentIndex >=
+      timestamps.length - 1
+        ? 0
+        : currentIndex + 1;
+
+    try {
+      const ok =
+        await setFrame(
+          next
+        );
+
+      if (!ok) {
+        return;
+      }
+    } finally {
+      playbackBusy =
+        false;
+    }
+
+    if (
+      active &&
+      playback
+    ) {
+      playbackTimer =
+        setTimeout(
+          playbackStep,
+          700
+        );
+    }
+  }
+
+  function startPlayback() {
+    if (
+      !active ||
+      timestamps.length < 2
+    ) {
+      return;
+    }
+
+    stopPlayback();
+
+    playback =
+      true;
+
+    playbackBusy =
+      false;
+
+    updatePlayButton();
+
+    playbackTimer =
+      setTimeout(
+        playbackStep,
+        0
+      );
+  }
+
+  function togglePlayback() {
+    if (
+      playback
+    ) {
+      stopPlayback();
+    } else {
+      startPlayback();
+    }
   }
 
   /* =======================================================
@@ -1733,7 +2258,8 @@
       return;
     }
 
-    const map = getMap();
+    const map =
+      getMap();
 
     if (!map) {
       showMessage(
@@ -1743,7 +2269,8 @@
       return;
     }
 
-    loading = true;
+    loading =
+      true;
 
     stopPlayback();
 
@@ -1758,13 +2285,13 @@
         return;
       }
 
-      currentIndex =
-        timestamps.length - 1;
-
-      updateTimeline();
+      /*
+       * setFrame сам выставляет
+       * currentIndex и timeline.
+       */
 
       await setFrame(
-        currentIndex
+        timestamps.length - 1
       );
 
       if (!active) {
@@ -1787,396 +2314,74 @@
           "Ошибка загрузки RainRadar"
       );
     } finally {
-      loading = false;
+      loading =
+        false;
     }
   }
 
   /* =======================================================
-     SET FRAME
+     BOOST APPLY
      ======================================================= */
 
-  async function setFrame(index) {
+  function applyBoost() {
     if (
-      !timestamps.length ||
-      !active
+      selectedBoost ===
+      rainRadarBoost
     ) {
-      return false;
+      showMessage(
+        `Накрутка RainRadar: ${rainRadarBoost}`
+      );
+
+      return;
     }
 
-    index =
-      Math.max(
-        0,
-        Math.min(
-          timestamps.length - 1,
-          Number(index)
-        )
-      );
+    rainRadarBoost =
+      selectedBoost;
 
-    currentIndex = index;
-
-    updateTimeline();
-
-    const timestamp =
-      timestamps[
-        currentIndex
-      ];
-
-    const layer =
-      createLayer(
-        timestamp
-      );
-
-    return new Promise(
-      resolve => {
-        let finished = false;
-
-        const finish =
-          event => {
-            if (finished) {
-              return;
-            }
-
-            finished = true;
-
-            resolve(
-              Boolean(
-                event?.ready
-              )
-            );
-          };
-
-        layer.once(
-          "frameready",
-          finish
-        );
-
-        if (
-          layer._frameReady
-        ) {
-          finish({
-            ready:
-              layer._failedTiles
-                .size === 0
-          });
-        }
-      }
+    saveBoost(
+      rainRadarBoost
     );
-  }
 
-  /* =======================================================
-     TIMELINE
-     ======================================================= */
-
-  function updateTimeline() {
     /*
-     * КРИТИЧЕСКИ ВАЖНО:
-     *
-     * Пока RainRadar НЕ активен,
-     * эта функция вообще ничего
-     * не делает.
-     *
-     * Поэтому другие слои получают
-     * свой обычный таймлайн.
+     * Старые цветные тайлы больше
+     * не соответствуют новой накрутке.
      */
 
-    if (!active) {
-      return;
-    }
+    coloredCache.clear();
 
-    const range =
-      getTimelineRange();
-
-    if (!range) {
-      return;
-    }
-
-    suppressTimelineInput =
-      true;
-
-    range.min = "0";
-
-    range.max =
-      String(
-        Math.max(
-          0,
-          timestamps.length - 1
-        )
-      );
-
-    range.step = "1";
-
-    range.value =
-      String(
-        Math.max(
-          0,
-          currentIndex
-        )
-      );
-
-    range.disabled =
-      timestamps.length <= 1;
-
-    suppressTimelineInput =
-      false;
-  }
-
-  /* =======================================================
-     PLAY BUTTON
-     ======================================================= */
-
-  function findPlayButton() {
-    const timeline =
-      document.querySelector(
-        ".timeline"
-      );
-
-    if (!timeline) {
-      return null;
-    }
-
-    return timeline.querySelector(
-      [
-        "button",
-        ".play",
-        "[data-action='play']",
-        "[aria-label*='play' i]"
-      ].join(",")
-    );
-  }
-
-  function updatePlayButton() {
     /*
-     * Не трогаем чужой play-button,
-     * когда RainRadar выключен.
+     * Новый слой загружается поверх старого.
+     * Старый остаётся видимым до готовности.
      */
 
-    if (!active) {
-      return;
-    }
+    refreshCurrentFrameInstant();
 
-    const button =
-      findPlayButton();
-
-    if (!button) {
-      return;
-    }
-
-    button.classList.toggle(
-      "active",
-      playback
-    );
-
-    button.setAttribute(
-      "aria-pressed",
-      playback
-        ? "true"
-        : "false"
+    showMessage(
+      `Накрутка RainRadar применена: ${rainRadarBoost}`
     );
   }
 
-  /* =======================================================
-     STOP PLAYBACK
-     ======================================================= */
-
-  function stopPlayback() {
-    playback = false;
-    playbackBusy = false;
-
-    if (playbackTimer) {
-      clearTimeout(
-        playbackTimer
-      );
-    }
-
-    playbackTimer = null;
-
-    updatePlayButton();
-  }
-
-  /* =======================================================
-     PLAYBACK
-     ======================================================= */
-
-  async function playbackStep() {
+  function refreshCurrentFrameInstant() {
     if (
-      !playback ||
       !active ||
-      playbackBusy
+      currentIndex < 0 ||
+      !timestamps.length
     ) {
       return;
     }
 
-    playbackBusy = true;
-
-    const next =
-      currentIndex >=
-      timestamps.length - 1
-        ? 0
-        : currentIndex + 1;
-
-    try {
-      const ok =
-        await setFrame(next);
-
-      if (!ok) {
-        playbackBusy = false;
-
-        if (
-          playback &&
-          active
-        ) {
-          playbackTimer =
-            setTimeout(
-              playbackStep,
-              700
-            );
-        }
-
-        return;
-      }
-    } finally {
-      playbackBusy = false;
-    }
-
-    if (
-      playback &&
-      active
-    ) {
-      playbackTimer =
-        setTimeout(
-          playbackStep,
-          700
-        );
-    }
-  }
-
-  function startPlayback() {
-    if (
-      timestamps.length < 2 ||
-      !active
-    ) {
-      return;
-    }
-
-    stopPlayback();
-
-    playback = true;
-    playbackBusy = false;
-
-    updatePlayButton();
-
-    playbackTimer =
-      setTimeout(
-        playbackStep,
-        0
-      );
-  }
-
-  function togglePlayback() {
-    if (playback) {
-      stopPlayback();
-    } else {
-      startPlayback();
-    }
-  }
-
-  /* =======================================================
-     TIMELINE HOOK
-     ======================================================= */
-
-  function hookTimeline() {
-    const range =
-      getTimelineRange();
-
     /*
-     * Вешаем обработчик только один раз.
-     * Но до RainRadar он НИЧЕГО не делает.
-     */
-
-    if (
-      range &&
-      !range.dataset
-        .rainRadarHooked
-    ) {
-      range.dataset
-        .rainRadarHooked =
-        "1";
-
-      range.addEventListener(
-        "input",
-        () => {
-          if (
-            !active ||
-            suppressTimelineInput
-          ) {
-            return;
-          }
-
-          stopPlayback();
-
-          setFrame(
-            Number(
-              range.value
-            )
-          );
-        }
-      );
-    }
-
-    const timeline =
-      document.querySelector(
-        ".timeline"
-      );
-
-    if (
-      timeline &&
-      !timeline.dataset
-        .rainRadarPlayHooked
-    ) {
-      const buttons =
-        timeline.querySelectorAll(
-          [
-            "button",
-            ".play",
-            "[data-action='play']",
-            "[aria-label*='play' i]"
-          ].join(",")
-        );
-
-      if (buttons.length) {
-        buttons[0].addEventListener(
-          "click",
-          event => {
-            /*
-             * Если RainRadar не активен,
-             * вообще не вмешиваемся.
-             */
-
-            if (!active) {
-              return;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-
-            togglePlayback();
-          }
-        );
-
-        timeline.dataset
-          .rainRadarPlayHooked =
-          "1";
-      }
-    }
-
-    /*
-     * ВАЖНО:
-     * updateTimeline() здесь НЕ вызывается.
+     * НЕ скрываем старый слой.
      *
-     * Иначе при загрузке страницы
-     * RainRadar ломал бы таймлайн
-     * других слоёв.
+     * setFrame() создаёт новый слой,
+     * ждёт его полного заполнения,
+     * показывает его и только потом
+     * удаляет старый.
      */
+
+    setFrame(
+      currentIndex
+    );
   }
 
   /* =======================================================
@@ -2195,7 +2400,7 @@
       return;
     }
 
-    let existing =
+    const existing =
       settings.querySelector(
         "#cloradRainRadarSetting"
       );
@@ -2228,13 +2433,13 @@
     head.className =
       "settingHead";
 
-    head.type = "button";
+    head.type =
+      "button";
 
     head.innerHTML = `
       <span>Накрутка RainRadar</span>
       <span
         class="settingArrow"
-        id="cloradRainRadarArrow"
       >›</span>
     `;
 
@@ -2291,7 +2496,9 @@
       "cloradRainRadarBoostValue";
 
     selectedValue.textContent =
-      String(selectedBoost);
+      String(
+        selectedBoost
+      );
 
     selectedValue.style.cssText =
       [
@@ -2315,20 +2522,29 @@
         "input"
       );
 
-    range.type = "range";
+    range.type =
+      "range";
+
     range.id =
       "cloradRainRadarBoostRange";
 
     range.min =
-      String(BOOST_MIN);
+      String(
+        BOOST_MIN
+      );
 
     range.max =
-      String(BOOST_MAX);
+      String(
+        BOOST_MAX
+      );
 
-    range.step = "1";
+    range.step =
+      "1";
 
     range.value =
-      String(selectedBoost);
+      String(
+        selectedBoost
+      );
 
     range.style.cssText =
       [
@@ -2357,17 +2573,24 @@
         "span"
       );
 
-    min.textContent = "1";
+    min.textContent =
+      "1";
 
     const max =
       document.createElement(
         "span"
       );
 
-    max.textContent = "30";
+    max.textContent =
+      "30";
 
-    scale.appendChild(min);
-    scale.appendChild(max);
+    scale.appendChild(
+      min
+    );
+
+    scale.appendChild(
+      max
+    );
 
     const apply =
       document.createElement(
@@ -2377,7 +2600,8 @@
     apply.id =
       "cloradRainRadarBoostApply";
 
-    apply.type = "button";
+    apply.type =
+      "button";
 
     apply.textContent =
       "Применить";
@@ -2395,14 +2619,33 @@
         "cursor:pointer"
       ].join(";");
 
-    body.appendChild(info);
-    body.appendChild(valueRow);
-    body.appendChild(range);
-    body.appendChild(scale);
-    body.appendChild(apply);
+    body.appendChild(
+      info
+    );
 
-    setting.appendChild(head);
-    setting.appendChild(body);
+    body.appendChild(
+      valueRow
+    );
+
+    body.appendChild(
+      range
+    );
+
+    body.appendChild(
+      scale
+    );
+
+    body.appendChild(
+      apply
+    );
+
+    setting.appendChild(
+      head
+    );
+
+    setting.appendChild(
+      body
+    );
 
     const framesSetting =
       settings.querySelector(
@@ -2477,188 +2720,27 @@
 
   function syncBoostUI() {
     const range =
-      document.getElementById(
+      $(
         "cloradRainRadarBoostRange"
       );
 
     const value =
-      document.getElementById(
+      $(
         "cloradRainRadarBoostValue"
       );
 
     if (range) {
       range.value =
-        String(selectedBoost);
+        String(
+          selectedBoost
+        );
     }
 
     if (value) {
       value.textContent =
-        String(selectedBoost);
-    }
-  }
-
-  /* =======================================================
-     APPLY BOOST
-     ======================================================= */
-
-  function applyBoost() {
-    if (
-      selectedBoost ===
-      rainRadarBoost
-    ) {
-      showMessage(
-        `Накрутка RainRadar: ${rainRadarBoost}`
-      );
-
-      return;
-    }
-
-    rainRadarBoost =
-      selectedBoost;
-
-    saveBoost(
-      rainRadarBoost
-    );
-
-    coloredCache.clear();
-
-    refreshCurrentFrameInstant();
-
-    showMessage(
-      `Накрутка RainRadar применена: ${rainRadarBoost}`
-    );
-  }
-
-  /* =======================================================
-     CURRENT FRAME BOOST REFRESH
-     ======================================================= */
-
-  function refreshCurrentFrameInstant() {
-    if (
-      !active ||
-      currentIndex < 0 ||
-      !timestamps.length
-    ) {
-      return;
-    }
-
-    const timestamp =
-      timestamps[
-        currentIndex
-      ];
-
-    const layer =
-      rainRadarLayer;
-
-    if (
-      !layer ||
-      !layer._tiles
-    ) {
-      setFrame(
-        currentIndex
-      );
-
-      return;
-    }
-
-    const tiles =
-      Object.values(
-        layer._tiles
-      );
-
-    if (!tiles.length) {
-      setFrame(
-        currentIndex
-      );
-
-      return;
-    }
-
-    layer.setOpacity(0);
-
-    let pending =
-      tiles.length;
-
-    let failed = false;
-
-    for (
-      const item of tiles
-    ) {
-      const tile =
-        item.el;
-
-      const coords =
-        item.coords;
-
-      if (!tile || !coords) {
-        pending--;
-        continue;
-      }
-
-      buildColoredTile(
-        timestamp,
-        coords
-      )
-        .then(canvas => {
-          if (!active) {
-            return;
-          }
-
-          const ctx =
-            tile.getContext(
-              "2d"
-            );
-
-          if (!ctx) {
-            failed = true;
-            pending--;
-            return;
-          }
-
-          ctx.imageSmoothingEnabled =
-            false;
-
-          ctx.clearRect(
-            0,
-            0,
-            256,
-            256
-          );
-
-          ctx.drawImage(
-            canvas,
-            0,
-            0
-          );
-
-          pending--;
-
-          if (
-            pending <= 0
-          ) {
-            layer.setOpacity(
-              failed
-                ? 0
-                : 1
-            );
-          }
-        })
-        .catch(error => {
-          console.warn(
-            "RainRadar boost:",
-            error
-          );
-
-          failed = true;
-
-          pending--;
-
-          if (
-            pending <= 0
-          ) {
-            layer.setOpacity(0);
-          }
-        });
+        String(
+          selectedBoost
+        );
     }
   }
 
@@ -2707,13 +2789,8 @@
                 stopPlayback();
               }
 
-              currentIndex =
-                timestamps.length - 1;
-
-              updateTimeline();
-
               await setFrame(
-                currentIndex
+                timestamps.length - 1
               );
 
               if (
@@ -2739,13 +2816,16 @@
   }
 
   function stopRefresh() {
-    if (refreshTimer) {
+    if (
+      refreshTimer
+    ) {
       clearInterval(
         refreshTimer
       );
     }
 
-    refreshTimer = null;
+    refreshTimer =
+      null;
   }
 
   /* =======================================================
@@ -2753,15 +2833,32 @@
      ======================================================= */
 
   function stop() {
-    active = false;
-    loading = false;
+    active =
+      false;
+
+    loading =
+      false;
 
     stopPlayback();
     stopRefresh();
 
-    ++requestId;
+    /*
+     * Инвалидируем все старые
+     * асинхронные операции.
+     */
 
-    const map = getMap();
+    ++requestId;
+    ++frameRequestId;
+
+    /*
+     * СНАЧАЛА возвращаем настоящий
+     * timeline index.html.
+     */
+
+    restoreTimelineHandlers();
+
+    const map =
+      getMap();
 
     if (
       map &&
@@ -2777,16 +2874,18 @@
     if (map) {
       const toRemove = [];
 
-      map.eachLayer(layer => {
-        if (
-          layer instanceof
-          RainRadarLayer
-        ) {
-          toRemove.push(
-            layer
-          );
+      map.eachLayer(
+        layer => {
+          if (
+            layer instanceof
+            RainRadarLayer
+          ) {
+            toRemove.push(
+              layer
+            );
+          }
         }
-      });
+      );
 
       for (
         const layer of toRemove
@@ -2799,22 +2898,18 @@
       }
     }
 
-    rainRadarLayer = null;
+    rainRadarLayer =
+      null;
 
-    if (rainRadarNav) {
+    if (
+      rainRadarNav
+    ) {
       rainRadarNav.classList.remove(
         "active"
       );
     }
 
     restoreOriginalLegend();
-
-    /*
-     * Возвращаем таймлайн,
-     * который был до RainRadar.
-     */
-
-    restoreTimelineState();
   }
 
   /* =======================================================
@@ -2834,38 +2929,53 @@
   function init() {
     installSharpRendering();
 
+    /*
+     * В init() timeline НЕ трогаем.
+     *
+     * Это принципиально:
+     * index.html должен полностью сохранить
+     * свои обработчики для остальных слоёв.
+     */
+
     createNav();
-    hookTimeline();
     hookOtherLayers();
     createRainRadarSettings();
 
-    setTimeout(() => {
-      createNav();
-      hookTimeline();
-      hookOtherLayers();
-      createRainRadarSettings();
-    }, 300);
+    setTimeout(
+      () => {
+        createNav();
+        hookOtherLayers();
+        createRainRadarSettings();
+      },
+      300
+    );
 
-    setTimeout(() => {
-      createNav();
-      hookTimeline();
-      hookOtherLayers();
-      createRainRadarSettings();
-    }, 800);
+    setTimeout(
+      () => {
+        createNav();
+        hookOtherLayers();
+        createRainRadarSettings();
+      },
+      800
+    );
 
-    setTimeout(() => {
-      createNav();
-      hookTimeline();
-      hookOtherLayers();
-      createRainRadarSettings();
-    }, 1500);
+    setTimeout(
+      () => {
+        createNav();
+        hookOtherLayers();
+        createRainRadarSettings();
+      },
+      1500
+    );
 
-    setTimeout(() => {
-      createNav();
-      hookTimeline();
-      hookOtherLayers();
-      createRainRadarSettings();
-    }, 3000);
+    setTimeout(
+      () => {
+        createNav();
+        hookOtherLayers();
+        createRainRadarSettings();
+      },
+      3000
+    );
   }
 
   if (
@@ -2924,7 +3034,9 @@
             Math.min(
               BOOST_MAX,
               Math.round(
-                Number(value)
+                Number(
+                  value
+                )
               )
             )
           );
