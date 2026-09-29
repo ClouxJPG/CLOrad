@@ -1,42 +1,33 @@
 /* =========================================================
-   CLOrad — RainRadar 1×1 / Nowcast-style square cells
+   CLOrad — RainRadar 1×1 / Pixelated
+   Безопасный режим
 
-   ВАЖНО:
-   - НЕ создаёт новый Leaflet-слой
-   - НЕ меняет RainRadar API
-   - НЕ меняет источник данных
-   - НЕ меняет палитру
-   - НЕ меняет таймлайн
-   - НЕ меняет legend
-   - НЕ меняет координаты / bounds
-   - НЕ использует MutationObserver
-   - НЕ использует CSS transform
-   - НЕ масштабирует весь tile
+   НЕ:
+   - создаёт новый слой
+   - не меняет данные
+   - не меняет API
+   - не меняет palette
+   - не меняет Leaflet tile geometry
+   - не использует MutationObserver
+   - не использует transform
+   - не растягивает радар радиально
 
    ДЕЛАЕТ:
-   - работает только с уже существующими
-     RainRadar canvas
-   - делает радарные ячейки визуально
-     крупнее и квадратнее
-   - сохраняет резкие границы
-   - сохраняет размер каждого Leaflet tile = 256×256
-   - не создаёт зазоров между tile
-   - сетка квадратов начинается с 0,0
-     каждого tile, поэтому границы tile
-     остаются ровными
+   - находит существующие RainRadar canvas
+   - делает радарные ячейки крупными
+     чёткими квадратами
+   - сохраняет ровную границу каждого tile
+   - не сглаживает цвета
+   - не создаёт промежуточный слой
 
-   ВАЖНО ПРО 1×1:
-   - исходные данные RainRadar не меняются
-   - API получает те же самые PNG
-   - визуальная обработка происходит
-     только после отрисовки PNG на canvas
+   DISPLAY_BLOCK = 2
+   = визуальный квадрат 2×2 px
+   внутри 256×256 Leaflet tile.
 
-   DISPLAY_BLOCK = 2 означает:
-   1 исходная raster-ячейка визуально
-   показывается как квадрат 2×2 px.
-
-   Это сделано специально для вида,
-   близкого к Nowcast.
+   ВАЖНО:
+   это только визуализация уже полученных
+   RainRadar данных.
+   Исходные PNG/API не изменяются.
    ========================================================= */
 
 (() => {
@@ -44,7 +35,7 @@
 
 
   /* =======================================================
-     НАСТРОЙКИ
+     CONFIG
      ======================================================= */
 
   const TILE_SELECTOR =
@@ -54,38 +45,26 @@
     ".clorad-rainradar-layer";
 
   /*
-   * Размер визуального квадрата.
-   *
-   * 1 = обычный вид
-   * 2 = крупные квадратные ячейки
-   *
-   * Именно 2 сейчас нужен для вида
-   * близкого к Nowcast.
+   * Тот самый размер квадратов,
+   * который сейчас выглядит правильно.
    */
   const DISPLAY_BLOCK = 2;
 
+  const TILE_SIZE = 256;
 
   /*
-   * Проверка новых / обновлённых
-   * RainRadar canvas.
-   *
-   * Никакого MutationObserver.
+   * Никаких MutationObserver.
    */
   const CHECK_INTERVAL = 500;
 
 
-  /*
-   * Минимальный размер canvas,
-   * с которым вообще работаем.
-   */
-  const TILE_SIZE = 256;
-
-
   /* =======================================================
-     CHECK CANVAS
+     CHECK
      ======================================================= */
 
-  function isRainRadarCanvas(canvas) {
+  function isRainRadarCanvas(
+    canvas
+  ) {
     if (!canvas) {
       return false;
     }
@@ -97,49 +76,38 @@
 
 
   /* =======================================================
-     PIXELATE CANVAS
+     PIXELATE
      ======================================================= */
 
-  function pixelateCanvas(canvas) {
-    if (!isRainRadarCanvas(canvas)) {
-      return;
-    }
-
-    /*
-     * RainRadar tile должен быть 256×256.
-     *
-     * Если Leaflet ещё не закончил
-     * создание canvas — пропускаем.
-     */
-    const width =
-      canvas.width;
-
-    const height =
-      canvas.height;
-
+  function pixelateCanvas(
+    canvas
+  ) {
     if (
-      width !== TILE_SIZE ||
-      height !== TILE_SIZE
+      !isRainRadarCanvas(
+        canvas
+      )
     ) {
       return;
     }
 
+    if (
+      canvas.width !== TILE_SIZE ||
+      canvas.height !== TILE_SIZE
+    ) {
+      return;
+    }
 
-    /*
-     * Не используем CSS transform.
-     *
-     * Не меняем размеры canvas.
-     *
-     * Работаем непосредственно
-     * с уже отображённым raster.
-     */
     let ctx;
 
     try {
       ctx =
-        canvas.getContext("2d", {
-          willReadFrequently: true
-        });
+        canvas.getContext(
+          "2d",
+          {
+            willReadFrequently:
+              true
+          }
+        );
     } catch (_) {
       return;
     }
@@ -148,7 +116,6 @@
       return;
     }
 
-
     let imageData;
 
     try {
@@ -156,71 +123,41 @@
         ctx.getImageData(
           0,
           0,
-          width,
-          height
+          TILE_SIZE,
+          TILE_SIZE
         );
     } catch (_) {
       return;
     }
 
-
     const source =
       imageData.data;
 
-
-    /*
-     * Новый массив такого же размера.
-     *
-     * Мы НЕ меняем геометрию tile.
-     *
-     * Всё остаётся строго 256×256.
-     */
     const output =
       new Uint8ClampedArray(
         source.length
       );
 
-
-    /*
-     * DISPLAY_BLOCK = 2
-     *
-     * Поэтому карта 256×256
-     * визуально разбивается на:
-     *
-     * 128 × 128 крупных блоков.
-     *
-     * Каждый блок занимает:
-     *
-     *     2 × 2 px
-     *
-     * на экране.
-     *
-     * Границы tile:
-     *
-     * 256 / 2 = 128
-     *
-     * делятся без остатка.
-     *
-     * Поэтому между соседними tile
-     * не появляется смещение сетки.
-     */
     const block =
       DISPLAY_BLOCK;
 
-
     const blocksX =
       Math.ceil(
-        width / block
+        TILE_SIZE / block
       );
 
     const blocksY =
       Math.ceil(
-        height / block
+        TILE_SIZE / block
       );
 
 
     /*
-     * Проходим по визуальным блокам.
+     * Каждый блок получает цвет
+     * исходной raster-ячейки.
+     *
+     * Никакого blur.
+     * Никакого усреднения.
      */
     for (
       let blockY = 0;
@@ -234,39 +171,29 @@
         blockX++
       ) {
 
-        /*
-         * Берём исходную ячейку
-         * в левом верхнем углу
-         * каждого блока.
-         *
-         * Это НЕ усреднение цветов.
-         *
-         * Поэтому цвет остаётся
-         * именно цветом исходной
-         * радарной категории.
-         */
         const sourceX =
           Math.min(
-            width - 1,
+            TILE_SIZE - 1,
             blockX * block
           );
 
         const sourceY =
           Math.min(
-            height - 1,
+            TILE_SIZE - 1,
             blockY * block
           );
 
-
         const sourceIndex =
           (
-            sourceY * width +
+            sourceY *
+              TILE_SIZE +
             sourceX
           ) * 4;
 
-
         const r =
-          source[sourceIndex];
+          source[
+            sourceIndex
+          ];
 
         const g =
           source[
@@ -284,10 +211,6 @@
           ];
 
 
-        /*
-         * Заполняем весь квадрат
-         * одним и тем же значением.
-         */
         for (
           let py = 0;
           py < block;
@@ -299,11 +222,10 @@
             py;
 
           if (
-            y >= height
+            y >= TILE_SIZE
           ) {
             continue;
           }
-
 
           for (
             let px = 0;
@@ -316,18 +238,17 @@
               px;
 
             if (
-              x >= width
+              x >= TILE_SIZE
             ) {
               continue;
             }
 
-
             const outputIndex =
               (
-                y * width +
+                y *
+                  TILE_SIZE +
                 x
               ) * 4;
-
 
             output[
               outputIndex
@@ -350,46 +271,24 @@
     }
 
 
-    /*
-     * Записываем готовую
-     * пикселизированную картинку
-     * обратно в тот же canvas.
-     *
-     * Никакого нового слоя.
-     */
     try {
+      imageData.data.set(
+        output
+      );
+
       ctx.putImageData(
-        new ImageData(
-          output,
-          width,
-          height
-        ),
+        imageData,
         0,
         0
       );
     } catch (_) {
-      /*
-       * Safari/iOS fallback.
-       */
-      try {
-        imageData.data.set(
-          output
-        );
-
-        ctx.putImageData(
-          imageData,
-          0,
-          0
-        );
-      } catch (_) {
-        return;
-      }
+      return;
     }
 
 
     /*
-     * Дополнительная защита
-     * от browser interpolation.
+     * Запрещаем браузеру
+     * интерполировать картинку.
      */
     canvas.style.setProperty(
       "image-rendering",
@@ -408,37 +307,34 @@
       "none",
       "important"
     );
+
+    canvas.style.setProperty(
+      "animation",
+      "none",
+      "important"
+    );
   }
 
 
   /* =======================================================
-     APPLY TO ONE CANVAS
+     APPLY ONE
      ======================================================= */
 
-  function applyToCanvas(canvas) {
+  function applyToCanvas(
+    canvas
+  ) {
     if (
-      !isRainRadarCanvas(canvas)
+      !isRainRadarCanvas(
+        canvas
+      )
     ) {
       return;
     }
 
-
-    /*
-     * Canvas должен уже содержать
-     * готовые радарные данные.
-     *
-     * Если он пустой — ничего страшного:
-     * следующий проход обработает его
-     * после загрузки.
-     */
     pixelateCanvas(
       canvas
     );
 
-
-    /*
-     * Убираем interpolation.
-     */
     try {
       const ctx =
         canvas.getContext(
@@ -452,29 +348,19 @@
         ctx.imageSmoothingQuality =
           "low";
       }
-    } catch (_) {
-      /*
-       * Ничего.
-       */
-    }
+    } catch (_) {}
   }
 
 
   /* =======================================================
-     APPLY TO EXISTING RAINRADAR
+     APPLY
      ======================================================= */
 
   function apply() {
-
-    /*
-     * Ищем только уже существующие
-     * RainRadar layers.
-     */
     const layers =
       document.querySelectorAll(
         LAYER_SELECTOR
       );
-
 
     for (
       const layer of layers
@@ -485,11 +371,9 @@
           TILE_SELECTOR
         );
 
-
       for (
         const canvas of canvases
       ) {
-
         applyToCanvas(
           canvas
         );
@@ -503,7 +387,6 @@
      ======================================================= */
 
   function installCSS() {
-
     if (
       document.getElementById(
         "cloradRainRadarSquareSafe"
@@ -512,24 +395,33 @@
       return;
     }
 
-
     const style =
       document.createElement(
         "style"
       );
 
-
     style.id =
       "cloradRainRadarSquareSafe";
 
-
     style.textContent = `
       canvas.clorad-rainradar-tile {
+        width: 256px !important;
+        height: 256px !important;
+
+        display: block !important;
+
+        padding: 0 !important;
+        margin: 0 !important;
+        border: 0 !important;
+
         image-rendering:
-          pixelated !important;
+          -moz-crisp-edges !important;
 
         image-rendering:
           crisp-edges !important;
+
+        image-rendering:
+          pixelated !important;
 
         filter:
           none !important;
@@ -542,7 +434,6 @@
       }
     `;
 
-
     document.head.appendChild(
       style
     );
@@ -554,28 +445,10 @@
      ======================================================= */
 
   function start() {
-
-    /*
-     * Устанавливаем CSS.
-     */
     installCSS();
 
-
-    /*
-     * Обрабатываем уже существующие
-     * RainRadar tiles.
-     */
     apply();
 
-
-    /*
-     * Проверяем появление новых
-     * canvas после смены кадра,
-     * zoom или перезагрузки данных.
-     *
-     * MutationObserver специально
-     * НЕ используется.
-     */
     setInterval(
       apply,
       CHECK_INTERVAL
