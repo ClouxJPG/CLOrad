@@ -2180,7 +2180,8 @@
      ======================================================= */
 
   async function setFrame(
-    index
+    index,
+    force = false
   ) {
     if (
       !active ||
@@ -2214,6 +2215,7 @@
       ];
 
     if (
+      !force &&
       currentIndex ===
         target &&
       displayedTimestamp ===
@@ -2995,11 +2997,22 @@
       const index =
         currentIndex;
 
-      displayedTimestamp =
-        null;
-
+      /*
+       * НЕ обнуляем displayedTimestamp.
+       *
+       * Иначе setFrame() посчитает
+       * текущий кадр первым кадром
+       * и просто сменит timestamp,
+       * не перераскрасив существующие
+       * canvas.
+       *
+       * force=true заставляет заново
+       * подготовить текущую сетку
+       * с новым boost.
+       */
       setFrame(
-        index
+        index,
+        true
       );
     }
   }
