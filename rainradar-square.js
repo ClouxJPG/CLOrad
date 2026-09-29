@@ -1,16 +1,17 @@
 /* =========================================================
-   CLOrad — RainRadar SQUARE + PIXELATED RENDERER
+   CLOrad — RainRadar SQUARE / PIXELATED
    Файл: rainradar-square.js
 
-   ГЛАВНОЕ:
-   - квадратный raster 256x256
+   Назначение:
+   - отдельный квадратный renderer RainRadar
+   - визуально резкие радарные ячейки
+   - без bilinear interpolation
+   - без blur
+   - без плавного сглаживания
+   - квадратные блоки данных
    - pixelated rendering
    - crisp-edges
-   - imageSmoothingEnabled = false
-   - никакого bilinear / linear smoothing
-   - никакого blur при масштабировании
-   - никакого transition / animation
-   - исходный rainradar.js НЕ ИЗМЕНЯЕТСЯ
+   - исходный rainradar.js не изменяется
    ========================================================= */
 
 (() => {
@@ -33,7 +34,27 @@
   const MAX_ZOOM = 14;
 
   const TILE_SIZE = 256;
+
+  /*
+   * Итоговый размер Leaflet tile.
+   */
   const SQUARE_SIZE = 256;
+
+  /*
+   * Размер визуальной квадратной ячейки.
+
+   * 1 = исходные пиксели
+   * 2 = 2x2
+   * 3 = 3x3
+   * 4 = 4x4
+   * 6 = 6x6
+   * 8 = 8x8
+
+   * 4 даёт выраженный "радарный"
+   * пиксельный вид без сильной потери
+   * детализации.
+   */
+  const DATA_BLOCK_SIZE = 4;
 
   const REFRESH_TIME = 60000;
 
@@ -92,38 +113,73 @@
     "70 dBZ"
   ];
 
-  const RGB = PALETTE.map(hex => ({
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16)
-  }));
+  const RGB =
+    PALETTE.map(hex => ({
+      r: parseInt(
+        hex.slice(1, 3),
+        16
+      ),
+      g: parseInt(
+        hex.slice(3, 5),
+        16
+      ),
+      b: parseInt(
+        hex.slice(5, 7),
+        16
+      )
+    }));
 
   /* =======================================================
      STATE
      ======================================================= */
 
-  let boost = loadBoost();
+  let boost =
+    loadBoost();
 
-  let layer = null;
-  let timestamps = [];
-  let currentTimestamp = null;
-  let currentFrameIndex = -1;
+  let layer =
+    null;
 
-  let refreshTimer = null;
-  let playbackTimer = null;
+  let timestamps =
+    [];
 
-  let playing = false;
-  let loading = false;
+  let currentTimestamp =
+    null;
 
-  let requestId = 0;
+  let currentFrameIndex =
+    -1;
 
-  const grayCache = new Map();
-  const colorCache = new Map();
+  let refreshTimer =
+    null;
 
-  const MAX_CACHE = 600;
+  let playbackTimer =
+    null;
+
+  let playing =
+    false;
+
+  let loading =
+    false;
+
+  let requestId =
+    0;
+
+  /*
+   * Исходные grayscale данные.
+   */
+  const grayCache =
+    new Map();
+
+  /*
+   * Уже обработанные квадратные raster tiles.
+   */
+  const colorCache =
+    new Map();
+
+  const MAX_CACHE =
+    600;
 
   /* =======================================================
-     PIXELATED CSS
+     PIXEL / SHARPNESS CSS
      ======================================================= */
 
   function installPixelCSS() {
@@ -136,16 +192,18 @@
     }
 
     const style =
-      document.createElement("style");
+      document.createElement(
+        "style"
+      );
 
     style.id =
       "clorad-rainradar-square-pixel-css";
 
     style.textContent = `
       /*
-       * RainRadar pixel renderer
+       * Полностью отключаем анимации
+       * и переходы.
        */
-
       .clorad-rainradar-square-layer,
       .clorad-rainradar-square-layer *,
       .clorad-rainradar-square-layer
@@ -157,16 +215,17 @@
         animation: none !important;
 
         /*
-         * Главная настройка резкости.
+         * Никакого сглаживания
+         * при масштабировании.
          */
         image-rendering: pixelated !important;
         image-rendering: crisp-edges !important;
+        image-rendering: -moz-crisp-edges !important;
       }
 
-      .clorad-rainradar-square-layer {
-        opacity: 1 !important;
-      }
-
+      /*
+       * Сам радарный canvas.
+       */
       canvas.clorad-rainradar-tile {
 
         display: block !important;
@@ -174,31 +233,44 @@
         width: 256px !important;
         height: 256px !important;
 
-        padding: 0 !important;
         margin: 0 !important;
+        padding: 0 !important;
         border: 0 !important;
 
         /*
-         * Pixelated renderer.
+         * Главная настройка резкости.
          */
         image-rendering: pixelated !important;
         image-rendering: crisp-edges !important;
+        image-rendering: -moz-crisp-edges !important;
 
         /*
-         * Запрещаем визуальные переходы.
+         * Никаких фильтров.
+         */
+        filter: none !important;
+
+        /*
+         * Никаких плавных переходов.
          */
         transition: none !important;
         animation: none !important;
 
         /*
-         * Не даём браузеру применять
-         * дополнительные эффекты.
+         * Не позволяем браузеру
+         * менять прозрачность.
          */
+        opacity: 1 !important;
+      }
+
+      .clorad-rainradar-square-layer {
+        opacity: 1 !important;
         filter: none !important;
       }
     `;
 
-    document.head.appendChild(style);
+    document.head.appendChild(
+      style
+    );
   }
 
   /* =======================================================
@@ -236,19 +308,25 @@
   }
 
   function setBoost(value) {
-    boost = Math.max(
-      BOOST_MIN,
-      Math.min(
-        BOOST_MAX,
-        Number(value) || BOOST_DEFAULT
-      )
-    );
+    boost =
+      Math.max(
+        BOOST_MIN,
+        Math.min(
+          BOOST_MAX,
+          Number(value) ||
+            BOOST_DEFAULT
+        )
+      );
 
-    saveBoost(boost);
+    saveBoost(
+      boost
+    );
 
     colorCache.clear();
 
-    if (layer) {
+    if (
+      layer
+    ) {
       layer.redraw();
     }
   }
@@ -259,18 +337,24 @@
 
   function trimCache(cache) {
     while (
-      cache.size > MAX_CACHE
+      cache.size >
+      MAX_CACHE
     ) {
       const first =
-        cache.keys().next().value;
+        cache.keys()
+          .next()
+          .value;
 
       if (
-        first === undefined
+        first ===
+        undefined
       ) {
         break;
       }
 
-      cache.delete(first);
+      cache.delete(
+        first
+      );
     }
   }
 
@@ -284,10 +368,19 @@
   ) {
     const params =
       new URLSearchParams({
-        timestamp: String(timestamp),
-        z: String(RR_NATIVE_ZOOM),
-        x: String(coords.x),
-        y: String(coords.y)
+        timestamp:
+          String(timestamp),
+
+        z:
+          String(
+            RR_NATIVE_ZOOM
+          ),
+
+        x:
+          String(coords.x),
+
+        y:
+          String(coords.y)
       });
 
     return (
@@ -298,10 +391,12 @@
   }
 
   /* =======================================================
-     IMAGE LOADER
+     LOAD IMAGE
      ======================================================= */
 
-  function loadImage(url) {
+  function loadImage(
+    url
+  ) {
     return new Promise(
       (resolve, reject) => {
         const img =
@@ -313,26 +408,31 @@
         img.decoding =
           "async";
 
-        img.onload = () => {
-          resolve(img);
-        };
+        img.onload =
+          () => {
+            resolve(
+              img
+            );
+          };
 
-        img.onerror = () => {
-          reject(
-            new Error(
-              "RainRadar tile load error: " +
-              url
-            )
-          );
-        };
+        img.onerror =
+          () => {
+            reject(
+              new Error(
+                "RainRadar tile load error: " +
+                url
+              )
+            );
+          };
 
-        img.src = url;
+        img.src =
+          url;
       }
     );
   }
 
   /* =======================================================
-     LOAD RAW TILE
+     LOAD RAW RASTER
      ======================================================= */
 
   async function loadGrayTile(
@@ -348,9 +448,13 @@
       ].join("/");
 
     if (
-      grayCache.has(key)
+      grayCache.has(
+        key
+      )
     ) {
-      return grayCache.get(key);
+      return grayCache.get(
+        key
+      );
     }
 
     const img =
@@ -374,7 +478,7 @@
       !height
     ) {
       throw new Error(
-        "Некорректный размер RainRadar tile"
+        "RainRadar tile имеет некорректный размер"
       );
     }
 
@@ -393,19 +497,22 @@
       canvas.getContext(
         "2d",
         {
-          willReadFrequently: true
+          willReadFrequently:
+            true
         }
       );
 
-    if (!ctx) {
+    if (
+      !ctx
+    ) {
       throw new Error(
         "Canvas 2D недоступен"
       );
     }
 
     /*
-     * ВАЖНО:
-     * отключаем сглаживание ещё до drawImage.
+     * Никогда не сглаживаем
+     * исходные данные.
      */
     ctx.imageSmoothingEnabled =
       false;
@@ -451,7 +558,9 @@
      COLORIZE
      ======================================================= */
 
-  function colorize(source) {
+  function colorize(
+    source
+  ) {
     const {
       width,
       height,
@@ -474,7 +583,9 @@
         "2d"
       );
 
-    if (!ctx) {
+    if (
+      !ctx
+    ) {
       throw new Error(
         "Canvas 2D недоступен"
       );
@@ -506,6 +617,9 @@
       const value =
         src[i];
 
+      /*
+       * Пустой радар.
+       */
       if (
         value <= 0
       ) {
@@ -571,42 +685,60 @@
   }
 
   /* =======================================================
-     MAKE SQUARE + PIXELATED RASTER
+     SQUARE PIXEL BLOCK RENDERER
      ======================================================= */
 
   function makeSquareRaster(
     source
   ) {
-    const canvas =
+    const sourceWidth =
+      source.width;
+
+    const sourceHeight =
+      source.height;
+
+    /*
+     * Если исходный raster уже
+     * маленький — всё равно делаем
+     * квадратный output.
+     */
+    const output =
       document.createElement(
         "canvas"
       );
 
-    canvas.width =
+    output.width =
       SQUARE_SIZE;
 
-    canvas.height =
+    output.height =
       SQUARE_SIZE;
 
-    canvas.className =
+    output.className =
       "clorad-rainradar-tile";
 
+    output.style.imageRendering =
+      "pixelated";
+
     const ctx =
-      canvas.getContext(
-        "2d"
+      output.getContext(
+        "2d",
+        {
+          alpha: true,
+          desynchronized: true
+        }
       );
 
-    if (!ctx) {
+    if (
+      !ctx
+    ) {
       throw new Error(
         "Canvas 2D недоступен"
       );
     }
 
     /*
-     * КРИТИЧЕСКИ ВАЖНО:
-     *
-     * браузер НЕ должен интерполировать
-     * соседние radar pixels.
+     * КРИТИЧЕСКОЕ:
+     * полностью отключаем interpolation.
      */
     ctx.imageSmoothingEnabled =
       false;
@@ -614,9 +746,6 @@
     ctx.imageSmoothingQuality =
       "low";
 
-    /*
-     * Сброс transform.
-     */
     ctx.setTransform(
       1,
       0,
@@ -634,25 +763,212 @@
     );
 
     /*
-     * Переносим raster без сглаживания.
+     * -----------------------------------------------------
+     * ВАРИАНТ С КВАДРАТНЫМИ БЛОКАМИ
+     * -----------------------------------------------------
+     *
+     * Сначала вычисляем, сколько исходных
+     * пикселей приходится на одну видимую
+     * квадратную ячейку.
      */
-    ctx.drawImage(
+
+    const block =
+      Math.max(
+        1,
+        DATA_BLOCK_SIZE
+      );
+
+    /*
+     * Если исходное изображение
+     * имеет пропорции, отличные от 1:1,
+     * масштабируем его в квадратный
+     * рабочий raster nearest-neighbor.
+     */
+    const scaled =
+      document.createElement(
+        "canvas"
+      );
+
+    scaled.width =
+      SQUARE_SIZE;
+
+    scaled.height =
+      SQUARE_SIZE;
+
+    const sctx =
+      scaled.getContext(
+        "2d"
+      );
+
+    if (
+      !sctx
+    ) {
+      throw new Error(
+        "Canvas 2D недоступен"
+      );
+    }
+
+    sctx.imageSmoothingEnabled =
+      false;
+
+    sctx.imageSmoothingQuality =
+      "low";
+
+    /*
+     * Самое важное:
+     *
+     * исходный raster масштабируется
+     * только nearest-neighbor.
+     */
+    sctx.drawImage(
       source,
       0,
       0,
-      source.width,
-      source.height,
+      sourceWidth,
+      sourceHeight,
       0,
       0,
       SQUARE_SIZE,
       SQUARE_SIZE
     );
 
-    return canvas;
+    /*
+     * Получаем уже масштабированные
+     * пиксели.
+     */
+    const data =
+      sctx.getImageData(
+        0,
+        0,
+        SQUARE_SIZE,
+        SQUARE_SIZE
+      );
+
+    /*
+     * Новый canvas.
+     */
+    const finalImage =
+      ctx.createImageData(
+        SQUARE_SIZE,
+        SQUARE_SIZE
+      );
+
+    const src =
+      data.data;
+
+    const dst =
+      finalImage.data;
+
+    /*
+     * Превращаем соседние пиксели
+     * в одинаковые квадратные блоки.
+     *
+     * Это создаёт именно тот
+     * "пиксельный" вид, который нужен.
+     */
+    for (
+      let y = 0;
+      y < SQUARE_SIZE;
+      y += block
+    ) {
+      for (
+        let x = 0;
+        x < SQUARE_SIZE;
+        x += block
+      ) {
+        const sourceIndex =
+          (
+            y *
+            SQUARE_SIZE +
+            x
+          ) *
+          4;
+
+        const r =
+          src[sourceIndex];
+
+        const g =
+          src[
+            sourceIndex + 1
+          ];
+
+        const b =
+          src[
+            sourceIndex + 2
+          ];
+
+        const a =
+          src[
+            sourceIndex + 3
+          ];
+
+        /*
+         * Заполняем квадратный блок
+         * одним и тем же значением.
+         */
+        const endY =
+          Math.min(
+            y + block,
+            SQUARE_SIZE
+          );
+
+        const endX =
+          Math.min(
+            x + block,
+            SQUARE_SIZE
+          );
+
+        for (
+          let yy = y;
+          yy < endY;
+          yy++
+        ) {
+          for (
+            let xx = x;
+            xx < endX;
+            xx++
+          ) {
+            const index =
+              (
+                yy *
+                SQUARE_SIZE +
+                xx
+              ) *
+              4;
+
+            dst[index] =
+              r;
+
+            dst[index + 1] =
+              g;
+
+            dst[index + 2] =
+              b;
+
+            dst[index + 3] =
+              a;
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(
+      finalImage,
+      0,
+      0
+    );
+
+    /*
+     * Ещё раз фиксируем pixelated.
+     */
+    ctx.imageSmoothingEnabled =
+      false;
+
+    return output;
   }
 
   /* =======================================================
-     GET COLORED SQUARE TILE
+     FINAL COLORED TILE
      ======================================================= */
 
   async function getColoredTile(
@@ -665,13 +981,18 @@
         RR_NATIVE_ZOOM,
         coords.x,
         coords.y,
-        boost
+        boost,
+        DATA_BLOCK_SIZE
       ].join("/");
 
     if (
-      colorCache.has(key)
+      colorCache.has(
+        key
+      )
     ) {
-      return colorCache.get(key);
+      return colorCache.get(
+        key
+      );
     }
 
     const raw =
@@ -681,11 +1002,13 @@
       );
 
     const colored =
-      colorize(raw);
+      colorize(
+        raw
+      );
 
     /*
-     * Здесь получаем квадратный
-     * pixelated raster.
+     * Здесь формируем квадратные
+     * визуальные радарные ячейки.
      */
     const square =
       makeSquareRaster(
@@ -711,9 +1034,12 @@
   const RainRadarSquareLayer =
     L.TileLayer.extend({
 
-      initialize(options) {
+      initialize(
+        options
+      ) {
         options =
-          options || {};
+          options ||
+          {};
 
         L.TileLayer.prototype.initialize.call(
           this,
@@ -767,7 +1093,9 @@
           null;
       },
 
-      setTimestamp(timestamp) {
+      setTimestamp(
+        timestamp
+      ) {
         this._timestamp =
           timestamp;
 
@@ -781,7 +1109,7 @@
         done
       ) {
         /*
-         * Canvas сразу квадратный.
+         * Всегда квадратный canvas.
          */
         const tile =
           document.createElement(
@@ -803,11 +1131,6 @@
         tile.style.height =
           "256px";
 
-        /*
-         * Дополнительная страховка:
-         * CSS pixelated задаём прямо
-         * на конкретном canvas.
-         */
         tile.style.imageRendering =
           "pixelated";
 
@@ -816,7 +1139,9 @@
             "2d"
           );
 
-        if (!ctx) {
+        if (
+          !ctx
+        ) {
           done(
             new Error(
               "Canvas 2D недоступен"
@@ -828,7 +1153,7 @@
         }
 
         /*
-         * Отключаем сглаживание.
+         * Никакого сглаживания.
          */
         ctx.imageSmoothingEnabled =
           false;
@@ -857,10 +1182,11 @@
         )
           .then(
             source => {
+
               /*
-               * Если за время загрузки
-               * timestamp уже поменялся —
-               * этот tile не используем.
+               * Если пользователь уже
+               * переключил кадр —
+               * старый tile не вставляем.
                */
               if (
                 this._timestamp !==
@@ -882,8 +1208,8 @@
               );
 
               /*
-               * Ещё раз отключаем smoothing
-               * непосредственно перед drawImage.
+               * Перед каждым drawImage
+               * снова отключаем smoothing.
                */
               ctx.imageSmoothingEnabled =
                 false;
@@ -898,6 +1224,12 @@
                 SQUARE_SIZE,
                 SQUARE_SIZE
               );
+
+              /*
+               * Финальная страховка.
+               */
+              tile.style.imageRendering =
+                "pixelated";
 
               done(
                 null,
@@ -944,10 +1276,13 @@
     const data =
       await response.json();
 
-    let list = [];
+    let list =
+      [];
 
     if (
-      Array.isArray(data)
+      Array.isArray(
+        data
+      )
     ) {
       list =
         data;
@@ -983,7 +1318,11 @@
         );
 
     list =
-      [...new Set(list)];
+      [
+        ...new Set(
+          list
+        )
+      ];
 
     list.sort(
       (a, b) =>
@@ -1003,7 +1342,8 @@
   ) {
     if (
       index < 0 ||
-      index >= timestamps.length
+      index >=
+        timestamps.length
     ) {
       return;
     }
@@ -1017,7 +1357,9 @@
     currentTimestamp =
       timestamp;
 
-    if (!layer) {
+    if (
+      !layer
+    ) {
       layer =
         new RainRadarSquareLayer({
           timestamp
@@ -1071,7 +1413,8 @@
         await loadManifest();
 
       if (
-        id !== requestId
+        id !==
+        requestId
       ) {
         return;
       }
@@ -1090,6 +1433,11 @@
           oldTimestamp
         );
 
+      /*
+       * Если пользователь был
+       * на последнем кадре —
+       * переходим на новый последний.
+       */
       if (
         wasLatest
       ) {
@@ -1097,6 +1445,10 @@
           timestamps.length - 1;
       }
 
+      /*
+       * Иначе сохраняем выбранный
+       * пользователем кадр.
+       */
       if (
         index < 0
       ) {
@@ -1120,7 +1472,9 @@
 
       updateTimeline();
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "[CLOrad RainRadar Square]",
         error
@@ -1182,14 +1536,14 @@
 
     if (
       slider.dataset
-        .rainradarSquarePixelated ===
+        .rainradarSquareConnected ===
       "1"
     ) {
       return;
     }
 
     slider.dataset
-      .rainradarSquarePixelated =
+      .rainradarSquareConnected =
       "1";
 
     slider.addEventListener(
@@ -1201,7 +1555,9 @@
           );
 
         if (
-          Number.isFinite(index)
+          Number.isFinite(
+            index
+          )
         ) {
           setFrame(
             index
@@ -1249,7 +1605,8 @@
       setInterval(
         () => {
           let next =
-            currentFrameIndex + 1;
+            currentFrameIndex +
+            1;
 
           if (
             next >=
@@ -1277,7 +1634,7 @@
         !window.map
       ) {
         console.error(
-          "[CLOrad] map не найден"
+          "[CLOrad] Leaflet map не найден"
         );
 
         return;
@@ -1352,7 +1709,9 @@
       grayCache.clear();
       colorCache.clear();
 
-      if (layer) {
+      if (
+        layer
+      ) {
         layer.redraw();
       }
     },
@@ -1375,7 +1734,8 @@
      ======================================================= */
 
   window.CLOrad =
-    window.CLOrad || {};
+    window.CLOrad ||
+    {};
 
   window.CLOrad.RainRadarSquare =
     RainRadarSquare;
@@ -1389,7 +1749,6 @@
 
   function boot() {
     installPixelCSS();
-
     connectTimeline();
   }
 
