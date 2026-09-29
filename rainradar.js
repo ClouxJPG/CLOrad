@@ -3,7 +3,7 @@
 
    RainRadar:
    - grayscale source
-   - RGMC ОЯ palette
+   - РГМЦ / Nowcast reflectivity palette
    - black = transparent
    - nearest-neighbor / pixelated rendering
    - square pixels
@@ -11,6 +11,7 @@
    - frame timeline
    - playback
    - automatic refresh
+   - отключение при открытии другого слоя
 
    Настройки:
    - Накрутка RainRadar: 1..30
@@ -67,20 +68,8 @@
   const BOOST_STORAGE_KEY =
     "clorad_rainradar_boost";
 
-  /*
-   * Применённое значение.
-   * Именно оно используется для карты.
-   */
-
   let rainRadarBoost =
     loadBoost();
-
-  /*
-   * Выбранное значение в настройках.
-   *
-   * Может отличаться от применённого,
-   * пока пользователь не нажал "Применить".
-   */
 
   let selectedBoost =
     rainRadarBoost;
@@ -131,20 +120,27 @@
   }
 
   /* =======================================================
-     RGMC ОЯ PALETTE
-     НЕ ИЗМЕНЯТЬ
+     РГМЦ / NOWCAST REFLECTIVITY PALETTE
+     
+     Палитра используется именно для
+     радиолокационной отражаемости.
+
+     Это НЕ палитра ОЯ.
+
+     Индексы идут от слабой к сильной
+     отражаемости.
      ======================================================= */
 
-  const RGMC_OY_PALETTE = [
+  const REFLECTIVITY_PALETTE = [
     "#b9c1c7",
     "#a9c7f4",
+    "#75a6ef",
+    "#5279ed",
+    "#504a9b",
     "#63eda5",
     "#43cf89",
     "#4db84e",
     "#fff89c",
-    "#75a6ef",
-    "#5279ed",
-    "#504a9b",
     "#ffc0a8",
     "#fa82a0",
     "#ff4d4d",
@@ -158,10 +154,10 @@
   ];
 
   const COLOR_LEVELS =
-    RGMC_OY_PALETTE.length;
+    REFLECTIVITY_PALETTE.length;
 
   const PALETTE_RGB =
-    RGMC_OY_PALETTE.map(
+    REFLECTIVITY_PALETTE.map(
       hex => ({
         r: parseInt(
           hex.slice(1, 3),
@@ -209,6 +205,9 @@
     null;
 
   let playback =
+    false;
+
+  let playbackBusy =
     false;
 
   let requestId =
@@ -301,6 +300,7 @@
       () => el.remove(),
       2200
     );
+
   }
 
   /* =======================================================
@@ -328,11 +328,6 @@
       "cloradRainRadarSharpCSS";
 
     style.textContent = `
-      /*
-       * RainRadar:
-       * запрещаем сглаживание raster-тайлов.
-       */
-
       .leaflet-layer canvas,
       .leaflet-tile-container canvas,
       .leaflet-tile-container img,
@@ -347,10 +342,6 @@
           nearest-neighbor !important;
       }
 
-      /*
-       * Canvas самого RainRadar.
-       */
-
       canvas.clorad-rainradar-tile {
         image-rendering:
           pixelated !important;
@@ -363,12 +354,16 @@
 
         backface-visibility:
           hidden !important;
+
+        display:
+          block !important;
       }
     `;
 
     document.head.appendChild(
       style
     );
+
   }
 
   /* =======================================================
@@ -407,17 +402,6 @@
      BOOST CURVE
      ======================================================= */
 
-  /*
-   * RainRadar grayscale имеет большую
-   * часть значений в нижнем диапазоне.
-   *
-   * Поэтому накрутка управляет gamma-кривой.
-   *
-   * 1  -> почти линейно
-   * 15 -> стандартное усиление
-   * 30 -> максимальное усиление
-   */
-
   function getGamma(
     boost
   ) {
@@ -430,6 +414,7 @@
         0.033
       )
     );
+
   }
 
   function boostValue(
@@ -468,6 +453,7 @@
         )
       )
     );
+
   }
 
   /* =======================================================
@@ -501,6 +487,7 @@
         index
       )
     );
+
   }
 
   /* =======================================================
@@ -571,7 +558,7 @@
         src[i];
 
       /*
-       * Чёрный фон.
+       * Чёрный фон = прозрачность.
        */
 
       if (
@@ -593,10 +580,6 @@
         continue;
 
       }
-
-      /*
-       * Накрутка.
-       */
 
       const value =
         boostValue(
@@ -639,8 +622,7 @@
     }
 
     /*
-     * Прямая запись пикселей.
-     *
+     * Пиксель-в-пиксель.
      * Никакого resize.
      */
 
@@ -651,6 +633,7 @@
     );
 
     return canvas;
+
   }
 
   /* =======================================================
@@ -738,11 +721,6 @@
 
               }
 
-              /*
-               * Исходный PNG читается
-               * пиксель-в-пиксель.
-               */
-
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -804,6 +782,7 @@
 
       }
     );
+
   }
 
   /* =======================================================
@@ -852,6 +831,7 @@
     );
 
     return canvas;
+
   }
 
   /* =======================================================
@@ -986,6 +966,85 @@
   }
 
   /* =======================================================
+     STOP WHEN ANOTHER NAV LAYER OPENS
+     ======================================================= */
+
+  function hookOtherLayers() {
+
+    const nav =
+      document.querySelector(
+        ".nav"
+      );
+
+    if (
+      !nav ||
+      nav.dataset.rainRadarOtherLayersHooked
+    ) {
+
+      return;
+
+    }
+
+    nav.dataset.rainRadarOtherLayersHooked =
+      "1";
+
+    /*
+     * Capture-фаза.
+     *
+     * RainRadar отключается ДО того,
+     * как другой обработчик слоя
+     * начнёт свою работу.
+     */
+
+    nav.addEventListener(
+      "click",
+      event => {
+
+        const button =
+          event.target.closest(
+            ".nav .n"
+          );
+
+        if (
+          !button
+        ) {
+
+          return;
+
+        }
+
+        /*
+         * Сам RainRadar.
+         */
+
+        if (
+          button === rainRadarNav
+        ) {
+
+          return;
+
+        }
+
+        /*
+         * Любой другой пункт меню.
+         */
+
+        if (
+          active ||
+          rainRadarLayer
+        ) {
+
+          stop();
+
+        }
+
+      },
+      true
+    );
+
+  }
+
+  /* =======================================================
      TILE URL
      ======================================================= */
 
@@ -1062,10 +1121,6 @@
           tile.className =
             "clorad-rainradar-tile";
 
-          /*
-           * Максимально резкий raster.
-           */
-
           tile.style.imageRendering =
             "pixelated";
 
@@ -1128,10 +1183,6 @@
             .then(
               canvas => {
 
-                /*
-                 * Проверяем ещё раз.
-                 */
-
                 ctx.imageSmoothingEnabled =
                   false;
 
@@ -1141,13 +1192,6 @@
                   256,
                   256
                 );
-
-                /*
-                 * canvas уже 256×256.
-                 *
-                 * Здесь нет изменения
-                 * размера вообще.
-                 */
 
                 ctx.drawImage(
                   canvas,
@@ -1218,11 +1262,6 @@
             this,
             map
           );
-
-          /*
-           * До полной готовности
-           * слой полностью невидим.
-           */
 
           this.setOpacity(
             0
@@ -1434,9 +1473,7 @@
         }
 
         /*
-         * Весь кадр готов.
-         *
-         * Только теперь показываем.
+         * Новый кадр полностью готов.
          */
 
         layer.setOpacity(
@@ -1444,8 +1481,7 @@
         );
 
         /*
-         * Старый кадр удаляем
-         * после появления нового.
+         * Теперь удаляем старый.
          */
 
         if (
@@ -1470,6 +1506,7 @@
     );
 
     return layer;
+
   }
 
   /* =======================================================
@@ -1578,6 +1615,7 @@
     }
 
     return timestamps;
+
   }
 
   /* =======================================================
@@ -1867,6 +1905,9 @@
     playback =
       false;
 
+    playbackBusy =
+      false;
+
     if (
       playbackTimer
     ) {
@@ -1904,6 +1945,9 @@
     playback =
       true;
 
+    playbackBusy =
+      false;
+
     updatePlayButton();
 
     playbackTimer =
@@ -1920,15 +1964,40 @@
 
           }
 
+          /*
+           * Не запускаем следующий кадр,
+           * пока предыдущий ещё грузится.
+           */
+
+          if (
+            playbackBusy
+          ) {
+
+            return;
+
+          }
+
+          playbackBusy =
+            true;
+
           const next =
             currentIndex >=
             timestamps.length - 1
               ? 0
               : currentIndex + 1;
 
-          await setFrame(
-            next
-          );
+          try {
+
+            await setFrame(
+              next
+            );
+
+          } finally {
+
+            playbackBusy =
+              false;
+
+          }
 
         },
         700
@@ -2082,10 +2151,6 @@
 
     }
 
-    /*
-     * Не создаём второй раз.
-     */
-
     let existing =
       settings.querySelector(
         "#cloradRainRadarSetting"
@@ -2103,11 +2168,6 @@
       return;
 
     }
-
-    /*
-     * Используем ту же структуру,
-     * что и существующий "Кол. кадров".
-     */
 
     const setting =
       document.createElement(
@@ -2344,10 +2404,6 @@
       body
     );
 
-    /*
-     * Ставим после "Кол. кадров".
-     */
-
     const framesSetting =
       settings.querySelector(
         "#framesSetting"
@@ -2375,10 +2431,6 @@
     settingsControl =
       setting;
 
-    /*
-     * Раскрытие/скрытие.
-     */
-
     head.addEventListener(
       "click",
       event => {
@@ -2393,13 +2445,6 @@
 
       }
     );
-
-    /*
-     * Выбор значения.
-     *
-     * Только меняем выбранное значение.
-     * Карта пока НЕ меняется.
-     */
 
     range.addEventListener(
       "input",
@@ -2425,10 +2470,6 @@
 
       }
     );
-
-    /*
-     * ПРИМЕНИТЬ.
-     */
 
     apply.addEventListener(
       "click",
@@ -2506,11 +2547,6 @@
 
     }
 
-    /*
-     * Теперь выбранное значение
-     * становится применённым.
-     */
-
     rainRadarBoost =
       selectedBoost;
 
@@ -2518,17 +2554,7 @@
       rainRadarBoost
     );
 
-    /*
-     * Все цветные версии
-     * старой настройки больше не нужны.
-     */
-
     coloredCache.clear();
-
-    /*
-     * Перерисовываем текущий кадр
-     * без повторной загрузки PNG.
-     */
 
     refreshCurrentFrameInstant();
 
@@ -2580,11 +2606,6 @@
         layer._tiles
       );
 
-    /*
-     * Если нет тайлов,
-     * обычное переключение.
-     */
-
     if (
       !tiles.length
     ) {
@@ -2596,11 +2617,6 @@
       return;
 
     }
-
-    /*
-     * Сохраняем старый кадр
-     * до полной перекраски.
-     */
 
     layer.setOpacity(
       0
@@ -2679,10 +2695,6 @@
             if (
               pending <= 0
             ) {
-
-              /*
-               * Все тайлы перекрашены.
-               */
 
               layer.setOpacity(
                 failed
@@ -2842,6 +2854,10 @@
 
   function stop() {
 
+    /*
+     * Полностью выключаем RainRadar.
+     */
+
     active =
       false;
 
@@ -2853,6 +2869,10 @@
 
     const map =
       getMap();
+
+    /*
+     * Удаляем текущий слой.
+     */
 
     if (
       map &&
@@ -2869,8 +2889,55 @@
 
     }
 
+    /*
+     * На всякий случай удаляем
+     * все оставшиеся RainRadar layers.
+     */
+
+    if (
+      map
+    ) {
+
+      map.eachLayer(
+        layer => {
+
+          if (
+            layer instanceof
+            RainRadarLayer
+          ) {
+
+            try {
+
+              map.removeLayer(
+                layer
+              );
+
+            } catch {}
+
+          }
+
+        }
+      );
+
+    }
+
     rainRadarLayer =
       null;
+
+    /*
+     * Сбрасываем активный пункт
+     * RainRadar.
+     */
+
+    if (
+      rainRadarNav
+    ) {
+
+      rainRadarNav.classList.remove(
+        "active"
+      );
+
+    }
 
   }
 
@@ -2880,10 +2947,6 @@
 
   function init() {
 
-    /*
-     * Сначала ставим резкий raster.
-     */
-
     installSharpRendering();
 
     createNav();
@@ -2891,9 +2954,11 @@
     hookTimeline();
 
     /*
-     * Настройки создаются
-     * внутри существующего #settings.
+     * ВАЖНО:
+     * следим за открытием любых других слоёв.
      */
+
+    hookOtherLayers();
 
     createRainRadarSettings();
 
@@ -2901,6 +2966,8 @@
       () => {
 
         hookTimeline();
+
+        hookOtherLayers();
 
         createRainRadarSettings();
 
@@ -2913,6 +2980,8 @@
 
         hookTimeline();
 
+        hookOtherLayers();
+
         createRainRadarSettings();
 
       },
@@ -2924,6 +2993,8 @@
 
         hookTimeline();
 
+        hookOtherLayers();
+
         createRainRadarSettings();
 
       },
@@ -2934,6 +3005,8 @@
       () => {
 
         hookTimeline();
+
+        hookOtherLayers();
 
         createRainRadarSettings();
 
