@@ -7,12 +7,12 @@
    /composite/{timestamp}/{z}/{x}_{y}.png
 
    ВАЖНО:
-   - ES Module, совместимо с package.json "type": "module"
+   - ES Module
+   - совместимо с package.json "type": "module"
    - без sharp
    - без тяжёлых библиотек
-   - без HEAD
-   - без перебора 18 запросов
-   - короткие таймауты
+   - manifest определяет только последний доступный кадр
+   - история строится по известному шагу 10 минут
    ========================================================= */
 
 "use strict";
@@ -27,6 +27,13 @@ const COMPOSITE_URL =
 
 const TIMESTAMP_STEP =
   600;
+
+/*
+ * 24 кадра × 10 минут =
+ * 4 часа истории.
+ */
+const FRAME_COUNT =
+  24;
 
 const REQUEST_TIMEOUT =
   4000;
@@ -60,7 +67,9 @@ async function fetchWithTimeout(
       }
     );
   } finally {
-    clearTimeout(timer);
+    clearTimeout(
+      timer
+    );
   }
 }
 
@@ -220,6 +229,7 @@ async function findLatest() {
     return previous2;
   }
 
+
   return null;
 }
 
@@ -273,6 +283,12 @@ export default async function handler(
       ) === "1"
     ) {
 
+      /*
+       * Делаем всего несколько запросов,
+       * чтобы найти последний реально
+       * существующий кадр.
+       */
+
       const latest =
         await findLatest();
 
@@ -285,6 +301,41 @@ export default async function handler(
             error:
               "RainRadar сейчас не отдал доступный кадр"
           });
+      }
+
+
+      /*
+       * RainRadar имеет фиксированный
+       * шаг кадров 10 минут.
+       *
+       * Поэтому после определения latest
+       * нам НЕ нужно делать запрос к серверу
+       * для каждого исторического кадра.
+       *
+       * Просто строим временную шкалу.
+       */
+
+      const frames = [];
+
+      for (
+        let i =
+          FRAME_COUNT - 1;
+        i >= 0;
+        i--
+      ) {
+
+        const timestamp =
+          latest -
+          i * TIMESTAMP_STEP;
+
+        frames.push({
+          timestamp,
+
+          time:
+            new Date(
+              timestamp * 1000
+            ).toISOString()
+        });
       }
 
 
@@ -301,17 +352,13 @@ export default async function handler(
           source:
             "rainradar.ru/composite",
 
-          frames: [
-            {
-              timestamp:
-                latest,
+          step:
+            TIMESTAMP_STEP,
 
-              time:
-                new Date(
-                  latest * 1000
-                ).toISOString()
-            }
-          ]
+          frameCount:
+            frames.length,
+
+          frames
 
         });
     }
@@ -343,13 +390,19 @@ export default async function handler(
        ===================================================== */
 
     const z =
-      Number(query.z);
+      Number(
+        query.z
+      );
 
     const x =
-      Number(query.x);
+      Number(
+        query.x
+      );
 
     const y =
-      Number(query.y);
+      Number(
+        query.y
+      );
 
 
     if (
@@ -390,7 +443,9 @@ export default async function handler(
         url,
         {
           method: "GET",
-          cache: "no-store",
+
+          cache:
+            "no-store",
 
           headers: {
             "Accept":
@@ -414,8 +469,10 @@ export default async function handler(
         )
         .json({
           ok: false,
+
           error:
             "RainRadar tile unavailable",
+
           status:
             response.status
         });
@@ -458,6 +515,7 @@ export default async function handler(
       )
     );
 
+
   } catch (error) {
 
     console.error(
@@ -469,8 +527,10 @@ export default async function handler(
       .status(500)
       .json({
         ok: false,
+
         error:
           "RainRadar API error",
+
         message:
           error?.message ||
           String(error)
