@@ -28,6 +28,8 @@
    - перед заменой проверяется актуальность всей сетки
    - при zoom/pan старый подготовленный тайл
      не может попасть в новый tile
+   - исходные 1×1 ячейки отображаются без
+     сглаживания / размытия
    ========================================================= */
 
 (() => {
@@ -370,14 +372,44 @@
        * Геометрию тайла контролирует Leaflet.
        * Здесь НЕ задаём width/height/transform.
        */
+
       canvas.clorad-rainradar-tile {
         display: block !important;
         padding: 0 !important;
         margin: 0 !important;
         border: 0 !important;
-        image-rendering: auto !important;
+
+        /*
+         * ВАЖНО:
+         * исходная 1×1 raster-ячейка
+         * должна оставаться отдельным
+         * чётким квадратным пикселем.
+         *
+         * Никакого bilinear interpolation.
+         */
+        image-rendering: pixelated !important;
+
         transition: none !important;
         animation: none !important;
+        filter: none !important;
+      }
+
+      /*
+       * Leaflet масштабирует tile-container
+       * при zoom.
+       *
+       * pixelated заставляет браузер
+       * сохранять резкие границы
+       * исходных raster-пикселей.
+       */
+      .clorad-rainradar-layer
+      .leaflet-tile-container {
+        image-rendering: pixelated !important;
+      }
+
+      .clorad-rainradar-layer
+      .leaflet-tile {
+        image-rendering: pixelated !important;
       }
     `;
 
@@ -604,8 +636,7 @@
           () => {
             try {
               /*
-               * КРИТИЧНО:
-               * используем настоящий размер
+               * Используем настоящий размер
                * исходного PNG.
                *
                * Никакого принудительного
@@ -1410,13 +1441,6 @@
             "canvas"
           );
 
-        /*
-         * Размер canvas будет установлен
-         * по фактическому размеру source.
-         *
-         * Leaflet при этом продолжает
-         * управлять геометрией tile.
-         */
         tile.width =
           TILE_SIZE;
 
@@ -1437,6 +1461,17 @@
 
         tile.style.border =
           "0";
+
+        /*
+         * ВАЖНО:
+         * пиксельное отображение задаём
+         * непосредственно элементу.
+         */
+        tile.style.setProperty(
+          "image-rendering",
+          "pixelated",
+          "important"
+        );
 
         const ctx =
           tile.getContext(
@@ -1478,12 +1513,6 @@
           .then(
             source => {
 
-              /*
-               * Если во время загрузки
-               * кадр уже сменился, этот
-               * tile нельзя рисовать
-               * старым timestamp.
-               */
               const currentTimestamp =
                 this._timestamp;
 
@@ -1505,14 +1534,18 @@
             source => {
 
               /*
-               * ВАЖНО:
-               * сохраняем нативный размер
+               * Сохраняем нативный размер
                * исходного цветного тайла.
                *
-               * Раньше здесь было
-               * drawImage(..., 256, 256),
-               * что принудительно растягивало
-               * каждый source.
+               * Никакого:
+               *
+               * drawImage(
+               *   source,
+               *   0,
+               *   0,
+               *   256,
+               *   256
+               * )
                */
               const width =
                 source.width ||
@@ -1528,6 +1561,12 @@
               tile.height =
                 height;
 
+              /*
+               * После изменения width/height
+               * canvas сбрасывает context state,
+               * поэтому повторно включаем
+               * отключение сглаживания.
+               */
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -1547,10 +1586,25 @@
                 height
               );
 
+              /*
+               * Source уже имеет нативный
+               * размер. Масштабирования
+               * внутри canvas нет.
+               */
               ctx.drawImage(
                 source,
                 0,
                 0
+              );
+
+              /*
+               * CSS снова после изменения
+               * размеров canvas.
+               */
+              tile.style.setProperty(
+                "image-rendering",
+                "pixelated",
+                "important"
               );
 
               done(
@@ -1696,21 +1750,12 @@
           return;
         }
 
-        /*
-         * КРИТИЧНО:
-         * Leaflet хранит и старые tiles.
-         * Берём только текущие.
-         */
         if (
           entry.current !== true
         ) {
           return;
         }
 
-        /*
-         * Не смешиваем тайлы
-         * разных zoom-сеток.
-         */
         if (
           currentTileZoom != null &&
           entry.coords.z !==
@@ -1786,11 +1831,6 @@
         ? layer._tileZoom
         : null;
 
-    /*
-     * Если уже в момент начала
-     * подготовки сетка смешанная,
-     * кадр не подготавливаем.
-     */
     if (
       capturedTileZoom != null &&
       !visible.every(
@@ -1843,11 +1883,9 @@
           }
 
           /*
-           * Никакого принудительного
-           * 256x256.
-           *
-           * Размер полностью совпадает
-           * с исходным raster tile.
+           * Подготовленный canvas
+           * сохраняет точный размер
+           * исходного raster.
            */
           const preparedCanvas =
             document.createElement(
@@ -1859,6 +1897,12 @@
 
           preparedCanvas.height =
             source.height;
+
+          preparedCanvas.style.setProperty(
+            "image-rendering",
+            "pixelated",
+            "important"
+          );
 
           const ctx =
             preparedCanvas.getContext(
@@ -1922,11 +1966,6 @@
       return null;
     }
 
-    /*
-     * Leaflet не должен был
-     * перестроить сетку во время
-     * загрузки.
-     */
     if (
       layer &&
       layer._tileZoom !==
@@ -1966,9 +2005,6 @@
       return false;
     }
 
-    /*
-     * Только актуальный Leaflet tile.
-     */
     if (
       current.current !== true
     ) {
@@ -1981,10 +2017,6 @@
       return false;
     }
 
-    /*
-     * Tile должен относиться
-     * к текущей zoom-сетке.
-     */
     if (
       layer._tileZoom !==
       item.coords.z
@@ -2087,9 +2119,6 @@
       const height =
         item.source.height;
 
-      /*
-       * Сохраняем нативный bitmap-размер.
-       */
       if (
         canvas.width !==
           width ||
@@ -2127,12 +2156,18 @@
         0,
         0
       );
+
+      /*
+       * После изменения bitmap
+       * сохраняем pixelated rendering.
+       */
+      canvas.style.setProperty(
+        "image-rendering",
+        "pixelated",
+        "important"
+      );
     }
 
-    /*
-     * Новые tiles после pan/zoom
-     * используют уже новый timestamp.
-     */
     if (
       layer
     ) {
@@ -2234,9 +2269,6 @@
       timestamp
     );
 
-    /*
-     * ПЕРВЫЙ КАДР
-     */
     if (
       !displayedTimestamp
     ) {
@@ -2278,9 +2310,6 @@
       return true;
     }
 
-    /*
-     * ПОСЛЕДУЮЩИЕ КАДРЫ
-     */
     let prepared;
 
     try {
@@ -2997,19 +3026,6 @@
       const index =
         currentIndex;
 
-      /*
-       * НЕ обнуляем displayedTimestamp.
-       *
-       * Иначе setFrame() посчитает
-       * текущий кадр первым кадром
-       * и просто сменит timestamp,
-       * не перераскрасив существующие
-       * canvas.
-       *
-       * force=true заставляет заново
-       * подготовить текущую сетку
-       * с новым boost.
-       */
       setFrame(
         index,
         true
