@@ -1,38 +1,23 @@
 /* =========================================================
-   CLOrad — RainRadar 1×1 RGMC / NOWCAST STYLE
-   Файл: rainradar-square.js
+   CLOrad — RainRadar 1×1 / Pixelated
+   Безопасный режим
 
-   НАЗНАЧЕНИЕ:
-   - НЕ создаёт второй RainRadar
-   - НЕ меняет API
-   - НЕ меняет палитру
-   - НЕ меняет legend
-   - НЕ меняет timeline
-   - НЕ меняет basemap
-   - НЕ создаёт искусственные 4×4 / 6×6 блоки
+   НЕ:
+   - создаёт новый слой
+   - не меняет данные
+   - не меняет canvas pixels
+   - не использует MutationObserver
+   - не вмешивается в Leaflet GridLayer
 
-   Оригинальная радарная сетка остаётся 1×1.
-
-   Главная задача:
-   заставить Leaflet + браузер отображать
-   исходные пиксели как ЧЁТКИЕ КВАДРАТЫ,
-   без bilinear interpolation / blur.
-
-   Работает непосредственно с:
-     canvas.clorad-rainradar-tile
-
-   из существующего rainradar.js.
-
-   ПОДКЛЮЧАТЬ ПОСЛЕ rainradar.js.
+   ДЕЛАЕТ:
+   - находит уже существующие RainRadar canvas
+   - отключает сглаживание при отображении
+   - делает исходные 1×1 ячейки визуально
+     чёткими квадратными пикселями
    ========================================================= */
 
 (() => {
   "use strict";
-
-
-  /* =======================================================
-     CONFIG
-     ======================================================= */
 
   const TILE_SELECTOR =
     "canvas.clorad-rainradar-tile";
@@ -41,167 +26,29 @@
     ".clorad-rainradar-layer";
 
   /*
-   * Проверка новых тайлов.
+   * Проверяем уже созданные canvas
+   * раз в 500 мс.
    *
-   * RainRadar может создавать canvas
-   * не сразу после открытия слоя.
+   * Это специально редко, чтобы
+   * вообще не нагружать страницу.
    */
-  const SCAN_INTERVAL =
-    100;
+  const CHECK_INTERVAL = 500;
 
 
   /* =======================================================
-     FORCE PIXELATED RENDERING
+     APPLY TO ONE CANVAS
      ======================================================= */
 
-  function forcePixelRendering(
-    element
-  ) {
-    if (!element) {
+  function applyToCanvas(canvas) {
+    if (!canvas) {
       return;
     }
 
     /*
-     * Самое важное свойство.
-     *
-     * Через setProperty(..., "important")
-     * мы гарантированно перебиваем
-     *
-     * rainradar.js:
-     *
-     * image-rendering: auto !important;
-     */
-    element.style.setProperty(
-      "image-rendering",
-      "pixelated",
-      "important"
-    );
-
-    /*
-     * Старые браузерные fallback.
-     */
-    element.style.setProperty(
-      "image-rendering",
-      "crisp-edges",
-      "important"
-    );
-
-    /*
-     * Убираем любые CSS-фильтры.
-     */
-    element.style.setProperty(
-      "filter",
-      "none",
-      "important"
-    );
-
-    /*
-     * Никаких transition.
-     */
-    element.style.setProperty(
-      "transition",
-      "none",
-      "important"
-    );
-
-    /*
-     * Никакой animation.
-     */
-    element.style.setProperty(
-      "animation",
-      "none",
-      "important"
-    );
-
-    /*
-     * Не позволяем браузеру применять
-     * дополнительную интерполяцию.
-     */
-    element.style.setProperty(
-      "backface-visibility",
-      "hidden",
-      "important"
-    );
-  }
-
-
-  /* =======================================================
-     FORCE CANVAS CONTEXT
-     ======================================================= */
-
-  function forceCanvasContext(
-    canvas
-  ) {
-    if (
-      !canvas ||
-      canvas.tagName !==
-        "CANVAS"
-    ) {
-      return;
-    }
-
-    /*
-     * Canvas должен отображаться
-     * именно как радарная картинка.
-     */
-    forcePixelRendering(
-      canvas
-    );
-
-    /*
-     * Получаем уже существующий
-     * 2D context.
-     *
-     * Новый context здесь НЕ создаём,
-     * чтобы ничего не ломать в renderer.
-     */
-    let ctx = null;
-
-    try {
-      ctx =
-        canvas.getContext(
-          "2d"
-        );
-    } catch {
-      return;
-    }
-
-    if (!ctx) {
-      return;
-    }
-
-    /*
-     * Исходный RainRadar уже использует
-     * imageSmoothingEnabled=false.
-     *
-     * Мы принудительно сохраняем это.
-     */
-    try {
-      ctx.imageSmoothingEnabled =
-        false;
-
-      ctx.imageSmoothingQuality =
-        "low";
-    } catch {}
-  }
-
-
-  /* =======================================================
-     PROCESS ONE TILE
-     ======================================================= */
-
-  function processTile(
-    tile
-  ) {
-    if (!tile) {
-      return;
-    }
-
-    /*
-     * Только настоящий RainRadar tile.
+     * Только RainRadar canvas.
      */
     if (
-      !tile.matches(
+      !canvas.matches(
         TILE_SELECTOR
       )
     ) {
@@ -209,137 +56,67 @@
     }
 
     /*
-     * ВАЖНО:
-     *
-     * НИКАКОГО getImageData().
-     * НИКАКОГО putImageData().
-     * НИКАКОГО пересчёта цветов.
-     * НИКАКОГО 4×4.
-     *
-     * Мы НЕ трогаем исходные данные.
-     *
-     * Меняем только способ отображения.
+     * Главный параметр:
+     * никакого bilinear interpolation.
      */
-
-    forceCanvasContext(
-      tile
-    );
-
-    /*
-     * Leaflet иногда меняет inline style
-     * после создания tile.
-     *
-     * Поэтому ставим свойства непосредственно
-     * на canvas.
-     */
-    tile.style.setProperty(
+    canvas.style.setProperty(
       "image-rendering",
       "pixelated",
       "important"
     );
 
-    tile.style.setProperty(
+    /*
+     * Убираем возможные фильтры.
+     */
+    canvas.style.setProperty(
       "filter",
       "none",
       "important"
     );
 
-    tile.style.setProperty(
-      "transform-style",
-      "flat",
+    /*
+     * Не даём canvas плавно
+     * появляться/изменяться.
+     */
+    canvas.style.setProperty(
+      "transition",
+      "none",
       "important"
     );
 
     /*
-     * Не меняем width/height.
+     * Работаем с уже существующим
+     * 2D context.
      *
-     * Leaflet полностью отвечает
-     * за геометрию tile.
+     * Никакой перерисовки данных.
      */
-  }
+    try {
+      const ctx =
+        canvas.getContext("2d");
 
+      if (ctx) {
+        ctx.imageSmoothingEnabled =
+          false;
 
-  /* =======================================================
-     PROCESS RAINRADAR LAYER
-     * ======================================================= */
-
-  function processLayer(
-    layer
-  ) {
-    if (!layer) {
-      return;
-    }
-
-    /*
-     * Сам контейнер.
-     */
-    forcePixelRendering(
-      layer
-    );
-
-    /*
-     * Все дочерние canvas.
-     */
-    const tiles =
-      layer.querySelectorAll(
-        TILE_SELECTOR
-      );
-
-    for (
-      const tile of tiles
-    ) {
-      processTile(
-        tile
-      );
-    }
-
-    /*
-     * Leaflet tile containers.
-     */
-    const containers =
-      layer.querySelectorAll(
-        ".leaflet-tile-container"
-      );
-
-    for (
-      const container of containers
-    ) {
+        ctx.imageSmoothingQuality =
+          "low";
+      }
+    } catch (_) {
       /*
-       * Здесь тоже нужен pixelated,
-       * потому что Leaflet масштабирует
-       * сам container через transform.
+       * Ничего не делаем.
        */
-      forcePixelRendering(
-        container
-      );
-    }
-
-    /*
-     * Все img, если Leaflet где-либо
-     * использует raster fallback.
-     */
-    const images =
-      layer.querySelectorAll(
-        "img.leaflet-tile"
-      );
-
-    for (
-      const image of images
-    ) {
-      forcePixelRendering(
-        image
-      );
     }
   }
 
 
   /* =======================================================
-     PROCESS EVERYTHING
+     APPLY TO EXISTING RAINRADAR
      ======================================================= */
 
-  function processAll() {
+  function apply() {
     /*
-     * Находим именно RainRadar.
+     * Находим только существующие
+     * RainRadar layers.
      */
     const layers =
       document.querySelectorAll(
@@ -349,39 +126,30 @@
     for (
       const layer of layers
     ) {
-      processLayer(
-        layer
-      );
-    }
+      const canvases =
+        layer.querySelectorAll(
+          TILE_SELECTOR
+        );
 
-    /*
-     * Дополнительная проверка самих
-     * canvas — на случай если Leaflet
-     * перестроил контейнер.
-     */
-    const tiles =
-      document.querySelectorAll(
-        TILE_SELECTOR
-      );
-
-    for (
-      const tile of tiles
-    ) {
-      processTile(
-        tile
-      );
+      for (
+        const canvas of canvases
+      ) {
+        applyToCanvas(
+          canvas
+        );
+      }
     }
   }
 
 
   /* =======================================================
-     GLOBAL CSS
+     CSS
      ======================================================= */
 
   function installCSS() {
     if (
       document.getElementById(
-        "cloradRainRadarSquareCSS"
+        "cloradRainRadarSquareSafe"
       )
     ) {
       return;
@@ -393,25 +161,10 @@
       );
 
     style.id =
-      "cloradRainRadarSquareCSS";
+      "cloradRainRadarSquareSafe";
 
     style.textContent = `
-      /*
-       * =================================================
-       * CLOrad RainRadar
-       * TRUE 1×1 PIXEL DISPLAY
-       * =================================================
-       */
-
-      ${LAYER_SELECTOR},
-      ${LAYER_SELECTOR} *,
-      ${TILE_SELECTOR},
-      ${LAYER_SELECTOR}
-        .leaflet-tile-container,
-      ${LAYER_SELECTOR}
-        .leaflet-layer,
-      ${LAYER_SELECTOR}
-        .leaflet-tile {
+      canvas.clorad-rainradar-tile {
         image-rendering:
           pixelated !important;
 
@@ -427,47 +180,6 @@
         animation:
           none !important;
       }
-
-
-      /*
-       * Canvas должен оставаться обычным
-       * Leaflet tile.
-       *
-       * НЕ задаём width.
-       * НЕ задаём height.
-       * НЕ задаём transform.
-       * НЕ задаём position.
-       */
-      ${TILE_SELECTOR} {
-        display:
-          block !important;
-
-        padding:
-          0 !important;
-
-        margin:
-          0 !important;
-
-        border:
-          0 !important;
-
-        image-rendering:
-          pixelated !important;
-      }
-
-
-      /*
-       * Tile container тоже pixelated.
-       *
-       * Это особенно важно при zoom:
-       * Leaflet масштабирует именно
-       * контейнер тайлов.
-       */
-      ${LAYER_SELECTOR}
-        .leaflet-tile-container {
-        image-rendering:
-          pixelated !important;
-      }
     `;
 
     document.head.appendChild(
@@ -477,305 +189,32 @@
 
 
   /* =======================================================
-     MUTATION OBSERVER
-     ======================================================= */
-
-  let observer =
-    null;
-
-  function startObserver() {
-    if (
-      observer
-    ) {
-      return;
-    }
-
-    if (
-      !document.body
-    ) {
-      return;
-    }
-
-    observer =
-      new MutationObserver(
-        mutations => {
-
-          let relevant =
-            false;
-
-          for (
-            const mutation of mutations
-          ) {
-
-            /*
-             * Появились новые tiles.
-             */
-            if (
-              mutation.type ===
-              "childList"
-            ) {
-              relevant =
-                true;
-
-              break;
-            }
-
-            /*
-             * Leaflet изменил style/class
-             * при zoom/pan.
-             */
-            if (
-              mutation.type ===
-              "attributes"
-            ) {
-              relevant =
-                true;
-
-              break;
-            }
-          }
-
-          if (
-            relevant
-          ) {
-            processAll();
-          }
-        }
-      );
-
-    observer.observe(
-      document.body,
-      {
-        childList:
-          true,
-
-        subtree:
-          true,
-
-        attributes:
-          true,
-
-        attributeFilter:
-          [
-            "style",
-            "class"
-          ]
-      }
-    );
-  }
-
-
-  /* =======================================================
-     PERIODIC CHECK
-     ======================================================= */
-
-  let timer =
-    null;
-
-  function startScanner() {
-    if (
-      timer
-    ) {
-      return;
-    }
-
-    timer =
-      setInterval(
-        processAll,
-        SCAN_INTERVAL
-      );
-  }
-
-
-  /* =======================================================
-     MAP EVENTS
-     ======================================================= */
-
-  let mapHooked =
-    false;
-
-  function hookMap() {
-    const map =
-      window.map;
-
-    if (
-      !map ||
-      typeof map.on !==
-        "function"
-    ) {
-      return false;
-    }
-
-    if (
-      mapHooked
-    ) {
-      return true;
-    }
-
-    mapHooked =
-      true;
-
-    /*
-     * При каждом zoom Leaflet
-     * масштабирует существующие tiles
-     * и/или создаёт новые.
-     */
-    map.on(
-      "zoomstart",
-      () => {
-        processAll();
-      }
-    );
-
-    map.on(
-      "zoom",
-      () => {
-        processAll();
-      }
-    );
-
-    map.on(
-      "zoomend",
-      () => {
-        /*
-         * Несколько проходов.
-         *
-         * Leaflet может закончить
-         * перестройку tile-container
-         * чуть позже zoomend.
-         */
-        processAll();
-
-        setTimeout(
-          processAll,
-          0
-        );
-
-        setTimeout(
-          processAll,
-          50
-        );
-
-        setTimeout(
-          processAll,
-          150
-        );
-
-        setTimeout(
-          processAll,
-          300
-        );
-      }
-    );
-
-    map.on(
-      "moveend",
-      () => {
-        processAll();
-
-        setTimeout(
-          processAll,
-          100
-        );
-      }
-    );
-
-    return true;
-  }
-
-
-  /* =======================================================
-     WAIT FOR MAP
-     ======================================================= */
-
-  function waitForMap() {
-    if (
-      hookMap()
-    ) {
-      return;
-    }
-
-    setTimeout(
-      waitForMap,
-      250
-    );
-  }
-
-
-  /* =======================================================
      START
      ======================================================= */
 
   function start() {
-
     /*
-     * CSS ставим сразу.
+     * CSS.
      */
     installCSS();
 
     /*
-     * Существующие tiles.
+     * Уже существующие tiles.
      */
-    processAll();
+    apply();
 
     /*
-     * Новые tiles.
+     * Просто периодическая проверка.
+     *
+     * Никаких MutationObserver.
+     * Никаких событий Leaflet.
+     * Никаких вмешательств в создание tile.
      */
-    startObserver();
-
-    /*
-     * Дополнительная проверка.
-     */
-    startScanner();
-
-    /*
-     * Leaflet map.
-     */
-    waitForMap();
-
-    /*
-     * RainRadar может создаться
-     * уже после загрузки файла.
-     */
-    setTimeout(
-      processAll,
-      50
-    );
-
-    setTimeout(
-      processAll,
-      200
-    );
-
-    setTimeout(
-      processAll,
-      500
-    );
-
-    setTimeout(
-      processAll,
-      1000
-    );
-
-    setTimeout(
-      processAll,
-      2000
+    setInterval(
+      apply,
+      CHECK_INTERVAL
     );
   }
-
-
-  /* =======================================================
-     PUBLIC DEBUG
-     ======================================================= */
-
-  window.CLOrad =
-    window.CLOrad || {};
-
-  window.CLOrad.RainRadarSquare =
-    {
-      refresh:
-        processAll
-    };
 
 
   /* =======================================================
@@ -786,20 +225,15 @@
     document.readyState ===
     "loading"
   ) {
-
     document.addEventListener(
       "DOMContentLoaded",
       start,
       {
-        once:
-          true
+        once: true
       }
     );
-
   } else {
-
     start();
-
   }
 
 })();
