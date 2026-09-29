@@ -23,13 +23,11 @@
 
    ИСПРАВЛЕНО:
    - не смешиваются старые и текущие Leaflet tiles
-   - сохраняется нативный размер изображения тайла
-   - отсутствует принудительное растягивание source -> 256x256
-   - перед заменой проверяется актуальность всей сетки
-   - при zoom/pan старый подготовленный тайл
-     не может попасть в новый tile
-   - исходные 1×1 ячейки отображаются без
-     сглаживания / размытия
+   - сохраняется корректная геометрия Leaflet tile
+   - исходные raster-ячейки не сглаживаются
+   - масштабирование canvas выполняется nearest-neighbor
+   - визуальные пиксели остаются квадратными
+   - нет принудительного растягивания через CSS
    ========================================================= */
 
 (() => {
@@ -369,24 +367,28 @@
       }
 
       /*
-       * Геометрию тайла контролирует Leaflet.
-       * Здесь НЕ задаём width/height/transform.
+       * Геометрию самого tile задаёт Leaflet.
+       * Не меняем transform.
        */
 
+      .clorad-rainradar-layer
       canvas.clorad-rainradar-tile {
         display: block !important;
+
+        width: 256px !important;
+        height: 256px !important;
+
         padding: 0 !important;
         margin: 0 !important;
         border: 0 !important;
 
         /*
-         * ВАЖНО:
-         * исходная 1×1 raster-ячейка
-         * должна оставаться отдельным
-         * чётким квадратным пикселем.
-         *
-         * Никакого bilinear interpolation.
+         * Главное изменение:
+         * каждая исходная raster-ячейка
+         * масштабируется без bilinear filtering.
          */
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
 
         transition: none !important;
@@ -394,21 +396,17 @@
         filter: none !important;
       }
 
-      /*
-       * Leaflet масштабирует tile-container
-       * при zoom.
-       *
-       * pixelated заставляет браузер
-       * сохранять резкие границы
-       * исходных raster-пикселей.
-       */
       .clorad-rainradar-layer
       .leaflet-tile-container {
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
       }
 
       .clorad-rainradar-layer
       .leaflet-tile {
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
       }
     `;
@@ -635,13 +633,6 @@
         img.onload =
           () => {
             try {
-              /*
-               * Используем настоящий размер
-               * исходного PNG.
-               *
-               * Никакого принудительного
-               * растягивания в 256x256.
-               */
               const width =
                 img.naturalWidth ||
                 TILE_SIZE;
@@ -1401,6 +1392,12 @@
 
           container.style.opacity =
             "1";
+
+          container.style.setProperty(
+            "image-rendering",
+            "pixelated",
+            "important"
+          );
         }
 
         this.once(
@@ -1430,7 +1427,10 @@
 
       /*
        * Leaflet полностью управляет
-       * геометрией canvas.
+       * положением tile.
+       *
+       * Сам canvas всегда является
+       * квадратным Leaflet tile.
        */
       createTile(
         coords,
@@ -1441,11 +1441,23 @@
             "canvas"
           );
 
+        /*
+         * Физический размер tile.
+         */
         tile.width =
           TILE_SIZE;
 
         tile.height =
           TILE_SIZE;
+
+        /*
+         * CSS-размер tile.
+         */
+        tile.style.width =
+          TILE_SIZE + "px";
+
+        tile.style.height =
+          TILE_SIZE + "px";
 
         tile.className =
           "clorad-rainradar-tile";
@@ -1462,11 +1474,6 @@
         tile.style.border =
           "0";
 
-        /*
-         * ВАЖНО:
-         * пиксельное отображение задаём
-         * непосредственно элементу.
-         */
         tile.style.setProperty(
           "image-rendering",
           "pixelated",
@@ -1495,6 +1502,11 @@
         const timestamp =
           this._timestamp;
 
+        /*
+         * minNativeZoom/maxNativeZoom = 5
+         * заставляет Leaflet передавать
+         * native Z=5 координаты.
+         */
         const sourceCoords = {
           z:
             RR_NATIVE_ZOOM,
@@ -1534,39 +1546,28 @@
             source => {
 
               /*
-               * Сохраняем нативный размер
-               * исходного цветного тайла.
+               * Внутренний canvas всегда
+               * 256×256.
                *
-               * Никакого:
+               * Если источник тоже 256×256 —
+               * это фактически 1:1.
                *
-               * drawImage(
-               *   source,
-               *   0,
-               *   0,
-               *   256,
-               *   256
-               * )
+               * Если источник имеет другой
+               * размер, он масштабируется
+               * nearest-neighbor, без blur.
                */
-              const width =
-                source.width ||
-                TILE_SIZE;
-
-              const height =
-                source.height ||
-                TILE_SIZE;
-
               tile.width =
-                width;
+                TILE_SIZE;
 
               tile.height =
-                height;
+                TILE_SIZE;
 
-              /*
-               * После изменения width/height
-               * canvas сбрасывает context state,
-               * поэтому повторно включаем
-               * отключение сглаживания.
-               */
+              tile.style.width =
+                TILE_SIZE + "px";
+
+              tile.style.height =
+                TILE_SIZE + "px";
+
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -1582,25 +1583,25 @@
               ctx.clearRect(
                 0,
                 0,
-                width,
-                height
+                TILE_SIZE,
+                TILE_SIZE
               );
 
               /*
-               * Source уже имеет нативный
-               * размер. Масштабирования
-               * внутри canvas нет.
+               * Единственное масштабирование
+               * source -> Leaflet tile.
+               *
+               * imageSmoothingEnabled=false
+               * делает его nearest-neighbor.
                */
               ctx.drawImage(
                 source,
                 0,
-                0
+                0,
+                TILE_SIZE,
+                TILE_SIZE
               );
 
-              /*
-               * CSS снова после изменения
-               * размеров canvas.
-               */
               tile.style.setProperty(
                 "image-rendering",
                 "pixelated",
@@ -1883,9 +1884,9 @@
           }
 
           /*
-           * Подготовленный canvas
-           * сохраняет точный размер
-           * исходного raster.
+           * Подготовленный bitmap
+           * строго соответствует
+           * геометрии существующего tile.
            */
           const preparedCanvas =
             document.createElement(
@@ -1893,10 +1894,16 @@
             );
 
           preparedCanvas.width =
-            source.width;
+            TILE_SIZE;
 
           preparedCanvas.height =
-            source.height;
+            TILE_SIZE;
+
+          preparedCanvas.style.width =
+            TILE_SIZE + "px";
+
+          preparedCanvas.style.height =
+            TILE_SIZE + "px";
 
           preparedCanvas.style.setProperty(
             "image-rendering",
@@ -1930,7 +1937,9 @@
           ctx.drawImage(
             source,
             0,
-            0
+            0,
+            TILE_SIZE,
+            TILE_SIZE
           );
 
           prepared[index] = {
@@ -2087,8 +2096,7 @@
 
     /*
      * Только после полной проверки
-     * меняем bitmap существующих
-     * canvas.
+     * меняем bitmap существующих canvas.
      */
     for (
       const item of
@@ -2113,24 +2121,28 @@
         continue;
       }
 
-      const width =
-        item.source.width;
-
-      const height =
-        item.source.height;
-
+      /*
+       * Canvas остаётся строго
+       * Leaflet tile 256×256.
+       */
       if (
         canvas.width !==
-          width ||
+          TILE_SIZE ||
         canvas.height !==
-          height
+          TILE_SIZE
       ) {
         canvas.width =
-          width;
+          TILE_SIZE;
 
         canvas.height =
-          height;
+          TILE_SIZE;
       }
+
+      canvas.style.width =
+        TILE_SIZE + "px";
+
+      canvas.style.height =
+        TILE_SIZE + "px";
 
       ctx.imageSmoothingEnabled =
         false;
@@ -2147,20 +2159,18 @@
       ctx.clearRect(
         0,
         0,
-        width,
-        height
+        TILE_SIZE,
+        TILE_SIZE
       );
 
       ctx.drawImage(
         item.source,
         0,
-        0
+        0,
+        TILE_SIZE,
+        TILE_SIZE
       );
 
-      /*
-       * После изменения bitmap
-       * сохраняем pixelated rendering.
-       */
       canvas.style.setProperty(
         "image-rendering",
         "pixelated",
