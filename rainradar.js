@@ -68,7 +68,7 @@
     30;
 
   const BOOST_DEFAULT =
-    15;
+    23;
 
   const BOOST_STORAGE_KEY =
     "clorad_rainradar_boost";
