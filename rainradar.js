@@ -1,17 +1,25 @@
 /* =========================================================
    CLOrad — RainRadar Russia Composite
-   Полный rainradar.js
+   Стабильный кадровый renderer
 
-   ВАЖНО:
+   ГЛАВНОЕ:
    - index.html НЕ ИЗМЕНЯЕТСЯ
+   - API НЕ ИЗМЕНЯЕТСЯ
    - источник: rainradar.ru/composite
    - нативные тайлы: Z=5
-   - старые RainRadar layers удаляются полностью
-   - кадр показывается только после полной загрузки
-   - БЕЗ fade / transition
-   - БЕЗ затемнения при смене кадра
-   - таймлайн двигается только пользователем
-   - смена кадра НЕ должна менять zoom карты
+   - RainRadarLayer создаётся ОДИН РАЗ
+   - при смене кадра слой НЕ удаляется
+   - map.setView НЕ вызывается
+   - map.setZoom НЕ вызывается
+   - fitBounds НЕ вызывается
+   - invalidateSize НЕ вызывается
+   - opacity НЕ используется для переключения кадров
+   - никаких fade / transition
+   - тайлы остаются строго в Leaflet-сетке
+   - следующий кадр сначала загружается в память
+   - затем содержимое существующих canvas
+     заменяется атомарно
+   - старые RainRadar layers не накапливаются
    ========================================================= */
 
 (() => {
@@ -43,6 +51,9 @@
 
   const BOOST_STORAGE_KEY =
     "clorad_rainradar_boost";
+
+  const TILE_SIZE =
+    256;
 
   /* =======================================================
      PALETTE
@@ -123,6 +134,9 @@
   let nav =
     null;
 
+  /*
+   * ЕДИНСТВЕННЫЙ RainRadar layer.
+   */
   let layer =
     null;
 
@@ -156,6 +170,10 @@
   let requestId =
     0;
 
+  /*
+   * Версия текущей операции
+   * переключения кадра.
+   */
   let frameRequestId =
     0;
 
@@ -174,17 +192,30 @@
   let legendSaved =
     false;
 
+  /*
+   * Исходные серые тайлы.
+   */
   const grayCache =
     new Map();
 
+  /*
+   * Уже окрашенные тайлы.
+   */
   const colorCache =
     new Map();
 
   const MAX_CACHE =
     600;
 
+  /*
+   * Карта времени для реально
+   * загруженного состояния слоя.
+   */
+  let displayedTimestamp =
+    null;
+
   /* =======================================================
-     HELPERS
+     DOM
      ======================================================= */
 
   const $ =
@@ -196,6 +227,10 @@
   function getMap() {
     return window.map || null;
   }
+
+  /* =======================================================
+     BOOST
+     ======================================================= */
 
   function loadBoost() {
     try {
@@ -232,6 +267,10 @@
       );
     } catch {}
   }
+
+  /* =======================================================
+     MESSAGE
+     ======================================================= */
 
   function msg(
     text
@@ -277,6 +316,10 @@
       2200
     );
   }
+
+  /* =======================================================
+     CACHE
+     ======================================================= */
 
   function trimCache(
     cache
@@ -328,24 +371,36 @@
         animation: none !important;
       }
 
+      .clorad-rainradar-layer {
+        opacity: 1 !important;
+      }
+
+      .clorad-rainradar-layer .leaflet-tile-container {
+        transform-origin: 0 0 !important;
+      }
+
       canvas.clorad-rainradar-tile {
         display: block !important;
         width: 256px !important;
         height: 256px !important;
+
+        min-width: 256px !important;
+        min-height: 256px !important;
+        max-width: 256px !important;
+        max-height: 256px !important;
+
+        padding: 0 !important;
+        margin: 0 !important;
+        border: 0 !important;
+
         image-rendering: pixelated !important;
         image-rendering: -moz-crisp-edges !important;
         -ms-interpolation-mode: nearest-neighbor !important;
+
         transition: none !important;
         animation: none !important;
+
         backface-visibility: hidden !important;
-      }
-
-      .leaflet-tile-container {
-        transition: none !important;
-      }
-
-      .leaflet-zoom-animated {
-        transition: none !important;
       }
     `;
 
@@ -355,7 +410,7 @@
   }
 
   /* =======================================================
-     COLORIZATION
+     COLOR
      ======================================================= */
 
   function gammaValue() {
@@ -472,6 +527,7 @@
         dst[i + 1] = 0;
         dst[i + 2] = 0;
         dst[i + 3] = 0;
+
         continue;
       }
 
@@ -531,7 +587,7 @@
   }
 
   /* =======================================================
-     LOAD ORIGINAL TILE
+     LOAD GRAY TILE
      ======================================================= */
 
   function loadGrayTile(
@@ -558,6 +614,7 @@
         resolve,
         reject
       ) => {
+
         const img =
           new Image();
 
@@ -572,11 +629,11 @@
             try {
               const width =
                 img.naturalWidth ||
-                256;
+                TILE_SIZE;
 
               const height =
                 img.naturalHeight ||
-                256;
+                TILE_SIZE;
 
               const canvas =
                 document.createElement(
@@ -633,6 +690,7 @@
               resolve(
                 data
               );
+
             } catch (
               error
             ) {
@@ -661,7 +719,7 @@
   }
 
   /* =======================================================
-     COLOR TILE
+     COLORED TILE
      ======================================================= */
 
   async function getColoredTile(
@@ -1208,13 +1266,6 @@
       return;
     }
 
-    /*
-     * Пользователь сам двигает таймлайн.
-     * Никаких автоматических изменений
-     * range.value при загрузке нового
-     * latest-кадра, кроме обычного
-     * отображения реально выбранного кадра.
-     */
     range.oninput =
       () => {
         if (
@@ -1271,7 +1322,10 @@
   }
 
   /* =======================================================
-     LEAFLET RAINRADAR LAYER
+     RAINRADAR GRID LAYER
+     
+     ВАЖНО:
+     Этот объект создаётся ОДИН РАЗ.
      ======================================================= */
 
   const RainRadarLayer =
@@ -1285,59 +1339,46 @@
           options
         );
 
-        this._frameReady =
+        this._timestamp =
+          options.timestamp ||
+          null;
+
+        this._ready =
           false;
 
         this._failed =
           false;
 
-        this._activationId =
-          options.activationRequestId;
-
-        this._frameToken =
-          options.frameRequestId;
-
-        this._loadedOnce =
-          false;
-
-        this._tileErrors =
+        this._loadVersion =
           0;
       },
 
       onAdd(
         map
       ) {
-        this._frameReady =
+        this._map =
+          map;
+
+        this._ready =
           false;
 
         this._failed =
           false;
 
-        this._loadedOnce =
-          false;
-
-        this._tileErrors =
-          0;
-
-        /*
-         * ВАЖНО:
-         * мы НЕ вызываем fitBounds,
-         * setView, setZoom или invalidateSize.
-         *
-         * Поэтому добавление кадра не может
-         * само изменить zoom карты.
-         */
         L.GridLayer.prototype.onAdd.call(
           this,
           map
         );
 
         /*
-         * Слой невидим до полной загрузки.
-         * Старый слой при этом остаётся видимым.
+         * НИКАКОГО setOpacity(0).
+         *
+         * Слой сразу нормальный,
+         * но его canvas появляются
+         * только после загрузки.
          */
         this.setOpacity(
-          0
+          1
         );
 
         const container =
@@ -1355,25 +1396,13 @@
             "none";
 
           container.style.opacity =
-            "0";
-
-          container.style.willChange =
-            "auto";
+            "1";
         }
 
         this.once(
           "load",
           () => {
-            if (
-              this._loadedOnce
-            ) {
-              return;
-            }
-
-            this._loadedOnce =
-              true;
-
-            this._frameReady =
+            this._ready =
               true;
 
             this.fire(
@@ -1395,6 +1424,16 @@
         );
       },
 
+      /*
+       * Leaflet вызывает это только
+       * когда реально появляется новый
+       * тайл — например после pan/zoom.
+       *
+       * При обычной смене времени
+       * createTile НЕ вызывается.
+       *
+       * Это и убирает дёрганье сетки.
+       */
       createTile(
         coords,
         done
@@ -1405,23 +1444,34 @@
           );
 
         tile.width =
-          256;
+          TILE_SIZE;
 
         tile.height =
-          256;
+          TILE_SIZE;
 
         tile.className =
           "clorad-rainradar-tile";
 
-        tile.style.cssText =
-          "width:256px;" +
-          "height:256px;" +
-          "display:block;" +
-          "image-rendering:pixelated;" +
-          "image-rendering:-moz-crisp-edges;" +
-          "transition:none!important;" +
-          "animation:none!important;" +
-          "opacity:1!important;";
+        tile.style.width =
+          `${TILE_SIZE}px`;
+
+        tile.style.height =
+          `${TILE_SIZE}px`;
+
+        tile.style.display =
+          "block";
+
+        tile.style.padding =
+          "0";
+
+        tile.style.margin =
+          "0";
+
+        tile.style.border =
+          "0";
+
+        tile.style.imageRendering =
+          "pixelated";
 
         const ctx =
           tile.getContext(
@@ -1442,10 +1492,11 @@
         ctx.imageSmoothingEnabled =
           false;
 
-        /*
-         * ВСЕГДА запрашиваем z=5.
-         */
-        const sourceCoords =
+        const timestamp =
+          this._timestamp;
+
+        getColoredTile(
+          timestamp,
           {
             z:
               RR_NATIVE_ZOOM,
@@ -1453,45 +1504,27 @@
               coords.x,
             y:
               coords.y
-          };
-
-        getColoredTile(
-          this.options.timestamp,
-          sourceCoords
+          }
         )
           .then(
             source => {
-              if (
-                !active ||
-                this._activationId !==
-                  requestId ||
-                this._frameToken !==
-                  frameRequestId
-              ) {
-                done(
-                  null,
-                  tile
-                );
 
-                return;
-              }
+              ctx.imageSmoothingEnabled =
+                false;
 
               ctx.clearRect(
                 0,
                 0,
-                256,
-                256
+                TILE_SIZE,
+                TILE_SIZE
               );
-
-              ctx.imageSmoothingEnabled =
-                false;
 
               ctx.drawImage(
                 source,
                 0,
                 0,
-                256,
-                256
+                TILE_SIZE,
+                TILE_SIZE
               );
 
               done(
@@ -1522,7 +1555,614 @@
     });
 
   /* =======================================================
-     REMOVE ALL RAINRADAR LAYERS
+     CREATE SINGLE LAYER
+     ======================================================= */
+
+  function ensureLayer(
+    timestamp
+  ) {
+    const map =
+      getMap();
+
+    if (!map) {
+      throw Error(
+        "Leaflet map не найден"
+      );
+    }
+
+    /*
+     * Уже существует.
+     *
+     * НИКОГДА не создаём второй
+     * слой просто из-за смены кадра.
+     */
+    if (
+      layer
+    ) {
+      return layer;
+    }
+
+    layer =
+      new RainRadarLayer({
+        tileSize:
+          TILE_SIZE,
+
+        bounds:
+          RR_BOUNDS,
+
+        minZoom:
+          MIN_ZOOM,
+
+        maxZoom:
+          MAX_ZOOM,
+
+        minNativeZoom:
+          RR_NATIVE_ZOOM,
+
+        maxNativeZoom:
+          RR_NATIVE_ZOOM,
+
+        noWrap:
+          true,
+
+        zIndex:
+          620,
+
+        keepBuffer:
+          1,
+
+        updateWhenIdle:
+          true,
+
+        updateWhenZooming:
+          false,
+
+        updateInterval:
+          100,
+
+        timestamp:
+          timestamp
+      });
+
+    rainRadarLayers.clear();
+
+    rainRadarLayers.add(
+      layer
+    );
+
+    /*
+     * Только здесь слой добавляется
+     * на карту.
+     *
+     * После этого смена кадров
+     * не вызывает add/remove.
+     */
+    layer.addTo(
+      map
+    );
+
+    return layer;
+  }
+
+  /* =======================================================
+     GET EXISTING TILE CANVASES
+     ======================================================= */
+
+  function getVisibleTiles() {
+    if (
+      !layer
+    ) {
+      return [];
+    }
+
+    const result =
+      [];
+
+    /*
+     * Leaflet хранит активные тайлы
+     * во внутреннем _tiles.
+     *
+     * Нам нужны именно уже существующие
+     * DOM canvas, чтобы НЕ создавать
+     * новую сетку.
+     */
+    const tiles =
+      layer._tiles;
+
+    if (!tiles) {
+      return result;
+    }
+
+    Object.keys(
+      tiles
+    ).forEach(
+      key => {
+        const entry =
+          tiles[key];
+
+        if (
+          !entry ||
+          !entry.el ||
+          !entry.coords
+        ) {
+          return;
+        }
+
+        if (
+          !(entry.el instanceof
+            HTMLCanvasElement)
+        ) {
+          return;
+        }
+
+        result.push({
+          key,
+          canvas:
+            entry.el,
+          coords:
+            {
+              x:
+                entry.coords.x,
+              y:
+                entry.coords.y,
+              z:
+                entry.coords.z
+            }
+        });
+      }
+    );
+
+    return result;
+  }
+
+  /* =======================================================
+     LOAD FRAME INTO MEMORY
+     
+     НИ ОДНОГО изменения DOM здесь.
+     ======================================================= */
+
+  async function preloadFrame(
+    timestamp,
+    token
+  ) {
+    const tiles =
+      getVisibleTiles();
+
+    if (
+      !tiles.length
+    ) {
+      /*
+       * Если карта ещё не успела
+       * создать DOM-тайлы, ждём её load.
+       */
+      await waitForLayerLoad();
+
+      if (
+        token !==
+        frameRequestId
+      ) {
+        return null;
+      }
+    }
+
+    const visible =
+      getVisibleTiles();
+
+    if (
+      !visible.length
+    ) {
+      return [];
+    }
+
+    const prepared =
+      new Array(
+        visible.length
+      );
+
+    /*
+     * Загружаем ВСЕ текущие тайлы
+     * следующего кадра.
+     *
+     * Пока это происходит, старый
+     * кадр остаётся абсолютно
+     * нетронутым.
+     */
+    await Promise.all(
+      visible.map(
+        async (
+          item,
+          index
+        ) => {
+
+          if (
+            token !==
+            frameRequestId
+          ) {
+            return;
+          }
+
+          const source =
+            await getColoredTile(
+              timestamp,
+              {
+                z:
+                  RR_NATIVE_ZOOM,
+                x:
+                  item.coords.x,
+                y:
+                  item.coords.y
+              }
+            );
+
+          if (
+            token !==
+            frameRequestId
+          ) {
+            return;
+          }
+
+          /*
+           * Отдельный offscreen canvas.
+           *
+           * На DOM он вообще не попадает.
+           */
+          const preparedCanvas =
+            document.createElement(
+              "canvas"
+            );
+
+          preparedCanvas.width =
+            TILE_SIZE;
+
+          preparedCanvas.height =
+            TILE_SIZE;
+
+          const ctx =
+            preparedCanvas.getContext(
+              "2d"
+            );
+
+          if (!ctx) {
+            throw Error(
+              "Canvas 2D недоступен"
+            );
+          }
+
+          ctx.imageSmoothingEnabled =
+            false;
+
+          ctx.drawImage(
+            source,
+            0,
+            0,
+            TILE_SIZE,
+            TILE_SIZE
+          );
+
+          prepared[index] = {
+            canvas:
+              item.canvas,
+
+            coords:
+              item.coords,
+
+            source:
+              preparedCanvas
+          };
+        }
+      )
+    );
+
+    if (
+      token !==
+      frameRequestId
+    ) {
+      return null;
+    }
+
+    /*
+     * Если какой-либо элемент
+     * не подготовился — кадр
+     * не переключаем.
+     */
+    if (
+      prepared.some(
+        item =>
+          !item
+      )
+    ) {
+      return null;
+    }
+
+    return prepared;
+  }
+
+  /* =======================================================
+     ATOMIC FRAME SWAP
+     
+     Здесь происходит единственное
+     изменение изображения на экране.
+     ======================================================= */
+
+  function commitPreparedFrame(
+    prepared,
+    timestamp,
+    token
+  ) {
+    if (
+      token !==
+      frameRequestId
+    ) {
+      return false;
+    }
+
+    if (
+      !prepared ||
+      !prepared.length
+    ) {
+      return false;
+    }
+
+    /*
+     * Проверяем, что DOM-тайлы всё ещё
+     * принадлежат тому же самому слою.
+     */
+    for (
+      const item of
+      prepared
+    ) {
+      if (
+        !item ||
+        !item.canvas ||
+        !item.source
+      ) {
+        return false;
+      }
+    }
+
+    /*
+     * Один JS execution task.
+     *
+     * Здесь браузер не получает
+     * промежуточный repaint между
+     * отдельными canvas.
+     *
+     * Поэтому визуально это один
+     * моментальный кадр.
+     */
+    for (
+      const item of
+      prepared
+    ) {
+      if (
+        token !==
+        frameRequestId
+      ) {
+        return false;
+      }
+
+      const canvas =
+        item.canvas;
+
+      const ctx =
+        canvas.getContext(
+          "2d"
+        );
+
+      if (!ctx) {
+        continue;
+      }
+
+      ctx.imageSmoothingEnabled =
+        false;
+
+      ctx.setTransform(
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      );
+
+      ctx.clearRect(
+        0,
+        0,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+
+      ctx.drawImage(
+        item.source,
+        0,
+        0,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+
+    displayedTimestamp =
+      timestamp;
+
+    return true;
+  }
+
+  /* =======================================================
+     WAIT FOR INITIAL LAYER
+     ======================================================= */
+
+  function waitForLayerLoad() {
+    if (
+      !layer
+    ) {
+      return Promise.resolve();
+    }
+
+    if (
+      layer._ready
+    ) {
+      return Promise.resolve();
+    }
+
+    return new Promise(
+      resolve => {
+        layer.once(
+          "load",
+          () => {
+            resolve();
+          }
+        );
+      }
+    );
+  }
+
+  /* =======================================================
+     SET FRAME
+     
+     Здесь НИКОГДА:
+       - не создаётся новый Layer
+       - не удаляется Layer
+       - не меняется zoom
+       - не меняется center
+       - не меняется opacity
+     ======================================================= */
+
+  async function setFrame(
+    index
+  ) {
+    if (
+      !active ||
+      !timestamps.length
+    ) {
+      return false;
+    }
+
+    const target =
+      Math.max(
+        0,
+        Math.min(
+          timestamps.length - 1,
+          Number(
+            index
+          )
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        target
+      )
+    ) {
+      return false;
+    }
+
+    const timestamp =
+      timestamps[
+        target
+      ];
+
+    /*
+     * Уже показываем этот кадр.
+     */
+    if (
+      currentIndex ===
+        target &&
+      displayedTimestamp ===
+        timestamp
+    ) {
+      updateTimeline();
+
+      return true;
+    }
+
+    /*
+     * Отменяем логически предыдущую
+     * операцию загрузки.
+     */
+    const token =
+      ++frameRequestId;
+
+    /*
+     * Слой должен существовать.
+     */
+    ensureLayer(
+      displayedTimestamp ||
+      timestamp
+    );
+
+    /*
+     * Загружаем следующий кадр
+     * полностью в память.
+     *
+     * Старое изображение пока
+     * вообще не меняется.
+     */
+    let prepared;
+
+    try {
+      prepared =
+        await preloadFrame(
+          timestamp,
+          token
+        );
+    } catch (
+      error
+    ) {
+      console.error(
+        "RainRadar frame preload:",
+        error
+      );
+
+      return false;
+    }
+
+    if (
+      token !==
+      frameRequestId
+    ) {
+      return false;
+    }
+
+    if (
+      !prepared
+    ) {
+      return false;
+    }
+
+    /*
+     * Моментальная замена содержимого
+     * существующих canvas.
+     */
+    const ok =
+      commitPreparedFrame(
+        prepared,
+        timestamp,
+        token
+      );
+
+    if (
+      !ok
+    ) {
+      return false;
+    }
+
+    /*
+     * Только после успешной
+     * замены меняем индекс таймлайна.
+     */
+    currentIndex =
+      target;
+
+    updateTimeline();
+
+    return true;
+  }
+
+  /* =======================================================
+     REMOVE LAYER ONLY WHEN RADAR IS STOPPED
+     
+     При смене кадров этот код
+     НЕ вызывается.
      ======================================================= */
 
   function removeAllRainRadarLayers(
@@ -1578,341 +2218,20 @@
             rrLayer
           );
         } catch {}
-
-        rainRadarLayers.delete(
-          rrLayer
-        );
       }
     );
 
+    rainRadarLayers.clear();
+
     layer =
+      null;
+
+    displayedTimestamp =
       null;
   }
 
   /* =======================================================
-     CREATE FRAME LAYER
-     ======================================================= */
-
-  function createFrameLayer(
-    timestamp,
-    token
-  ) {
-    const map =
-      getMap();
-
-    if (!map) {
-      throw Error(
-        "Leaflet map не найден"
-      );
-    }
-
-    /*
-     * КРИТИЧНО:
-     *
-     * старый слой НЕ удаляем.
-     *
-     * Он остаётся на карте на 100% видимым,
-     * пока новый кадр грузится.
-     *
-     * Поэтому при переключении кадров
-     * пользователь не видит чёрного/серого
-     * провала.
-     */
-    const oldLayer =
-      layer;
-
-    const activation =
-      requestId;
-
-    const next =
-      new RainRadarLayer({
-        tileSize:
-          256,
-
-        bounds:
-          RR_BOUNDS,
-
-        minZoom:
-          MIN_ZOOM,
-
-        maxZoom:
-          MAX_ZOOM,
-
-        minNativeZoom:
-          RR_NATIVE_ZOOM,
-
-        maxNativeZoom:
-          RR_NATIVE_ZOOM,
-
-        noWrap:
-          true,
-
-        zIndex:
-          620,
-
-        /*
-         * Минимальный buffer,
-         * чтобы Leaflet не пытался
-         * лишний раз пересобирать
-         * огромную область.
-         */
-        keepBuffer:
-          1,
-
-        /*
-         * ВАЖНО:
-         * обновление слоя при движении
-         * карты разрешено.
-         *
-         * Но смена кадра сама по себе
-         * карту не двигает.
-         */
-        updateWhenIdle:
-          true,
-
-        updateWhenZooming:
-          false,
-
-        updateInterval:
-          100,
-
-        timestamp:
-          timestamp,
-
-        activationRequestId:
-          activation,
-
-        frameRequestId:
-          token
-      });
-
-    rainRadarLayers.add(
-      next
-    );
-
-    /*
-     * Новый слой невидимый.
-     */
-    next.setOpacity(
-      0
-    );
-
-    next.once(
-      "frameready",
-      event => {
-
-        /*
-         * Если пользователь уже выбрал
-         * другой кадр — этот результат
-         * больше не нужен.
-         */
-        if (
-          !active ||
-          activation !==
-            requestId ||
-          token !==
-            frameRequestId
-        ) {
-          try {
-            if (
-              map.hasLayer(
-                next
-              )
-            ) {
-              map.removeLayer(
-                next
-              );
-            }
-          } catch {}
-
-          rainRadarLayers.delete(
-            next
-          );
-
-          return;
-        }
-
-        /*
-         * Новый кадр не загрузился.
-         *
-         * Старый оставляем на месте.
-         */
-        if (
-          !event.ready
-        ) {
-          try {
-            if (
-              map.hasLayer(
-                next
-              )
-            ) {
-              map.removeLayer(
-                next
-              );
-            }
-          } catch {}
-
-          rainRadarLayers.delete(
-            next
-          );
-
-          if (
-            layer ===
-            next
-          ) {
-            layer =
-              oldLayer ||
-              null;
-          }
-
-          msg(
-            "Кадр RainRadar загружен не полностью"
-          );
-
-          return;
-        }
-
-        /*
-         * =================================================
-         * АТОМАРНОЕ ПЕРЕКЛЮЧЕНИЕ
-         * =================================================
-         *
-         * До этого момента:
-         *
-         * OLD  = видим
-         * NEXT = невидим
-         *
-         * Теперь NEXT полностью готов.
-         *
-         * Сначала делаем NEXT видимым.
-         * Затем удаляем OLD.
-         *
-         * Никакого fade.
-         * Никакого transition.
-         * Никакого затемнения.
-         */
-        next.setOpacity(
-          1
-        );
-
-        const nextContainer =
-          next.getContainer();
-
-        if (
-          nextContainer
-        ) {
-          nextContainer.style.transition =
-            "none";
-
-          nextContainer.style.animation =
-            "none";
-
-          nextContainer.style.opacity =
-            "1";
-        }
-
-        /*
-         * Теперь новый кадр уже видим.
-         */
-        layer =
-          next;
-
-        /*
-         * Удаляем абсолютно все старые
-         * RainRadar layers.
-         */
-        for (
-          const rrLayer of
-          Array.from(
-            rainRadarLayers
-          )
-        ) {
-          if (
-            rrLayer ===
-            next
-          ) {
-            continue;
-          }
-
-          try {
-            if (
-              map.hasLayer(
-                rrLayer
-              )
-            ) {
-              map.removeLayer(
-                rrLayer
-              );
-            }
-          } catch {}
-
-          rainRadarLayers.delete(
-            rrLayer
-          );
-        }
-
-        /*
-         * Дополнительная проверка карты.
-         */
-        const leftovers =
-          [];
-
-        map.eachLayer(
-          candidate => {
-            if (
-              candidate instanceof
-              RainRadarLayer &&
-              candidate !==
-                next
-            ) {
-              leftovers.push(
-                candidate
-              );
-            }
-          }
-        );
-
-        leftovers.forEach(
-          rrLayer => {
-            try {
-              map.removeLayer(
-                rrLayer
-              );
-            } catch {}
-
-            rainRadarLayers.delete(
-              rrLayer
-            );
-          }
-        );
-
-        /*
-         * В Set должен остаться только
-         * реально отображаемый слой.
-         */
-        rainRadarLayers.clear();
-
-        rainRadarLayers.add(
-          next
-        );
-      }
-    );
-
-    /*
-     * Добавляем новый слой.
-     *
-     * Leaflet при этом НЕ меняет
-     * map.setView / zoom.
-     */
-    next.addTo(
-      map
-    );
-
-    return next;
-  }
-
-  /* =======================================================
-     LOAD MANIFEST
+     MANIFEST
      ======================================================= */
 
   async function loadFrames() {
@@ -1983,145 +2302,6 @@
     }
 
     return timestamps;
-  }
-
-  /* =======================================================
-     SET FRAME
-     ======================================================= */
-
-  async function setFrame(
-    index
-  ) {
-    if (
-      !active ||
-      !timestamps.length
-    ) {
-      return false;
-    }
-
-    const target =
-      Math.max(
-        0,
-        Math.min(
-          timestamps.length - 1,
-          Number(
-            index
-          )
-        )
-      );
-
-    if (
-      !Number.isFinite(
-        target
-      )
-    ) {
-      return false;
-    }
-
-    /*
-     * Если это уже текущий кадр,
-     * вообще ничего не пересоздаём.
-     */
-    if (
-      target ===
-        currentIndex &&
-      layer
-    ) {
-      updateTimeline();
-
-      return true;
-    }
-
-    const previous =
-      currentIndex;
-
-    const token =
-      ++frameRequestId;
-
-    /*
-     * Не меняем currentIndex до
-     * успешного отображения нового кадра.
-     *
-     * Это важно: если новый кадр
-     * не загрузился, таймлайн остаётся
-     * на реально отображаемом кадре.
-     */
-    const next =
-      createFrameLayer(
-        timestamps[
-          target
-        ],
-        token
-      );
-
-    return new Promise(
-      resolve => {
-
-        let resolved =
-          false;
-
-        const finish =
-          event => {
-            if (
-              resolved
-            ) {
-              return;
-            }
-
-            resolved =
-              true;
-
-            const ok =
-              Boolean(
-                event?.ready
-              );
-
-            if (
-              ok &&
-              active &&
-              token ===
-                frameRequestId
-            ) {
-              /*
-               * Только теперь считаем
-               * кадр реально выбранным.
-               */
-              currentIndex =
-                target;
-
-              updateTimeline();
-            } else if (
-              !ok &&
-              active &&
-              token ===
-                frameRequestId
-            ) {
-              currentIndex =
-                previous;
-
-              updateTimeline();
-            }
-
-            resolve(
-              ok
-            );
-          };
-
-        next.once(
-          "frameready",
-          finish
-        );
-
-        if (
-          next._frameReady
-        ) {
-          finish({
-            ready:
-              !next._failed
-          });
-        }
-      }
-    );
   }
 
   /* =======================================================
@@ -2239,6 +2419,13 @@
 
     stopPlayback();
 
+    /*
+     * Слой удаляем только при
+     * переключении НА RainRadar.
+     *
+     * После этого он будет создан
+     * один раз и больше не трогается.
+     */
     removeAllRainRadarLayers(
       getMap()
     );
@@ -2302,6 +2489,9 @@
     currentIndex =
       -1;
 
+    displayedTimestamp =
+      null;
+
     if (nav) {
       nav.classList.remove(
         "active"
@@ -2314,7 +2504,7 @@
   }
 
   /* =======================================================
-     OTHER NAV BUTTONS
+     OTHER NAV
      ======================================================= */
 
   function hookOtherNav() {
@@ -2397,8 +2587,10 @@
         {
           subtree:
             true,
+
           attributes:
             true,
+
           attributeFilter:
             [
               "class"
@@ -2449,12 +2641,20 @@
       }
 
       /*
-       * При первоначальной загрузке
-       * показываем последний кадр.
+       * Первый кадр.
        */
-      await setFrame(
-        timestamps.length - 1
-      );
+      const ok =
+        await setFrame(
+          timestamps.length - 1
+        );
+
+      if (
+        !ok
+      ) {
+        throw Error(
+          "Не удалось загрузить кадр RainRadar"
+        );
+      }
 
       if (
         !active
@@ -2480,6 +2680,7 @@
         error?.message ||
         "Ошибка загрузки RainRadar"
       );
+
     } finally {
       loading =
         false;
@@ -2509,6 +2710,16 @@
                 timestamps.length - 1
               ];
 
+            /*
+             * Запоминаем индекс до
+             * обновления manifest.
+             */
+            const oldIndex =
+              currentIndex;
+
+            const oldLength =
+              timestamps.length;
+
             await loadFrames();
 
             if (
@@ -2523,50 +2734,47 @@
               ];
 
             if (
-              newLatest !==
+              newLatest ===
               oldLatest
             ) {
-              const wasPlaying =
-                playing;
+              return;
+            }
 
-              if (
-                wasPlaying
-              ) {
-                stopPlayback();
-              }
+            /*
+             * Пользователь сам управляет
+             * таймлайном.
+             *
+             * Поэтому новый кадр НЕ
+             * заставляет карту прыгать
+             * вперёд.
+             */
 
-              /*
-               * Новый кадр ставится только
-               * когда пользователь уже был
-               * на самом последнем кадре.
-               *
-               * Если пользователь вручную
-               * смотрит старый кадр — НЕ
-               * прыгаем на новый.
-               */
-              const wasOnLatest =
-                currentIndex ===
-                timestamps.length - 2;
+            /*
+             * Если до обновления был
+             * выбран последний кадр,
+             * сохраняем эту семантику:
+             * показываем новый последний.
+             *
+             * Если пользователь смотрел
+             * старый кадр — оставляем
+             * его выбор.
+             */
+            const wasLatest =
+              oldIndex ===
+              oldLength - 1;
 
-              if (
-                wasOnLatest
-              ) {
-                await setFrame(
-                  timestamps.length - 1
-                );
-              }
-
-              if (
-                wasPlaying &&
-                active
-              ) {
-                startPlayback();
-              }
-
-              msg(
-                "RainRadar: новый кадр"
+            if (
+              wasLatest
+            ) {
+              await setFrame(
+                timestamps.length - 1
               );
             }
+
+            msg(
+              "RainRadar: новые кадры"
+            );
+
           } catch (
             error
           ) {
@@ -2594,7 +2802,7 @@
   }
 
   /* =======================================================
-     BOOST SETTINGS
+     SETTINGS
      ======================================================= */
 
   function settingsContainer() {
@@ -2644,12 +2852,25 @@
 
     colorCache.clear();
 
+    /*
+     * При изменении boost снова
+     * готовим текущий кадр.
+     *
+     * Сам Leaflet layer при этом
+     * остаётся тем же.
+     */
     if (
       active &&
       currentIndex >= 0
     ) {
+      const index =
+        currentIndex;
+
+      /*
+       * Не меняем положение карты.
+       */
       setFrame(
-        currentIndex
+        index
       );
     }
   }
