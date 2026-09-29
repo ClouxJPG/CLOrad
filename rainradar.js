@@ -363,6 +363,14 @@
       "cloradRainRadarCSS";
 
     style.textContent = `
+      /*
+       * RainRadar не имеет собственных
+       * переходов между кадрами.
+       *
+       * При этом НЕ трогаем
+       * .leaflet-zoom-animated:
+       * Leaflet сам управляет zoom transform.
+       */
       .clorad-rainradar-layer,
       .clorad-rainradar-layer *,
       .clorad-rainradar-layer .leaflet-tile-container,
@@ -375,32 +383,32 @@
         opacity: 1 !important;
       }
 
-      .clorad-rainradar-layer .leaflet-tile-container {
-        transform-origin: 0 0 !important;
-      }
-
+      /*
+       * НИКАКИХ:
+       * transform-origin
+       * transform
+       * width/height override
+       * pixelated
+       *
+       * Leaflet сам выставляет геометрию
+       * и масштабирует tile container.
+       */
       canvas.clorad-rainradar-tile {
         display: block !important;
-        width: 256px !important;
-        height: 256px !important;
-
-        min-width: 256px !important;
-        min-height: 256px !important;
-        max-width: 256px !important;
-        max-height: 256px !important;
 
         padding: 0 !important;
         margin: 0 !important;
         border: 0 !important;
 
-        image-rendering: pixelated !important;
-        image-rendering: -moz-crisp-edges !important;
-        -ms-interpolation-mode: nearest-neighbor !important;
+        /*
+         * Обычная интерполяция браузера.
+         * Благодаря этому радар плавно
+         * масштабируется при zoom.
+         */
+        image-rendering: auto !important;
 
         transition: none !important;
         animation: none !important;
-
-        backface-visibility: hidden !important;
       }
     `;
 
@@ -1372,10 +1380,6 @@
 
         /*
          * НИКАКОГО setOpacity(0).
-         *
-         * Слой сразу нормальный,
-         * но его canvas появляются
-         * только после загрузки.
          */
         this.setOpacity(
           1
@@ -1425,14 +1429,13 @@
       },
 
       /*
-       * Leaflet вызывает это только
-       * когда реально появляется новый
-       * тайл — например после pan/zoom.
+       * Leaflet сам располагает canvas
+       * в своей tile-сетке.
        *
-       * При обычной смене времени
-       * createTile НЕ вызывается.
-       *
-       * Это и убирает дёрганье сетки.
+       * Мы НЕ задаём:
+       * - transform
+       * - transform-origin
+       * - pixelated
        */
       createTile(
         coords,
@@ -1443,6 +1446,10 @@
             "canvas"
           );
 
+        /*
+         * Только внутренний bitmap.
+         * CSS-геометрию выставит Leaflet.
+         */
         tile.width =
           TILE_SIZE;
 
@@ -1451,12 +1458,6 @@
 
         tile.className =
           "clorad-rainradar-tile";
-
-        tile.style.width =
-          `${TILE_SIZE}px`;
-
-        tile.style.height =
-          `${TILE_SIZE}px`;
 
         tile.style.display =
           "block";
@@ -1470,8 +1471,14 @@
         tile.style.border =
           "0";
 
-        tile.style.imageRendering =
-          "pixelated";
+        /*
+         * ВАЖНО:
+         * НЕ ставим pixelated.
+         *
+         * Leaflet сможет плавно
+         * масштабировать весь tile
+         * при zoom.
+         */
 
         const ctx =
           tile.getContext(
@@ -1511,6 +1518,15 @@
 
               ctx.imageSmoothingEnabled =
                 false;
+
+              ctx.setTransform(
+                1,
+                0,
+                0,
+                1,
+                0,
+                0
+              );
 
               ctx.clearRect(
                 0,
@@ -1570,12 +1586,6 @@
       );
     }
 
-    /*
-     * Уже существует.
-     *
-     * НИКОГДА не создаём второй
-     * слой просто из-за смены кадра.
-     */
     if (
       layer
     ) {
@@ -1630,13 +1640,6 @@
       layer
     );
 
-    /*
-     * Только здесь слой добавляется
-     * на карту.
-     *
-     * После этого смена кадров
-     * не вызывает add/remove.
-     */
     layer.addTo(
       map
     );
@@ -1658,14 +1661,6 @@
     const result =
       [];
 
-    /*
-     * Leaflet хранит активные тайлы
-     * во внутреннем _tiles.
-     *
-     * Нам нужны именно уже существующие
-     * DOM canvas, чтобы НЕ создавать
-     * новую сетку.
-     */
     const tiles =
       layer._tiles;
 
@@ -1717,24 +1712,18 @@
 
   /* =======================================================
      LOAD FRAME INTO MEMORY
-     
-     НИ ОДНОГО изменения DOM здесь.
      ======================================================= */
 
   async function preloadFrame(
     timestamp,
     token
   ) {
-    const tiles =
+    let visible =
       getVisibleTiles();
 
     if (
-      !tiles.length
+      !visible.length
     ) {
-      /*
-       * Если карта ещё не успела
-       * создать DOM-тайлы, ждём её load.
-       */
       await waitForLayerLoad();
 
       if (
@@ -1743,10 +1732,10 @@
       ) {
         return null;
       }
-    }
 
-    const visible =
-      getVisibleTiles();
+      visible =
+        getVisibleTiles();
+    }
 
     if (
       !visible.length
@@ -1760,12 +1749,10 @@
       );
 
     /*
-     * Загружаем ВСЕ текущие тайлы
-     * следующего кадра.
+     * Никакого изменения DOM.
      *
-     * Пока это происходит, старый
-     * кадр остаётся абсолютно
-     * нетронутым.
+     * Только загрузка следующего
+     * изображения в offscreen canvas.
      */
     await Promise.all(
       visible.map(
@@ -1801,11 +1788,6 @@
             return;
           }
 
-          /*
-           * Отдельный offscreen canvas.
-           *
-           * На DOM он вообще не попадает.
-           */
           const preparedCanvas =
             document.createElement(
               "canvas"
@@ -1840,6 +1822,9 @@
           );
 
           prepared[index] = {
+            key:
+              item.key,
+
             canvas:
               item.canvas,
 
@@ -1860,11 +1845,6 @@
       return null;
     }
 
-    /*
-     * Если какой-либо элемент
-     * не подготовился — кадр
-     * не переключаем.
-     */
     if (
       prepared.some(
         item =>
@@ -1878,10 +1858,34 @@
   }
 
   /* =======================================================
+     CHECK TILE IS STILL CURRENT
+     ======================================================= */
+
+  function tileIsStillCurrent(
+    item
+  ) {
+    if (
+      !layer ||
+      !layer._tiles ||
+      !item
+    ) {
+      return false;
+    }
+
+    const current =
+      layer._tiles[
+        item.key
+      ];
+
+    return !!(
+      current &&
+      current.el ===
+        item.canvas
+    );
+  }
+
+  /* =======================================================
      ATOMIC FRAME SWAP
-     
-     Здесь происходит единственное
-     изменение изображения на экране.
      ======================================================= */
 
   function commitPreparedFrame(
@@ -1904,17 +1908,18 @@
     }
 
     /*
-     * Проверяем, что DOM-тайлы всё ещё
-     * принадлежат тому же самому слою.
+     * Проверяем, что Leaflet не успел
+     * заменить tile DOM во время
+     * подготовки кадра.
      */
     for (
       const item of
       prepared
     ) {
       if (
-        !item ||
-        !item.canvas ||
-        !item.source
+        !tileIsStillCurrent(
+          item
+        )
       ) {
         return false;
       }
@@ -1923,12 +1928,10 @@
     /*
      * Один JS execution task.
      *
-     * Здесь браузер не получает
-     * промежуточный repaint между
-     * отдельными canvas.
-     *
-     * Поэтому визуально это один
-     * моментальный кадр.
+     * Здесь все существующие canvas
+     * получают новое содержимое,
+     * но сами DOM-элементы остаются
+     * теми же.
      */
     for (
       const item of
@@ -1981,6 +1984,22 @@
       );
     }
 
+    /*
+     * КРИТИЧНО:
+     * теперь новые tile, которые
+     * Leaflet создаст после pan/zoom,
+     * будут загружаться уже для
+     * нового времени.
+     *
+     * При этом слой остаётся тем же.
+     */
+    if (
+      layer
+    ) {
+      layer._timestamp =
+        timestamp;
+    }
+
     displayedTimestamp =
       timestamp;
 
@@ -2018,13 +2037,6 @@
 
   /* =======================================================
      SET FRAME
-     
-     Здесь НИКОГДА:
-       - не создаётся новый Layer
-       - не удаляется Layer
-       - не меняется zoom
-       - не меняется center
-       - не меняется opacity
      ======================================================= */
 
   async function setFrame(
@@ -2061,9 +2073,6 @@
         target
       ];
 
-    /*
-     * Уже показываем этот кадр.
-     */
     if (
       currentIndex ===
         target &&
@@ -2075,27 +2084,71 @@
       return true;
     }
 
-    /*
-     * Отменяем логически предыдущую
-     * операцию загрузки.
-     */
     const token =
       ++frameRequestId;
 
-    /*
-     * Слой должен существовать.
-     */
     ensureLayer(
       displayedTimestamp ||
       timestamp
     );
 
     /*
-     * Загружаем следующий кадр
-     * полностью в память.
+     * ПЕРВЫЙ КАДР:
      *
-     * Старое изображение пока
-     * вообще не меняется.
+     * Используем обычную загрузку
+     * Leaflet. Дальше слой уже
+     * никогда не пересоздаётся.
+     */
+    if (
+      !displayedTimestamp
+    ) {
+      try {
+        await waitForLayerLoad();
+      } catch {
+        return false;
+      }
+
+      if (
+        token !==
+        frameRequestId
+      ) {
+        return false;
+      }
+
+      if (
+        layer &&
+        layer._failed
+      ) {
+        return false;
+      }
+
+      /*
+       * Первый слой уже отображает
+       * нужный timestamp.
+       */
+      if (
+        layer
+      ) {
+        layer._timestamp =
+          timestamp;
+      }
+
+      displayedTimestamp =
+        timestamp;
+
+      currentIndex =
+        target;
+
+      updateTimeline();
+
+      return true;
+    }
+
+    /*
+     * ПОСЛЕДУЮЩИЕ КАДРЫ:
+     *
+     * Сначала полностью готовим
+     * их в памяти.
      */
     let prepared;
 
@@ -2124,14 +2177,15 @@
     }
 
     if (
-      !prepared
+      !prepared ||
+      !prepared.length
     ) {
       return false;
     }
 
     /*
-     * Моментальная замена содержимого
-     * существующих canvas.
+     * Только теперь меняем
+     * содержимое существующих canvas.
      */
     const ok =
       commitPreparedFrame(
@@ -2146,10 +2200,6 @@
       return false;
     }
 
-    /*
-     * Только после успешной
-     * замены меняем индекс таймлайна.
-     */
     currentIndex =
       target;
 
@@ -2160,9 +2210,6 @@
 
   /* =======================================================
      REMOVE LAYER ONLY WHEN RADAR IS STOPPED
-     
-     При смене кадров этот код
-     НЕ вызывается.
      ======================================================= */
 
   function removeAllRainRadarLayers(
@@ -2419,13 +2466,6 @@
 
     stopPlayback();
 
-    /*
-     * Слой удаляем только при
-     * переключении НА RainRadar.
-     *
-     * После этого он будет создан
-     * один раз и больше не трогается.
-     */
     removeAllRainRadarLayers(
       getMap()
     );
@@ -2640,9 +2680,6 @@
         return;
       }
 
-      /*
-       * Первый кадр.
-       */
       const ok =
         await setFrame(
           timestamps.length - 1
@@ -2710,10 +2747,6 @@
                 timestamps.length - 1
               ];
 
-            /*
-             * Запоминаем индекс до
-             * обновления manifest.
-             */
             const oldIndex =
               currentIndex;
 
@@ -2740,25 +2773,6 @@
               return;
             }
 
-            /*
-             * Пользователь сам управляет
-             * таймлайном.
-             *
-             * Поэтому новый кадр НЕ
-             * заставляет карту прыгать
-             * вперёд.
-             */
-
-            /*
-             * Если до обновления был
-             * выбран последний кадр,
-             * сохраняем эту семантику:
-             * показываем новый последний.
-             *
-             * Если пользователь смотрел
-             * старый кадр — оставляем
-             * его выбор.
-             */
             const wasLatest =
               oldIndex ===
               oldLength - 1;
@@ -2852,13 +2866,6 @@
 
     colorCache.clear();
 
-    /*
-     * При изменении boost снова
-     * готовим текущий кадр.
-     *
-     * Сам Leaflet layer при этом
-     * остаётся тем же.
-     */
     if (
       active &&
       currentIndex >= 0
@@ -2867,8 +2874,12 @@
         currentIndex;
 
       /*
-       * Не меняем положение карты.
+       * Принудительно разрешаем
+       * перерисовать текущий кадр.
        */
+      displayedTimestamp =
+        null;
+
       setFrame(
         index
       );
