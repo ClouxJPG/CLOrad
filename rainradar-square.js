@@ -1,26 +1,16 @@
 /* =========================================================
-   CLOrad — RainRadar Square Renderer
+   CLOrad — RainRadar SQUARE + PIXELATED RENDERER
    Файл: rainradar-square.js
 
-   НАЗНАЧЕНИЕ:
-   - отдельный renderer для квадратных радарных пикселей
-   - существующий rainradar.js НЕ ИЗМЕНЯЕТ
-   - index.html НЕ ИЗМЕНЯЕТ
-   - API RainRadar НЕ ИЗМЕНЯЕТ
-   - исходные радарные данные сначала загружаются
-   - затем raster переводится в квадратный canvas
-   - итоговый raster всегда 256x256
-   - nearest-neighbor
-   - без сглаживания
-   - без blur
-   - без CSS transition
-   - без fade
-   - без изменения положения карты
-
-   ВАЖНО:
-   Этот файл рассчитан на подключение вместо обычного
-   renderer-а RainRadar. Сам по себе он не должен создавать
-   второй независимый слой поверх существующего RainRadar.
+   ГЛАВНОЕ:
+   - квадратный raster 256x256
+   - pixelated rendering
+   - crisp-edges
+   - imageSmoothingEnabled = false
+   - никакого bilinear / linear smoothing
+   - никакого blur при масштабировании
+   - никакого transition / animation
+   - исходный rainradar.js НЕ ИЗМЕНЯЕТСЯ
    ========================================================= */
 
 (() => {
@@ -30,44 +20,26 @@
      CONFIG
      ======================================================= */
 
-  const API =
-    "/api/rainradar";
+  const API = "/api/rainradar";
 
   const RR_BOUNDS = [
     [35, 15],
     [72, 180]
   ];
 
-  const RR_NATIVE_ZOOM =
-    5;
+  const RR_NATIVE_ZOOM = 5;
 
-  const MIN_ZOOM =
-    2;
+  const MIN_ZOOM = 2;
+  const MAX_ZOOM = 14;
 
-  const MAX_ZOOM =
-    14;
+  const TILE_SIZE = 256;
+  const SQUARE_SIZE = 256;
 
-  const TILE_SIZE =
-    256;
+  const REFRESH_TIME = 60000;
 
-  /*
-   * Итоговый размер каждого Leaflet tile.
-   */
-  const SQUARE_SIZE =
-    TILE_SIZE;
-
-  /*
-   * Коэффициент усиления.
-   * Совместим с текущим RainRadar.
-   */
-  const BOOST_MIN =
-    1;
-
-  const BOOST_MAX =
-    30;
-
-  const BOOST_DEFAULT =
-    23;
+  const BOOST_MIN = 1;
+  const BOOST_MAX = 30;
+  const BOOST_DEFAULT = 23;
 
   const BOOST_STORAGE_KEY =
     "clorad_rainradar_boost";
@@ -120,61 +92,114 @@
     "70 dBZ"
   ];
 
-  const RGB =
-    PALETTE.map(hex => ({
-      r: parseInt(hex.slice(1, 3), 16),
-      g: parseInt(hex.slice(3, 5), 16),
-      b: parseInt(hex.slice(5, 7), 16)
-    }));
+  const RGB = PALETTE.map(hex => ({
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16)
+  }));
 
   /* =======================================================
      STATE
      ======================================================= */
 
-  let boost =
-    loadBoost();
+  let boost = loadBoost();
 
-  let layer =
-    null;
+  let layer = null;
+  let timestamps = [];
+  let currentTimestamp = null;
+  let currentFrameIndex = -1;
 
-  let currentTimestamp =
-    null;
+  let refreshTimer = null;
+  let playbackTimer = null;
 
-  let currentFrameIndex =
-    -1;
+  let playing = false;
+  let loading = false;
 
-  let timestamps =
-    [];
+  let requestId = 0;
 
-  let refreshTimer =
-    null;
+  const grayCache = new Map();
+  const colorCache = new Map();
 
-  let playbackTimer =
-    null;
+  const MAX_CACHE = 600;
 
-  let playing =
-    false;
+  /* =======================================================
+     PIXELATED CSS
+     ======================================================= */
 
-  let active =
-    false;
+  function installPixelCSS() {
+    if (
+      document.getElementById(
+        "clorad-rainradar-square-pixel-css"
+      )
+    ) {
+      return;
+    }
 
-  let requestCounter =
-    0;
+    const style =
+      document.createElement("style");
 
-  /*
-   * Кэш исходных grayscale tiles.
-   */
-  const grayCache =
-    new Map();
+    style.id =
+      "clorad-rainradar-square-pixel-css";
 
-  /*
-   * Кэш уже окрашенных квадратных tiles.
-   */
-  const colorCache =
-    new Map();
+    style.textContent = `
+      /*
+       * RainRadar pixel renderer
+       */
 
-  const MAX_CACHE =
-    600;
+      .clorad-rainradar-square-layer,
+      .clorad-rainradar-square-layer *,
+      .clorad-rainradar-square-layer
+        .leaflet-tile-container,
+      .clorad-rainradar-square-layer
+        .leaflet-tile {
+
+        transition: none !important;
+        animation: none !important;
+
+        /*
+         * Главная настройка резкости.
+         */
+        image-rendering: pixelated !important;
+        image-rendering: crisp-edges !important;
+      }
+
+      .clorad-rainradar-square-layer {
+        opacity: 1 !important;
+      }
+
+      canvas.clorad-rainradar-tile {
+
+        display: block !important;
+
+        width: 256px !important;
+        height: 256px !important;
+
+        padding: 0 !important;
+        margin: 0 !important;
+        border: 0 !important;
+
+        /*
+         * Pixelated renderer.
+         */
+        image-rendering: pixelated !important;
+        image-rendering: crisp-edges !important;
+
+        /*
+         * Запрещаем визуальные переходы.
+         */
+        transition: none !important;
+        animation: none !important;
+
+        /*
+         * Не даём браузеру применять
+         * дополнительные эффекты.
+         */
+        filter: none !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
 
   /* =======================================================
      BOOST
@@ -190,9 +215,9 @@
         );
 
       if (
-        Number.isFinite(value)
-        && value >= BOOST_MIN
-        && value <= BOOST_MAX
+        Number.isFinite(value) &&
+        value >= BOOST_MIN &&
+        value <= BOOST_MAX
       ) {
         return value;
       }
@@ -210,28 +235,21 @@
     } catch (_) {}
   }
 
-  function clampBoost(value) {
-    return Math.max(
+  function setBoost(value) {
+    boost = Math.max(
       BOOST_MIN,
       Math.min(
         BOOST_MAX,
         Number(value) || BOOST_DEFAULT
       )
     );
-  }
-
-  function setBoost(value) {
-    boost =
-      clampBoost(value);
 
     saveBoost(boost);
 
-    clearColorCache();
+    colorCache.clear();
 
-    if (
-      currentTimestamp !== null
-    ) {
-      refreshVisibleTiles();
+    if (layer) {
+      layer.redraw();
     }
   }
 
@@ -256,17 +274,8 @@
     }
   }
 
-  function clearColorCache() {
-    colorCache.clear();
-  }
-
-  function clearAllCache() {
-    grayCache.clear();
-    colorCache.clear();
-  }
-
   /* =======================================================
-     API URL
+     TILE URL
      ======================================================= */
 
   function tileURL(
@@ -298,11 +307,11 @@
         const img =
           new Image();
 
-        img.decoding =
-          "async";
-
         img.crossOrigin =
           "anonymous";
+
+        img.decoding =
+          "async";
 
         img.onload = () => {
           resolve(img);
@@ -311,20 +320,19 @@
         img.onerror = () => {
           reject(
             new Error(
-              "Не удалось загрузить RainRadar tile: " +
+              "RainRadar tile load error: " +
               url
             )
           );
         };
 
-        img.src =
-          url;
+        img.src = url;
       }
     );
   }
 
   /* =======================================================
-     GRAYSCALE TILE
+     LOAD RAW TILE
      ======================================================= */
 
   async function loadGrayTile(
@@ -345,14 +353,13 @@
       return grayCache.get(key);
     }
 
-    const url =
-      tileURL(
-        timestamp,
-        coords
-      );
-
     const img =
-      await loadImage(url);
+      await loadImage(
+        tileURL(
+          timestamp,
+          coords
+        )
+      );
 
     const width =
       img.naturalWidth ||
@@ -367,7 +374,7 @@
       !height
     ) {
       throw new Error(
-        "RainRadar tile имеет некорректный размер"
+        "Некорректный размер RainRadar tile"
       );
     }
 
@@ -396,8 +403,15 @@
       );
     }
 
+    /*
+     * ВАЖНО:
+     * отключаем сглаживание ещё до drawImage.
+     */
     ctx.imageSmoothingEnabled =
       false;
+
+    ctx.imageSmoothingQuality =
+      "low";
 
     ctx.drawImage(
       img,
@@ -437,31 +451,26 @@
      COLORIZE
      ======================================================= */
 
-  function colorize(
-    source
-  ) {
+  function colorize(source) {
     const {
       width,
       height,
       imageData
     } = source;
 
-    const output =
+    const canvas =
       document.createElement(
         "canvas"
       );
 
-    output.width =
+    canvas.width =
       width;
 
-    output.height =
+    canvas.height =
       height;
 
-    output.className =
-      "clorad-rainradar-square-source";
-
     const ctx =
-      output.getContext(
+      canvas.getContext(
         "2d"
       );
 
@@ -473,6 +482,9 @@
 
     ctx.imageSmoothingEnabled =
       false;
+
+    ctx.imageSmoothingQuality =
+      "low";
 
     const src =
       imageData.data;
@@ -487,16 +499,13 @@
       dst.data;
 
     for (
-      let i = 0, p = 0;
+      let i = 0;
       i < src.length;
-      i += 4, p++
+      i += 4
     ) {
       const value =
         src[i];
 
-      /*
-       * Прозрачный / пустой radar pixel.
-       */
       if (
         value <= 0
       ) {
@@ -515,28 +524,26 @@
         continue;
       }
 
-      /*
-       * Усиление.
-       */
       let index =
         Math.floor(
-          (value / 255) *
+          (
+            value /
+            255
+          ) *
           boost *
-          (RGB.length - 1)
+          (
+            RGB.length - 1
+          )
         );
 
-      if (
-        index < 0
-      ) {
-        index = 0;
-      }
-
-      if (
-        index >= RGB.length
-      ) {
-        index =
-          RGB.length - 1;
-      }
+      index =
+        Math.max(
+          0,
+          Math.min(
+            RGB.length - 1,
+            index
+          )
+        );
 
       const color =
         RGB[index];
@@ -560,50 +567,32 @@
       0
     );
 
-    return output;
+    return canvas;
   }
 
   /* =======================================================
-     SQUARE RASTER
+     MAKE SQUARE + PIXELATED RASTER
      ======================================================= */
-
-  /*
-   * Главная функция этого файла.
-   *
-   * Она превращает исходный radar raster
-   * в квадратный 256x256 raster.
-   *
-   * Никакого сглаживания:
-   *
-   * imageSmoothingEnabled = false
-   *
-   * и CSS:
-   *
-   * image-rendering: pixelated
-   *
-   * Благодаря этому соседние значения
-   * не смешиваются между собой.
-   */
 
   function makeSquareRaster(
     source
   ) {
-    const square =
+    const canvas =
       document.createElement(
         "canvas"
       );
 
-    square.width =
+    canvas.width =
       SQUARE_SIZE;
 
-    square.height =
+    canvas.height =
       SQUARE_SIZE;
 
-    square.className =
+    canvas.className =
       "clorad-rainradar-tile";
 
     const ctx =
-      square.getContext(
+      canvas.getContext(
         "2d"
       );
 
@@ -614,7 +603,10 @@
     }
 
     /*
-     * Жёстко отключаем interpolation.
+     * КРИТИЧЕСКИ ВАЖНО:
+     *
+     * браузер НЕ должен интерполировать
+     * соседние radar pixels.
      */
     ctx.imageSmoothingEnabled =
       false;
@@ -623,7 +615,7 @@
       "low";
 
     /*
-     * Сбрасываем transform.
+     * Сброс transform.
      */
     ctx.setTransform(
       1,
@@ -642,11 +634,7 @@
     );
 
     /*
-     * Исходный raster переносится
-     * в квадратный canvas.
-     *
-     * Важно:
-     * здесь НЕ используется smoothing.
+     * Переносим raster без сглаживания.
      */
     ctx.drawImage(
       source,
@@ -660,11 +648,11 @@
       SQUARE_SIZE
     );
 
-    return square;
+    return canvas;
   }
 
   /* =======================================================
-     COLORED TILE
+     GET COLORED SQUARE TILE
      ======================================================= */
 
   async function getColoredTile(
@@ -686,18 +674,18 @@
       return colorCache.get(key);
     }
 
-    const gray =
+    const raw =
       await loadGrayTile(
         timestamp,
         coords
       );
 
     const colored =
-      colorize(gray);
+      colorize(raw);
 
     /*
-     * Именно здесь raster становится
-     * квадратным.
+     * Здесь получаем квадратный
+     * pixelated raster.
      */
     const square =
       makeSquareRaster(
@@ -717,76 +705,13 @@
   }
 
   /* =======================================================
-     CSS
-     ======================================================= */
-
-  function installCSS() {
-    if (
-      document.getElementById(
-        "clorad-rainradar-square-css"
-      )
-    ) {
-      return;
-    }
-
-    const style =
-      document.createElement(
-        "style"
-      );
-
-    style.id =
-      "clorad-rainradar-square-css";
-
-    style.textContent = `
-      .clorad-rainradar-square-layer,
-      .clorad-rainradar-square-layer *,
-      .clorad-rainradar-square-layer
-        .leaflet-tile-container,
-      .clorad-rainradar-square-layer
-        .leaflet-layer {
-        transition: none !important;
-        animation: none !important;
-      }
-
-      .clorad-rainradar-square-layer {
-        opacity: 1 !important;
-      }
-
-      canvas.clorad-rainradar-tile {
-        display: block !important;
-
-        width: 256px !important;
-        height: 256px !important;
-
-        padding: 0 !important;
-        margin: 0 !important;
-        border: 0 !important;
-
-        /*
-         * Квадратные резкие radar pixels.
-         */
-        image-rendering: pixelated !important;
-
-        transition: none !important;
-        animation: none !important;
-      }
-    `;
-
-    document.head.appendChild(
-      style
-    );
-  }
-
-  /* =======================================================
      LEAFLET LAYER
      ======================================================= */
 
   const RainRadarSquareLayer =
     L.TileLayer.extend({
 
-      initialize(
-        options
-      ) {
+      initialize(options) {
         options =
           options || {};
 
@@ -842,9 +767,7 @@
           null;
       },
 
-      setTimestamp(
-        timestamp
-      ) {
+      setTimestamp(timestamp) {
         this._timestamp =
           timestamp;
 
@@ -858,7 +781,7 @@
         done
       ) {
         /*
-         * Canvas всегда квадратный.
+         * Canvas сразу квадратный.
          */
         const tile =
           document.createElement(
@@ -875,10 +798,18 @@
           "clorad-rainradar-tile";
 
         tile.style.width =
-          SQUARE_SIZE + "px";
+          "256px";
 
         tile.style.height =
-          SQUARE_SIZE + "px";
+          "256px";
+
+        /*
+         * Дополнительная страховка:
+         * CSS pixelated задаём прямо
+         * на конкретном canvas.
+         */
+        tile.style.imageRendering =
+          "pixelated";
 
         const ctx =
           tile.getContext(
@@ -896,8 +827,14 @@
           return tile;
         }
 
+        /*
+         * Отключаем сглаживание.
+         */
         ctx.imageSmoothingEnabled =
           false;
+
+        ctx.imageSmoothingQuality =
+          "low";
 
         const timestamp =
           this._timestamp;
@@ -921,8 +858,9 @@
           .then(
             source => {
               /*
-               * Проверяем, что tile всё ещё
-               * относится к этому слою.
+               * Если за время загрузки
+               * timestamp уже поменялся —
+               * этот tile не используем.
                */
               if (
                 this._timestamp !==
@@ -943,12 +881,16 @@
                 SQUARE_SIZE
               );
 
+              /*
+               * Ещё раз отключаем smoothing
+               * непосредственно перед drawImage.
+               */
               ctx.imageSmoothingEnabled =
                 false;
 
-              /*
-               * source уже 256x256.
-               */
+              ctx.imageSmoothingQuality =
+                "low";
+
               ctx.drawImage(
                 source,
                 0,
@@ -977,66 +919,6 @@
     });
 
   /* =======================================================
-     LAYER CREATION
-     ======================================================= */
-
-  function createLayer(
-    timestamp
-  ) {
-    if (
-      layer
-    ) {
-      layer.remove();
-      layer =
-        null;
-    }
-
-    layer =
-      new RainRadarSquareLayer({
-        timestamp
-      });
-
-    layer.addTo(
-      window.map
-    );
-
-    return layer;
-  }
-
-  /* =======================================================
-     REFRESH VISIBLE TILES
-     ======================================================= */
-
-  function refreshVisibleTiles() {
-    if (
-      !layer
-    ) {
-      return;
-    }
-
-    layer.redraw();
-  }
-
-  /* =======================================================
-     TIMESTAMP
-     ======================================================= */
-
-  function normalizeTimestamp(
-    value
-  ) {
-    if (
-      value === null ||
-      value === undefined
-    ) {
-      return null;
-    }
-
-    return String(
-      value
-    );
-  }
-
-  /* =======================================================
      MANIFEST
      ======================================================= */
 
@@ -1054,7 +936,7 @@
       !response.ok
     ) {
       throw new Error(
-        "RainRadar manifest HTTP " +
+        "RainRadar HTTP " +
         response.status
       );
     }
@@ -1062,8 +944,7 @@
     const data =
       await response.json();
 
-    let list =
-      [];
+    let list = [];
 
     if (
       Array.isArray(data)
@@ -1094,22 +975,16 @@
     list =
       list
         .map(
-          normalizeTimestamp
+          value =>
+            String(value)
         )
         .filter(
-          value =>
-            value !== null
+          Boolean
         );
 
-    /*
-     * Убираем дубли.
-     */
     list =
       [...new Set(list)];
 
-    /*
-     * Сортировка по времени.
-     */
     list.sort(
       (a, b) =>
         Number(a) -
@@ -1124,8 +999,7 @@
      ======================================================= */
 
   async function setFrame(
-    index,
-    force = false
+    index
   ) {
     if (
       index < 0 ||
@@ -1137,125 +1011,28 @@
     const timestamp =
       timestamps[index];
 
-    if (
-      !force &&
-      currentFrameIndex === index &&
-      currentTimestamp === timestamp
-    ) {
-      return;
-    }
-
-    const myRequest =
-      ++frameRequestId;
-
     currentFrameIndex =
       index;
-
-    /*
-     * Не создаём новый слой каждый раз.
-     */
-    if (
-      !layer
-    ) {
-      createLayer(
-        timestamp
-      );
-
-      currentTimestamp =
-        timestamp;
-
-      return;
-    }
-
-    /*
-     * Новый timestamp передаём
-     * существующему Leaflet layer.
-     */
-    layer.setTimestamp(
-      timestamp
-    );
 
     currentTimestamp =
       timestamp;
 
-    /*
-     * Защита от устаревшего запроса.
-     */
-    if (
-      myRequest !==
-      frameRequestId
-    ) {
-      return;
-    }
-  }
+    if (!layer) {
+      layer =
+        new RainRadarSquareLayer({
+          timestamp
+        });
 
-  /* =======================================================
-     PLAYBACK
-     ======================================================= */
-
-  function stopPlayback() {
-    playing =
-      false;
-
-    if (
-      playbackTimer
-    ) {
-      clearInterval(
-        playbackTimer
+      layer.addTo(
+        window.map
       );
 
-      playbackTimer =
-        null;
-    }
-  }
-
-  function startPlayback() {
-    if (
-      timestamps.length < 2
-    ) {
       return;
     }
 
-    stopPlayback();
-
-    playing =
-      true;
-
-    playbackTimer =
-      setInterval(
-        () => {
-          if (
-            playbackBusy
-          ) {
-            return;
-          }
-
-          playbackBusy =
-            true;
-
-          let next =
-            currentFrameIndex + 1;
-
-          if (
-            next >=
-            timestamps.length
-          ) {
-            next = 0;
-          }
-
-          Promise.resolve(
-            setFrame(
-              next
-            )
-          ).finally(
-            () => {
-              playbackBusy =
-                false;
-            }
-          );
-        },
-        1000
-      );
+    layer.setTimestamp(
+      timestamp
+    );
   }
 
   /* =======================================================
@@ -1272,90 +1049,78 @@
     loading =
       true;
 
-    const myRequest =
-      ++requestCounter;
+    const id =
+      ++requestId;
 
     try {
-      const oldTimestamps =
-        timestamps.slice();
-
-      const oldCurrent =
+      const oldTimestamp =
         currentTimestamp;
 
+      const oldList =
+        timestamps.slice();
+
       const wasLatest =
-        oldCurrent !== null &&
-        oldTimestamps.length > 0 &&
-        oldCurrent ===
-          oldTimestamps[
-            oldTimestamps.length - 1
+        oldTimestamp !== null &&
+        oldList.length > 0 &&
+        oldTimestamp ===
+          oldList[
+            oldList.length - 1
           ];
 
-      const newTimestamps =
+      const next =
         await loadManifest();
 
       if (
-        myRequest !==
-        requestCounter
+        id !== requestId
       ) {
         return;
       }
 
       if (
-        !newTimestamps.length
+        !next.length
       ) {
         return;
       }
 
       timestamps =
-        newTimestamps;
+        next;
 
-      let targetIndex =
+      let index =
         timestamps.indexOf(
-          oldCurrent
+          oldTimestamp
         );
 
-      /*
-       * Если пользователь был на последнем
-       * кадре, после обновления остаёмся
-       * на новом последнем кадре.
-       */
       if (
         wasLatest
       ) {
-        targetIndex =
+        index =
           timestamps.length - 1;
       }
 
-      /*
-       * Если выбранного кадра больше нет,
-       * берём ближайший доступный.
-       */
       if (
-        targetIndex < 0
+        index < 0
       ) {
-        targetIndex =
+        index =
           Math.min(
             currentFrameIndex,
             timestamps.length - 1
           );
+      }
 
-        if (
-          targetIndex < 0
-        ) {
-          targetIndex =
-            timestamps.length - 1;
-        }
+      if (
+        index < 0
+      ) {
+        index =
+          timestamps.length - 1;
       }
 
       await setFrame(
-        targetIndex
+        index
       );
 
-      updateTimelineUI();
+      updateTimeline();
 
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
         "[CLOrad RainRadar Square]",
         error
@@ -1367,15 +1132,10 @@
   }
 
   /* =======================================================
-     TIMELINE UI
+     TIMELINE
      ======================================================= */
 
-  function updateTimelineUI() {
-    /*
-     * Ищем стандартный slider CLOrad.
-     *
-     * Если его нет — просто ничего не делаем.
-     */
+  function updateTimeline() {
     const slider =
       document.querySelector(
         ".timeline input[type='range']"
@@ -1422,14 +1182,14 @@
 
     if (
       slider.dataset
-        .rainradarSquareConnected ===
+        .rainradarSquarePixelated ===
       "1"
     ) {
       return;
     }
 
     slider.dataset
-      .rainradarSquareConnected =
+      .rainradarSquarePixelated =
       "1";
 
     slider.addEventListener(
@@ -1450,257 +1210,187 @@
       }
     );
 
-    updateTimelineUI();
+    updateTimeline();
   }
 
   /* =======================================================
-     BOOST UI
+     PLAYBACK
      ======================================================= */
 
-  function connectBoostUI() {
-    /*
-     * Поддерживаем существующие элементы
-     * настроек CLOrad.
-     */
+  function stopPlayback() {
+    playing =
+      false;
 
-    const inputs =
-      document.querySelectorAll(
-        "[data-rainradar-boost]"
+    if (
+      playbackTimer
+    ) {
+      clearInterval(
+        playbackTimer
       );
 
-    inputs.forEach(
-      input => {
-        if (
-          input.dataset
-            .rainradarSquareConnected ===
-          "1"
-        ) {
-          return;
-        }
+      playbackTimer =
+        null;
+    }
+  }
 
-        input.dataset
-          .rainradarSquareConnected =
-          "1";
+  function startPlayback() {
+    if (
+      timestamps.length < 2
+    ) {
+      return;
+    }
 
-        if (
-          input.value !==
-          String(boost)
-        ) {
-          input.value =
-            String(boost);
-        }
+    stopPlayback();
 
-        input.addEventListener(
-          "input",
-          () => {
-            setBoost(
-              input.value
-            );
+    playing =
+      true;
+
+    playbackTimer =
+      setInterval(
+        () => {
+          let next =
+            currentFrameIndex + 1;
+
+          if (
+            next >=
+            timestamps.length
+          ) {
+            next = 0;
           }
-        );
 
-        input.addEventListener(
-          "change",
-          () => {
-            setBoost(
-              input.value
-            );
-          }
-        );
-      }
-    );
+          setFrame(
+            next
+          );
+        },
+        1000
+      );
   }
 
   /* =======================================================
      PUBLIC API
      ======================================================= */
 
-  const RainRadarSquare =
-    {
-      activate() {
-        if (
-          !window.map
-        ) {
-          console.error(
-            "[CLOrad] Leaflet map не найден"
-          );
+  const RainRadarSquare = {
 
-          return;
-        }
+    activate() {
+      if (
+        !window.map
+      ) {
+        console.error(
+          "[CLOrad] map не найден"
+        );
 
-        installCSS();
+        return;
+      }
 
-        active =
-          true;
+      installPixelCSS();
 
-        clearAllCache();
+      connectTimeline();
 
-        stopPlayback();
+      refresh();
 
-        if (
-          layer
-        ) {
-          layer.remove();
-
-          layer =
-            null;
-        }
-
-        currentTimestamp =
-          null;
-
-        currentFrameIndex =
-          -1;
-
-        connectTimeline();
-
-        connectBoostUI();
-
-        refresh();
-
-        if (
+      if (
+        refreshTimer
+      ) {
+        clearInterval(
           refreshTimer
-        ) {
-          clearInterval(
-            refreshTimer
-          );
-        }
+        );
+      }
+
+      refreshTimer =
+        setInterval(
+          refresh,
+          REFRESH_TIME
+        );
+    },
+
+    deactivate() {
+      stopPlayback();
+
+      if (
+        refreshTimer
+      ) {
+        clearInterval(
+          refreshTimer
+        );
 
         refreshTimer =
-          setInterval(
-            refresh,
-            60000
-          );
-      },
-
-      deactivate() {
-        active =
-          false;
-
-        stopPlayback();
-
-        if (
-          refreshTimer
-        ) {
-          clearInterval(
-            refreshTimer
-          );
-
-          refreshTimer =
-            null;
-        }
-
-        if (
-          layer
-        ) {
-          layer.remove();
-
-          layer =
-            null;
-        }
-
-        currentTimestamp =
           null;
-
-        currentFrameIndex =
-          -1;
-
-        clearAllCache();
-      },
-
-      refresh,
-
-      setFrame,
-
-      setBoost,
-
-      getBoost() {
-        return boost;
-      },
-
-      getTimestamps() {
-        return timestamps.slice();
-      },
-
-      getCurrentIndex() {
-        return currentFrameIndex;
-      },
-
-      getCurrentTimestamp() {
-        return currentTimestamp;
-      },
-
-      play() {
-        startPlayback();
-      },
-
-      pause() {
-        stopPlayback();
-      },
-
-      isPlaying() {
-        return playing;
-      },
-
-      clearCache() {
-        clearAllCache();
-
-        refreshVisibleTiles();
       }
-    };
+
+      if (
+        layer
+      ) {
+        layer.remove();
+
+        layer =
+          null;
+      }
+
+      currentTimestamp =
+        null;
+
+      currentFrameIndex =
+        -1;
+    },
+
+    refresh,
+
+    setFrame,
+
+    setBoost,
+
+    play() {
+      startPlayback();
+    },
+
+    pause() {
+      stopPlayback();
+    },
+
+    clearCache() {
+      grayCache.clear();
+      colorCache.clear();
+
+      if (layer) {
+        layer.redraw();
+      }
+    },
+
+    getCurrentTimestamp() {
+      return currentTimestamp;
+    },
+
+    getCurrentIndex() {
+      return currentFrameIndex;
+    },
+
+    getTimestamps() {
+      return timestamps.slice();
+    }
+  };
 
   /* =======================================================
      EXPORT
      ======================================================= */
 
   window.CLOrad =
-    window.CLOrad ||
-    {};
+    window.CLOrad || {};
 
   window.CLOrad.RainRadarSquare =
     RainRadarSquare;
 
-  /*
-   * Дополнительный короткий alias.
-   */
   window.RainRadarSquare =
     RainRadarSquare;
 
   /* =======================================================
-     AUTO START
+     INIT
      ======================================================= */
 
   function boot() {
-    if (
-      !window.L
-    ) {
-      setTimeout(
-        boot,
-        100
-      );
+    installPixelCSS();
 
-      return;
-    }
-
-    if (
-      !window.map
-    ) {
-      setTimeout(
-        boot,
-        100
-      );
-
-      return;
-    }
-
-    /*
-     * Не запускаем автоматически,
-     * если основной CLOrad ещё не готов.
-     *
-     * Файл только регистрирует renderer.
-     */
     connectTimeline();
-    connectBoostUI();
   }
 
   if (
