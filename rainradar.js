@@ -29,14 +29,12 @@
    - визуальные пиксели остаются квадратными
    - нет принудительного растягивания через CSS
    - при смене кадра нет промежуточного clearRect()
+   - при смене кадра canvas НЕ очищается через width/height
+   - bitmap заменяется через globalCompositeOperation="copy"
    ========================================================= */
 
 (() => {
   "use strict";
-
-  /* =======================================================
-     CONFIG
-     ======================================================= */
 
   const API =
     "/api/rainradar";
@@ -63,10 +61,6 @@
 
   const TILE_SIZE =
     256;
-
-  /* =======================================================
-     PALETTE
-     ======================================================= */
 
   const PALETTE = [
     "#dadada",
@@ -129,10 +123,6 @@
         )
       })
     );
-
-  /* =======================================================
-     STATE
-     ======================================================= */
 
   let boost =
     loadBoost();
@@ -206,10 +196,6 @@
   let displayedTimestamp =
     null;
 
-  /* =======================================================
-     DOM
-     ======================================================= */
-
   const $ =
     id =>
       document.getElementById(
@@ -219,10 +205,6 @@
   function getMap() {
     return window.map || null;
   }
-
-  /* =======================================================
-     BOOST
-     ======================================================= */
 
   function loadBoost() {
     try {
@@ -259,10 +241,6 @@
       );
     } catch {}
   }
-
-  /* =======================================================
-     MESSAGE
-     ======================================================= */
 
   function msg(
     text
@@ -309,10 +287,6 @@
     );
   }
 
-  /* =======================================================
-     CACHE
-     ======================================================= */
-
   function trimCache(
     cache
   ) {
@@ -334,10 +308,6 @@
       );
     }
   }
-
-  /* =======================================================
-     CSS
-     ======================================================= */
 
   function installCSS() {
     if (
@@ -367,11 +337,6 @@
         opacity: 1 !important;
       }
 
-      /*
-       * Геометрию самого tile задаёт Leaflet.
-       * Не меняем transform.
-       */
-
       .clorad-rainradar-layer
       canvas.clorad-rainradar-tile {
         display: block !important;
@@ -383,11 +348,6 @@
         margin: 0 !important;
         border: 0 !important;
 
-        /*
-         * Главное изменение:
-         * каждая исходная raster-ячейка
-         * масштабируется без bilinear filtering.
-         */
         image-rendering: -moz-crisp-edges !important;
         image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
@@ -416,10 +376,6 @@
       style
     );
   }
-
-  /* =======================================================
-     COLOR
-     ======================================================= */
 
   function gammaValue() {
     return Math.max(
@@ -508,6 +464,11 @@
     ctx.imageSmoothingEnabled =
       false;
 
+    try {
+      ctx.imageSmoothingQuality =
+        "low";
+    } catch {}
+
     const output =
       new ImageData(
         imageData.width,
@@ -571,10 +532,6 @@
     return canvas;
   }
 
-  /* =======================================================
-     TILE URL
-     ======================================================= */
-
   function tileURL(
     timestamp,
     coords
@@ -593,10 +550,6 @@
       coords.y
     );
   }
-
-  /* =======================================================
-     LOAD GRAY TILE
-     ======================================================= */
 
   function loadGrayTile(
     timestamp,
@@ -671,6 +624,11 @@
               ctx.imageSmoothingEnabled =
                 false;
 
+              try {
+                ctx.imageSmoothingQuality =
+                  "low";
+              } catch {}
+
               ctx.drawImage(
                 img,
                 0,
@@ -724,10 +682,6 @@
     );
   }
 
-  /* =======================================================
-     COLORED TILE
-     ======================================================= */
-
   async function getColoredTile(
     timestamp,
     coords
@@ -767,10 +721,6 @@
 
     return canvas;
   }
-
-  /* =======================================================
-     LEGEND
-     ======================================================= */
 
   function findLegend() {
     const first =
@@ -959,10 +909,6 @@
     }
   }
 
-  /* =======================================================
-     NAV
-     ======================================================= */
-
   function createNav() {
     const existing =
       $("rainRadarNav");
@@ -1039,10 +985,6 @@
         show();
       };
   }
-
-  /* =======================================================
-     TIMELINE
-     ======================================================= */
 
   function rangeElement() {
     return $("range");
@@ -1327,10 +1269,6 @@
     updatePlayButton();
   }
 
-  /* =======================================================
-     RAINRADAR GRID LAYER
-     ======================================================= */
-
   const RainRadarLayer =
     L.GridLayer.extend({
 
@@ -1426,13 +1364,6 @@
         );
       },
 
-      /*
-       * Leaflet полностью управляет
-       * положением tile.
-       *
-       * Сам canvas всегда является
-       * квадратным Leaflet tile.
-       */
       createTile(
         coords,
         done
@@ -1442,18 +1373,12 @@
             "canvas"
           );
 
-        /*
-         * Физический размер tile.
-         */
         tile.width =
           TILE_SIZE;
 
         tile.height =
           TILE_SIZE;
 
-        /*
-         * CSS-размер tile.
-         */
         tile.style.width =
           TILE_SIZE + "px";
 
@@ -1500,14 +1425,14 @@
         ctx.imageSmoothingEnabled =
           false;
 
+        try {
+          ctx.imageSmoothingQuality =
+            "low";
+        } catch {}
+
         const timestamp =
           this._timestamp;
 
-        /*
-         * minNativeZoom/maxNativeZoom = 5
-         * заставляет Leaflet передавать
-         * native Z=5 координаты.
-         */
         const sourceCoords = {
           z:
             RR_NATIVE_ZOOM,
@@ -1546,17 +1471,6 @@
           .then(
             source => {
 
-              /*
-               * Внутренний canvas всегда
-               * 256×256.
-               *
-               * Если источник тоже 256×256 —
-               * это фактически 1:1.
-               *
-               * Если источник имеет другой
-               * размер, он масштабируется
-               * nearest-neighbor, без blur.
-               */
               tile.width =
                 TILE_SIZE;
 
@@ -1572,6 +1486,11 @@
               ctx.imageSmoothingEnabled =
                 false;
 
+              try {
+                ctx.imageSmoothingQuality =
+                  "low";
+              } catch {}
+
               ctx.setTransform(
                 1,
                 0,
@@ -1581,20 +1500,16 @@
                 0
               );
 
-              ctx.clearRect(
-                0,
-                0,
-                TILE_SIZE,
-                TILE_SIZE
-              );
-
               /*
-               * Единственное масштабирование
-               * source -> Leaflet tile.
+               * Не используем clearRect().
                *
-               * imageSmoothingEnabled=false
-               * делает его nearest-neighbor.
+               * COPY сразу заменяет
+               * весь bitmap canvas,
+               * включая прозрачные области.
                */
+              ctx.globalCompositeOperation =
+                "copy";
+
               ctx.drawImage(
                 source,
                 0,
@@ -1602,6 +1517,9 @@
                 TILE_SIZE,
                 TILE_SIZE
               );
+
+              ctx.globalCompositeOperation =
+                "source-over";
 
               tile.style.setProperty(
                 "image-rendering",
@@ -1635,10 +1553,6 @@
         return tile;
       }
     });
-
-  /* =======================================================
-     CREATE SINGLE LAYER
-     ======================================================= */
 
   function ensureLayer(
     timestamp
@@ -1712,10 +1626,6 @@
 
     return layer;
   }
-
-  /* =======================================================
-     GET EXISTING TILE CANVASES
-     ======================================================= */
 
   function getVisibleTiles() {
     if (
@@ -1794,10 +1704,6 @@
 
     return result;
   }
-
-  /* =======================================================
-     LOAD FRAME INTO MEMORY
-     ======================================================= */
 
   async function preloadFrame(
     timestamp,
@@ -1884,11 +1790,6 @@
             return;
           }
 
-          /*
-           * Подготовленный bitmap
-           * строго соответствует
-           * геометрии существующего tile.
-           */
           const preparedCanvas =
             document.createElement(
               "canvas"
@@ -1926,6 +1827,11 @@
           ctx.imageSmoothingEnabled =
             false;
 
+          try {
+            ctx.imageSmoothingQuality =
+              "low";
+          } catch {}
+
           ctx.setTransform(
             1,
             0,
@@ -1935,6 +1841,14 @@
             0
           );
 
+          /*
+           * Подготавливаем новый кадр
+           * отдельно от отображаемого.
+           *
+           * Пока этот canvas готовится,
+           * старый кадр остаётся
+           * полностью видимым.
+           */
           ctx.drawImage(
             source,
             0,
@@ -1986,10 +1900,6 @@
 
     return prepared;
   }
-
-  /* =======================================================
-     CHECK TILE IS STILL CURRENT
-     ======================================================= */
 
   function tileIsStillCurrent(
     item
@@ -2044,10 +1954,6 @@
     );
   }
 
-  /* =======================================================
-     ATOMIC FRAME SWAP
-     ======================================================= */
-
   function commitPreparedFrame(
     prepared,
     timestamp,
@@ -2080,7 +1986,12 @@
     }
 
     /*
-     * Сначала проверяем ВСЮ сетку.
+     * СНАЧАЛА проверяем всю
+     * текущую Leaflet-сетку.
+     *
+     * Если хотя бы один tile
+     * уже был заменён Leaflet,
+     * ничего не меняем.
      */
     for (
       const item of
@@ -2096,8 +2007,17 @@
     }
 
     /*
-     * Только после полной проверки
-     * меняем bitmap существующих canvas.
+     * Теперь новый кадр полностью
+     * готов в памяти.
+     *
+     * Меняем bitmap существующих
+     * canvas БЕЗ удаления слоя.
+     *
+     * width / height НЕ трогаем.
+     * Это принципиально важно:
+     * изменение canvas.width или
+     * canvas.height мгновенно
+     * очищает canvas.
      */
     for (
       const item of
@@ -2123,30 +2043,23 @@
       }
 
       /*
-       * Canvas остаётся строго
-       * Leaflet tile 256×256.
+       * Leaflet уже создал этот
+       * canvas правильного размера.
+       *
+       * Никакого:
+       *
+       * canvas.width = ...
+       * canvas.height = ...
+       *
+       * здесь нет.
        */
-      if (
-        canvas.width !==
-          TILE_SIZE ||
-        canvas.height !==
-          TILE_SIZE
-      ) {
-        canvas.width =
-          TILE_SIZE;
-
-        canvas.height =
-          TILE_SIZE;
-      }
-
-      canvas.style.width =
-        TILE_SIZE + "px";
-
-      canvas.style.height =
-        TILE_SIZE + "px";
-
       ctx.imageSmoothingEnabled =
         false;
+
+      try {
+        ctx.imageSmoothingQuality =
+          "low";
+      } catch {}
 
       ctx.setTransform(
         1,
@@ -2158,19 +2071,13 @@
       );
 
       /*
-       * НЕ используем clearRect().
+       * COPY полностью заменяет
+       * предыдущий bitmap новым.
        *
-       * clearRect() сначала делает canvas
-       * прозрачным, а только потом
-       * выполняется drawImage().
+       * Прозрачные пиксели нового
+       * кадра тоже заменяют старые.
        *
-       * На экране между этими операциями
-       * мог быть виден краткий пустой
-       * участок/тёмный фон.
-       *
-       * "copy" сразу заменяет старый
-       * bitmap новым, включая прозрачные
-       * области.
+       * Никакого clearRect().
        */
       ctx.globalCompositeOperation =
         "copy";
@@ -2183,12 +2090,14 @@
         TILE_SIZE
       );
 
-      /*
-       * Возвращаем стандартный режим
-       * для последующих операций.
-       */
       ctx.globalCompositeOperation =
         "source-over";
+
+      canvas.style.width =
+        TILE_SIZE + "px";
+
+      canvas.style.height =
+        TILE_SIZE + "px";
 
       canvas.style.setProperty(
         "image-rendering",
@@ -2209,10 +2118,6 @@
 
     return true;
   }
-
-  /* =======================================================
-     WAIT FOR INITIAL LAYER
-     ======================================================= */
 
   function waitForLayerLoad() {
     if (
@@ -2238,10 +2143,6 @@
       }
     );
   }
-
-  /* =======================================================
-     SET FRAME
-     ======================================================= */
 
   async function setFrame(
     index,
@@ -2298,6 +2199,13 @@
       timestamp
     );
 
+    /*
+     * Первый кадр.
+     *
+     * Leaflet создаёт canvas,
+     * загружает его и только после
+     * полной готовности показывает.
+     */
     if (
       !displayedTimestamp
     ) {
@@ -2339,6 +2247,19 @@
       return true;
     }
 
+    /*
+     * Последующие кадры:
+     *
+     * 1. загружаем все нужные tiles;
+     * 2. полностью готовим их в памяти;
+     * 3. проверяем, что Leaflet-сетка
+     *    всё ещё та же;
+     * 4. одним проходом заменяем
+     *    bitmap существующих canvas.
+     *
+     * Пока пункты 1–3 выполняются,
+     * старый кадр не трогается.
+     */
     let prepared;
 
     try {
@@ -2392,10 +2313,6 @@
 
     return true;
   }
-
-  /* =======================================================
-     REMOVE LAYER ONLY WHEN RADAR IS STOPPED
-     ======================================================= */
 
   function removeAllRainRadarLayers(
     map
@@ -2461,10 +2378,6 @@
     displayedTimestamp =
       null;
   }
-
-  /* =======================================================
-     MANIFEST
-     ======================================================= */
 
   async function loadFrames() {
     const response =
@@ -2535,10 +2448,6 @@
 
     return timestamps;
   }
-
-  /* =======================================================
-     PLAYBACK
-     ======================================================= */
 
   function stopPlayback() {
     playing =
@@ -2638,10 +2547,6 @@
     }
   }
 
-  /* =======================================================
-     ACTIVATE
-     ======================================================= */
-
   function activate() {
     ++requestId;
     ++frameRequestId;
@@ -2685,10 +2590,6 @@
     hookTimeline();
   }
 
-  /* =======================================================
-     STOP
-     ======================================================= */
-
   function stop() {
     active =
       false;
@@ -2727,10 +2628,6 @@
 
     updateTimeline();
   }
-
-  /* =======================================================
-     OTHER NAV
-     ======================================================= */
 
   function hookOtherNav() {
     const navigation =
@@ -2825,10 +2722,6 @@
     }
   }
 
-  /* =======================================================
-     SHOW
-     ======================================================= */
-
   async function show() {
     if (
       loading
@@ -2906,10 +2799,6 @@
         false;
     }
   }
-
-  /* =======================================================
-     REFRESH
-     ======================================================= */
 
   function startRefresh() {
     stopRefresh();
@@ -2996,10 +2885,6 @@
     refreshTimer =
       null;
   }
-
-  /* =======================================================
-     SETTINGS
-     ======================================================= */
 
   function settingsContainer() {
     return $("settings");
@@ -3315,10 +3200,6 @@
     syncBoostUI();
   }
 
-  /* =======================================================
-     INIT
-     ======================================================= */
-
   function init() {
     installCSS();
 
@@ -3347,10 +3228,6 @@
       }
     );
   }
-
-  /* =======================================================
-     PUBLIC API
-     ======================================================= */
 
   window.CLOradStopRainRadar =
     stop;
@@ -3409,10 +3286,6 @@
         applyBoost();
       }
   };
-
-  /* =======================================================
-     START
-     ======================================================= */
 
   if (
     document.readyState ===
