@@ -6,7 +6,18 @@
    - index.html НЕ ИЗМЕНЯЕТСЯ
    - API НЕ ИЗМЕНЯЕТСЯ
    - источник: rainradar.ru/composite
-   - нативные тайлы: Z=5
+   - исходные данные: Z=5
+   - отображаемая сетка: Z=6
+   - одна исходная raster-ячейка RainRadar
+     раскладывается в 2×2 квадратные клетки
+   - форма клеток квадратная, как у Nowcast
+   - размер отображаемой клетки около 1×1 км
+     в географическом масштабе
+   - исходное значение НЕ интерполируется
+   - каждая отображаемая клетка получает
+     одно исходное значение и один цвет
+
+   СТАБИЛЬНОСТЬ:
    - RainRadarLayer создаётся ОДИН РАЗ
    - при смене кадра слой НЕ удаляется
    - map.setView НЕ вызывается
@@ -15,27 +26,21 @@
    - invalidateSize НЕ вызывается
    - opacity НЕ используется для переключения кадров
    - никаких fade / transition
-   - тайлы остаются строго в Leaflet-сетке
    - следующий кадр сначала загружается в память
    - затем содержимое существующих canvas
      заменяется атомарно
    - старые RainRadar layers не накапливаются
 
-   ИСПРАВЛЕНО:
-   - не смешиваются старые и текущие Leaflet tiles
-   - сохраняется корректная геометрия Leaflet tile
-   - исходные raster-ячейки не сглаживаются браузером
-   - исходный raster пересчитывается в 256×256
-   - каждый выходной пиксель является отдельным 1×1
-     пикселем итогового canvas
-   - промежуточные значения вычисляются из соседних
-     исходных raster-значений
-   - цвет результата всегда берётся из PALETTE
-   - нет CSS-растягивания raster
-   - нет принудительного растягивания крупными блоками
-   - при смене кадра нет промежуточного clearRect()
-   - при смене кадра canvas НЕ очищается через width/height
-   - bitmap заменяется через globalCompositeOperation="copy"
+   RASTER:
+   - исходный RainRadar PNG читается без сглаживания
+   - исходная raster-ячейка сохраняет своё значение
+   - каждая исходная ячейка превращается в 2×2
+     квадратные выходные клетки
+   - никакой билинейной интерполяции
+   - никаких искусственных градиентов
+   - никакого крупного 4×4 / 8×8 nearest-neighbor
+   - итоговая сетка визуально выглядит как
+     мелкая квадратная радарная сетка
    ========================================================= */
 
 (() => {
@@ -49,17 +54,41 @@
     [72, 180]
   ];
 
-  const RR_NATIVE_ZOOM = 5;
+  /*
+   * RainRadar реально отдаёт исходные тайлы Z=5.
+   */
+  const RR_SOURCE_ZOOM =
+    5;
 
-  const MIN_ZOOM = 2;
-  const MAX_ZOOM = 14;
+  /*
+   * Отображаемая радарная сетка.
+   *
+   * Переход Z5 -> Z6 даёт удвоение
+   * количества ячеек по X и Y.
+   *
+   * Поэтому каждая исходная ячейка Z5
+   * раскладывается в 2×2 клетки Z6.
+   */
+  const RR_NATIVE_ZOOM =
+    6;
+
+  const MIN_ZOOM =
+    2;
+
+  const MAX_ZOOM =
+    14;
 
   const REFRESH_TIME =
     60000;
 
-  const BOOST_MIN = 1;
-  const BOOST_MAX = 30;
-  const BOOST_DEFAULT = 23;
+  const BOOST_MIN =
+    1;
+
+  const BOOST_MAX =
+    30;
+
+  const BOOST_DEFAULT =
+    23;
 
   const BOOST_STORAGE_KEY =
     "clorad_rainradar_boost";
@@ -114,18 +143,23 @@
   const RGB =
     PALETTE.map(
       color => ({
-        r: parseInt(
-          color.slice(1, 3),
-          16
-        ),
-        g: parseInt(
-          color.slice(3, 5),
-          16
-        ),
-        b: parseInt(
-          color.slice(5, 7),
-          16
-        )
+        r:
+          parseInt(
+            color.slice(1, 3),
+            16
+          ),
+
+        g:
+          parseInt(
+            color.slice(3, 5),
+            16
+          ),
+
+        b:
+          parseInt(
+            color.slice(5, 7),
+            16
+          )
       })
     );
 
@@ -208,7 +242,10 @@
       );
 
   function getMap() {
-    return window.map || null;
+    return (
+      window.map ||
+      null
+    );
   }
 
   function loadBoost() {
@@ -300,10 +337,13 @@
       MAX_CACHE
     ) {
       const key =
-        cache.keys().next().value;
+        cache.keys()
+          .next()
+          .value;
 
       if (
-        key === undefined
+        key ===
+        undefined
       ) {
         break;
       }
@@ -439,29 +479,49 @@
 
   /*
    * =========================================================
-   * НОВЫЙ RASTERIZER
+   * 1×1-КМ STYLE RASTER
    *
-   * Исходный RainRadar PNG может иметь меньше 256×256
-   * физических пикселей.
+   * RainRadar source:
    *
-   * Старый вариант просто растягивал каждый исходный
-   * пиксель на несколько пикселей canvas.
+   *     Z=5
    *
-   * Поэтому появлялись большие квадраты 2×2 / 4×4 / 8×8.
+   * Display:
    *
-   * Здесь вместо этого весь исходный grayscale raster
-   * пересчитывается непосредственно в 256×256.
+   *     Z=6
    *
-   * Каждый итоговый пиксель canvas получает собственное
-   * значение, вычисленное из ближайших исходных значений.
+   * Каждый пиксель исходного Z5 raster
+   * соответствует двум пикселям по X
+   * и двум по Y на Z6.
    *
-   * Важно:
-   * это НЕ создаёт новую метеорологическую информацию.
-   * Это только более плотное визуальное представление
-   * уже имеющегося raster.
+   * Поэтому:
+   *
+   *       source
+   *
+   *       A
+   *
+   * превращается в:
+   *
+   *       A A
+   *       A A
+   *
+   * Это НЕ интерполяция.
+   *
+   * Все четыре клетки получают
+   * одинаковое исходное значение.
+   *
+   * Благодаря этому клетка остаётся:
+   *
+   * - квадратной
+   * - резкой
+   * - одноцветной
+   * - без размытия
+   *
+   * и визуально имеет размер
+   * порядка 1 км на Z6
+   * в средних широтах России.
    * ========================================================= */
 
-  function colorize(
+  function colorizeSource(
     imageData
   ) {
     const srcW =
@@ -470,11 +530,31 @@
     const srcH =
       imageData.height;
 
+    const src =
+      imageData.data;
+
+    /*
+     * Для Z5 -> Z6 нам требуется
+     * 2× масштаб по каждой оси.
+     *
+     * Для стандартного 256×256 source:
+     *
+     * 256 -> 512
+     *
+     * Затем из 512×512 берём
+     * нужную четверть для конкретного
+     * Z6 Leaflet tile.
+     *
+     * Сам цвет вычисляется
+     * только один раз на исходную
+     * ячейку.
+     */
+
     const outW =
-      TILE_SIZE;
+      srcW * 2;
 
     const outH =
-      TILE_SIZE;
+      srcH * 2;
 
     const canvas =
       document.createElement(
@@ -488,7 +568,7 @@
       outH;
 
     canvas.className =
-      "clorad-rainradar-tile";
+      "clorad-rainradar-source";
 
     const ctx =
       canvas.getContext(
@@ -501,17 +581,6 @@
       );
     }
 
-    ctx.imageSmoothingEnabled =
-      false;
-
-    try {
-      ctx.imageSmoothingQuality =
-        "low";
-    } catch {}
-
-    const src =
-      imageData.data;
-
     const output =
       new ImageData(
         outW,
@@ -521,31 +590,79 @@
     const dst =
       output.data;
 
-    /*
-     * Если исходник уже 256×256,
-     * не делаем лишнюю интерполяцию.
-     *
-     * Это самый быстрый путь.
-     */
-    if (
-      srcW === outW &&
-      srcH === outH
+    for (
+      let sy = 0;
+      sy < srcH;
+      sy++
     ) {
-      for (
-        let i = 0;
-        i < src.length;
-        i += 4
-      ) {
-        const raw =
-          src[i];
+      const sourceRow =
+        sy *
+        srcW *
+        4;
 
+      const outRow0 =
+        sy *
+        2 *
+        outW *
+        4;
+
+      const outRow1 =
+        (
+          sy *
+          2 +
+          1
+        ) *
+        outW *
+        4;
+
+      for (
+        let sx = 0;
+        sx < srcW;
+        sx++
+      ) {
+        const s =
+          sourceRow +
+          sx * 4;
+
+        const raw =
+          src[s];
+
+        const dx =
+          sx * 2;
+
+        const d0 =
+          outRow0 +
+          dx * 4;
+
+        const d1 =
+          outRow0 +
+          (dx + 1) * 4;
+
+        const d2 =
+          outRow1 +
+          dx * 4;
+
+        const d3 =
+          outRow1 +
+          (dx + 1) * 4;
+
+        /*
+         * Пустая ячейка.
+         */
         if (
           raw <= 0
         ) {
-          dst[i] = 0;
-          dst[i + 1] = 0;
-          dst[i + 2] = 0;
-          dst[i + 3] = 0;
+          dst[d0 + 3] =
+            0;
+
+          dst[d1 + 3] =
+            0;
+
+          dst[d2 + 3] =
+            0;
+
+          dst[d3 + 3] =
+            0;
 
           continue;
         }
@@ -557,363 +674,19 @@
             )
           );
 
-        const color =
-          RGB[index];
-
-        dst[i] =
-          color.r;
-
-        dst[i + 1] =
-          color.g;
-
-        dst[i + 2] =
-          color.b;
-
-        dst[i + 3] =
-          255;
-      }
-
-      ctx.putImageData(
-        output,
-        0,
-        0
-      );
-
-      return canvas;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * Предварительно рассчитываем соответствие:
-     *
-     * output X -> source X0 / X1 + коэффициент
-     * output Y -> source Y0 / Y1 + коэффициент
-     *
-     * Благодаря этому внутри главного цикла нет
-     * повторного вычисления координат.
-     * ---------------------------------------------------------
-     */
-
-    const x0 =
-      new Int32Array(
-        outW
-      );
-
-    const x1 =
-      new Int32Array(
-        outW
-      );
-
-    const wx =
-      new Float32Array(
-        outW
-      );
-
-    for (
-      let ox = 0;
-      ox < outW;
-      ox++
-    ) {
-      const sx =
-        (
-          (ox + 0.5) *
-          srcW /
-          outW
-        ) - 0.5;
-
-      let left =
-        Math.floor(
-          sx
-        );
-
-      let right =
-        left + 1;
-
-      let weight =
-        sx - left;
-
-      if (
-        left < 0
-      ) {
-        left =
-          0;
-
-        right =
-          Math.min(
-            1,
-            srcW - 1
-          );
-
-        weight =
-          0;
-      }
-
-      if (
-        right >= srcW
-      ) {
-        right =
-          srcW - 1;
-
-        left =
-          Math.max(
-            0,
-            right - 1
-          );
-
-        weight =
-          1;
-      }
-
-      x0[ox] =
-        left;
-
-      x1[ox] =
-        right;
-
-      wx[ox] =
-        weight;
-    }
-
-    const y0 =
-      new Int32Array(
-        outH
-      );
-
-    const y1 =
-      new Int32Array(
-        outH
-      );
-
-    const wy =
-      new Float32Array(
-        outH
-      );
-
-    for (
-      let oy = 0;
-      oy < outH;
-      oy++
-    ) {
-      const sy =
-        (
-          (oy + 0.5) *
-          srcH /
-          outH
-        ) - 0.5;
-
-      let top =
-        Math.floor(
-          sy
-        );
-
-      let bottom =
-        top + 1;
-
-      let weight =
-        sy - top;
-
-      if (
-        top < 0
-      ) {
-        top =
-          0;
-
-        bottom =
-          Math.min(
-            1,
-            srcH - 1
-          );
-
-        weight =
-          0;
-      }
-
-      if (
-        bottom >= srcH
-      ) {
-        bottom =
-          srcH - 1;
-
-        top =
-          Math.max(
-            0,
-            bottom - 1
-          );
-
-        weight =
-          1;
-      }
-
-      y0[oy] =
-        top;
-
-      y1[oy] =
-        bottom;
-
-      wy[oy] =
-        weight;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * Основной raster pass.
-     *
-     * Для каждого итогового 1×1 пикселя:
-     *
-     *     v00 ---- v10
-     *      |        |
-     *      |        |
-     *     v01 ---- v11
-     *
-     * вычисляется интерполированное значение.
-     *
-     * После этого значение проходит через boost
-     * и существующую PALETTE.
-     * ---------------------------------------------------------
-     */
-
-    for (
-      let oy = 0;
-      oy < outH;
-      oy++
-    ) {
-      const topRow =
-        y0[oy] *
-        srcW *
-        4;
-
-      const bottomRow =
-        y1[oy] *
-        srcW *
-        4;
-
-      const fy =
-        wy[oy];
-
-      const invFy =
-        1 - fy;
-
-      const outputRow =
-        oy *
-        outW *
-        4;
-
-      for (
-        let ox = 0;
-        ox < outW;
-        ox++
-      ) {
-        const left =
-          x0[ox];
-
-        const right =
-          x1[ox];
-
-        const fx =
-          wx[ox];
-
-        const invFx =
-          1 - fx;
-
-        const p00 =
-          topRow +
-          left * 4;
-
-        const p10 =
-          topRow +
-          right * 4;
-
-        const p01 =
-          bottomRow +
-          left * 4;
-
-        const p11 =
-          bottomRow +
-          right * 4;
-
-        const v00 =
-          src[p00];
-
-        const v10 =
-          src[p10];
-
-        const v01 =
-          src[p01];
-
-        const v11 =
-          src[p11];
-
-        /*
-         * Если все четыре исходные точки пустые,
-         * итоговый пиксель тоже полностью прозрачный.
-         */
-        if (
-          v00 <= 0 &&
-          v10 <= 0 &&
-          v01 <= 0 &&
-          v11 <= 0
-        ) {
-          const d =
-            outputRow +
-            ox * 4;
-
-          dst[d] =
-            0;
-
-          dst[d + 1] =
-            0;
-
-          dst[d + 2] =
-            0;
-
-          dst[d + 3] =
-            0;
-
-          continue;
-        }
-
-        /*
-         * Билинейная интерполяция.
-         */
-        const top =
-          v00 * invFx +
-          v10 * fx;
-
-        const bottom =
-          v01 * invFx +
-          v11 * fx;
-
-        const value =
-          top * invFy +
-          bottom * fy;
-
-        const boosted =
-          boostedValue(
-            value
-          );
-
-        const index =
-          paletteIndex(
-            boosted
-          );
-
-        const d =
-          outputRow +
-          ox * 4;
-
         if (
           index < 0
         ) {
-          dst[d] =
+          dst[d0 + 3] =
             0;
 
-          dst[d + 1] =
+          dst[d1 + 3] =
             0;
 
-          dst[d + 2] =
+          dst[d2 + 3] =
             0;
 
-          dst[d + 3] =
+          dst[d3 + 3] =
             0;
 
           continue;
@@ -922,16 +695,58 @@
         const color =
           RGB[index];
 
-        dst[d] =
+        /*
+         * Одна исходная ячейка
+         * становится ровно 2×2
+         * одинаковых квадратных клеток.
+         */
+
+        dst[d0] =
           color.r;
 
-        dst[d + 1] =
+        dst[d0 + 1] =
           color.g;
 
-        dst[d + 2] =
+        dst[d0 + 2] =
           color.b;
 
-        dst[d + 3] =
+        dst[d0 + 3] =
+          255;
+
+        dst[d1] =
+          color.r;
+
+        dst[d1 + 1] =
+          color.g;
+
+        dst[d1 + 2] =
+          color.b;
+
+        dst[d1 + 3] =
+          255;
+
+        dst[d2] =
+          color.r;
+
+        dst[d2 + 1] =
+          color.g;
+
+        dst[d2 + 2] =
+          color.b;
+
+        dst[d2 + 3] =
+          255;
+
+        dst[d3] =
+          color.r;
+
+        dst[d3 + 1] =
+          color.g;
+
+        dst[d3 + 2] =
+          color.b;
+
+        dst[d3 + 3] =
           255;
       }
     }
@@ -956,7 +771,7 @@
         timestamp
       ) +
       "&z=" +
-      RR_NATIVE_ZOOM +
+      RR_SOURCE_ZOOM +
       "&x=" +
       coords.x +
       "&y=" +
@@ -969,7 +784,7 @@
     coords
   ) {
     const key =
-      `${timestamp}/${RR_NATIVE_ZOOM}/${coords.x}/${coords.y}`;
+      `${timestamp}/${RR_SOURCE_ZOOM}/${coords.x}/${coords.y}`;
 
     if (
       grayCache.has(
@@ -1034,10 +849,6 @@
                 );
               }
 
-              /*
-               * Исходный PNG читается
-               * без браузерного сглаживания.
-               */
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -1101,6 +912,30 @@
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Получение Z6 output tile.
+   *
+   * Один Z6 tile соответствует четверти
+   * одного Z5 tile:
+   *
+   * Z5:
+   *
+   * +---------+---------+
+   * |    0    |    1    |
+   * |         |         |
+   * +---------+---------+
+   * |    2    |    3    |
+   * |         |         |
+   * +---------+---------+
+   *
+   * Z6 tile выбирает одну из этих четвертей.
+   *
+   * При этом каждый исходный пиксель
+   * увеличивается ровно 2×2.
+   * ---------------------------------------------------------
+   */
+
   async function getColoredTile(
     timestamp,
     coords
@@ -1118,27 +953,213 @@
       );
     }
 
+    const sourceX =
+      Math.floor(
+        coords.x / 2
+      );
+
+    const sourceY =
+      Math.floor(
+        coords.y / 2
+      );
+
     const source =
       await loadGrayTile(
         timestamp,
-        coords
+        {
+          z:
+            RR_SOURCE_ZOOM,
+
+          x:
+            sourceX,
+
+          y:
+            sourceY
+        }
       );
 
-    const canvas =
-      colorize(
+    const colored =
+      colorizeSource(
         source
       );
 
+    /*
+     * Z6 tile выбирает четверть
+     * увеличенного Z5 raster.
+     */
+    const quadrantX =
+      coords.x & 1;
+
+    const quadrantY =
+      coords.y & 1;
+
+    const sourceWidth =
+      source.width;
+
+    const sourceHeight =
+      source.height;
+
+    const halfW =
+      Math.floor(
+        sourceWidth
+      );
+
+    const halfH =
+      Math.floor(
+        sourceHeight
+      );
+
+    const cropX =
+      quadrantX *
+      halfW;
+
+    const cropY =
+      quadrantY *
+      halfH;
+
+    const output =
+      document.createElement(
+        "canvas"
+      );
+
+    output.width =
+      TILE_SIZE;
+
+    output.height =
+      TILE_SIZE;
+
+    output.className =
+      "clorad-rainradar-tile";
+
+    const ctx =
+      output.getContext(
+        "2d"
+      );
+
+    if (!ctx) {
+      throw Error(
+        "Canvas 2D недоступен"
+      );
+    }
+
+    ctx.imageSmoothingEnabled =
+      false;
+
+    try {
+      ctx.imageSmoothingQuality =
+        "low";
+    } catch {}
+
+    /*
+     * Для стандартного RainRadar:
+     *
+     * source 264×264
+     * enlarged 528×528
+     * каждая четверть 264×264.
+     *
+     * Она помещается в Leaflet tile
+     * без дополнительного растягивания.
+     *
+     * Для 256×256:
+     *
+     * source 256×256
+     * enlarged 512×512
+     * четверть = 256×256.
+     */
+    ctx.drawImage(
+      colored,
+      cropX,
+      cropY,
+      halfW,
+      halfH,
+      0,
+      0,
+      Math.min(
+        halfW,
+        TILE_SIZE
+      ),
+      Math.min(
+        halfH,
+        TILE_SIZE
+      )
+    );
+
+    /*
+     * Если источник оказался 264×264,
+     * обрезаем до стандартного Leaflet tile
+     * 256×256 без сглаживания.
+     */
+    if (
+      halfW !==
+      TILE_SIZE ||
+      halfH !==
+      TILE_SIZE
+    ) {
+      const fixed =
+        document.createElement(
+          "canvas"
+        );
+
+      fixed.width =
+        TILE_SIZE;
+
+      fixed.height =
+        TILE_SIZE;
+
+      const fctx =
+        fixed.getContext(
+          "2d"
+        );
+
+      if (!fctx) {
+        throw Error(
+          "Canvas 2D недоступен"
+        );
+      }
+
+      fctx.imageSmoothingEnabled =
+        false;
+
+      fctx.drawImage(
+        output,
+        0,
+        0,
+        Math.min(
+          TILE_SIZE,
+          output.width
+        ),
+        Math.min(
+          TILE_SIZE,
+          output.height
+        ),
+        0,
+        0,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+
+      colorCache.set(
+        key,
+        fixed
+      );
+
+      trimCache(
+        colorCache
+      );
+
+      return fixed;
+    }
+
     colorCache.set(
       key,
-      canvas
+      output
     );
 
     trimCache(
       colorCache
     );
 
-    return canvas;
+    return output;
   }
 
   function findLegend() {
@@ -1436,10 +1457,13 @@
       {
         day:
           "2-digit",
+
         month:
           "2-digit",
+
         hour:
           "2-digit",
+
         minute:
           "2-digit"
       }
@@ -1844,11 +1868,6 @@
         ctx.imageSmoothingEnabled =
           false;
 
-        try {
-          ctx.imageSmoothingQuality =
-            "low";
-        } catch {}
-
         const timestamp =
           this._timestamp;
 
@@ -1893,11 +1912,6 @@
               ctx.imageSmoothingEnabled =
                 false;
 
-              try {
-                ctx.imageSmoothingQuality =
-                  "low";
-              } catch {}
-
               ctx.setTransform(
                 1,
                 0,
@@ -1910,14 +1924,6 @@
               ctx.globalCompositeOperation =
                 "copy";
 
-              /*
-               * source уже является 256×256
-               * итоговым raster.
-               *
-               * Поэтому здесь нет крупного
-               * nearest-neighbor растягивания
-               * исходного PNG.
-               */
               ctx.drawImage(
                 source,
                 0,
@@ -1926,12 +1932,6 @@
 
               ctx.globalCompositeOperation =
                 "source-over";
-
-              tile.style.setProperty(
-                "image-rendering",
-                "pixelated",
-                "important"
-              );
 
               done(
                 null,
@@ -1992,6 +1992,14 @@
         maxZoom:
           MAX_ZOOM,
 
+        /*
+         * ВАЖНО:
+         *
+         * Теперь Leaflet считает
+         * нативной отображаемой сеткой Z6.
+         *
+         * Сам RainRadar остаётся источником Z5.
+         */
         minNativeZoom:
           RR_NATIVE_ZOOM,
 
@@ -2069,7 +2077,8 @@
         }
 
         if (
-          entry.current !== true
+          entry.current !==
+          true
         ) {
           return;
         }
@@ -2091,8 +2100,10 @@
 
         result.push({
           key,
+
           canvas:
             entry.el,
+
           coords:
             {
               x:
@@ -2233,11 +2244,6 @@
           ctx.imageSmoothingEnabled =
             false;
 
-          try {
-            ctx.imageSmoothingQuality =
-              "low";
-          } catch {}
-
           ctx.setTransform(
             1,
             0,
@@ -2247,12 +2253,6 @@
             0
           );
 
-          /*
-           * source уже полностью подготовлен
-           * как 256×256 raster.
-           *
-           * Старый кадр вообще не трогаем.
-           */
           ctx.drawImage(
             source,
             0,
@@ -2328,7 +2328,8 @@
     }
 
     if (
-      current.current !== true
+      current.current !==
+      true
     ) {
       return false;
     }
@@ -2387,13 +2388,6 @@
       return false;
     }
 
-    /*
-     * Сначала проверяем ВСЕ tiles.
-     *
-     * Если Leaflet за это время
-     * изменил сетку — ничего
-     * не заменяем.
-     */
     for (
       const item of
       prepared
@@ -2407,12 +2401,6 @@
       }
     }
 
-    /*
-     * Все tiles совпадают.
-     *
-     * Теперь атомарно меняем
-     * содержимое существующих canvas.
-     */
     for (
       const item of
       prepared
@@ -2439,11 +2427,6 @@
       ctx.imageSmoothingEnabled =
         false;
 
-      try {
-        ctx.imageSmoothingQuality =
-          "low";
-      } catch {}
-
       ctx.setTransform(
         1,
         0,
@@ -2453,13 +2436,6 @@
         0
       );
 
-      /*
-       * COPY полностью заменяет
-       * предыдущий bitmap.
-       *
-       * Никакого clearRect().
-       * Никакого изменения width/height.
-       */
       ctx.globalCompositeOperation =
         "copy";
 
@@ -2578,9 +2554,6 @@
       timestamp
     );
 
-    /*
-     * Первый кадр.
-     */
     if (
       !displayedTimestamp
     ) {
@@ -2622,13 +2595,6 @@
       return true;
     }
 
-    /*
-     * Последующие кадры:
-     *
-     * старый кадр остаётся на карте
-     * до полного окончания загрузки
-     * нового.
-     */
     let prepared;
 
     try {
