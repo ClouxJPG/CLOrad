@@ -1,35 +1,30 @@
 /* =========================================================
    CLOrad — RainRadar Square Renderer
-   ---------------------------------------------------------
-   БЕЗОПАСНЫЙ отдельный renderer.
-
-   НЕ изменяет:
-   - rainradar.js
-   - API
-   - источник RainRadar
-   - ZOOM
-   - palette
-   - legend
-   - timeline
-   - frame switching
-   - Leaflet tile coordinates
-   - Leaflet tile positioning
-   - Leaflet tile geometry
+   =========================================================
 
    ВАЖНО:
-   Этот файл НИКОГДА не перехватывает
-   CanvasRenderingContext2D.prototype.drawImage.
 
-   Каждый RainRadar tile остаётся своим
-   отдельным z/x/y tile.
+   Этот файл НЕ рисует радар заново.
 
-   Задача файла:
-   - убрать сглаживание;
-   - сохранить квадратную геометрию 256×256;
-   - запретить CSS interpolation;
-   - не создавать дубликаты тайлов;
-   - не переносить содержимое одного тайла
-     в другой.
+   Он НЕ:
+   - перехватывает drawImage
+   - меняет tile x/y
+   - меняет tile z
+   - меняет API
+   - меняет URL
+   - создаёт новые Leaflet layers
+   - копирует содержимое одного tile в другой
+   - использует getImageData()
+   - использует putImageData()
+   - изменяет canvas.width / canvas.height
+   - использует MutationObserver
+
+   Его задача ТОЛЬКО:
+   - отключить сглаживание;
+   - оставить пиксели квадратными;
+   - убрать CSS interpolation;
+   - не вмешиваться в геометрию Leaflet.
+
    ========================================================= */
 
 (() => {
@@ -37,285 +32,164 @@
   "use strict";
 
 
-  /* =========================================================
-     CONSTANTS
-     ========================================================= */
+  /* =======================================================
+     STYLE
+     ======================================================= */
 
   const STYLE_ID =
-    "clorad-rainradar-square-safe";
+    "clorad-rainradar-square";
 
 
-  const TILE_SIZE =
-    256;
-
-
-  /* =========================================================
-     CSS
-     ========================================================= */
-
-  function installCSS() {
-
-    if (
-      document.getElementById(
-        STYLE_ID
-      )
-    ) {
-      return;
-    }
-
-
-    const style =
-      document.createElement(
-        "style"
-      );
-
-
-    style.id =
-      STYLE_ID;
-
-
-    style.textContent = `
-
-      /*
-       * RainRadar canvas
-       */
-
-      canvas.clorad-rainradar-tile {
-
-        width:
-          256px !important;
-
-        height:
-          256px !important;
-
-        min-width:
-          256px !important;
-
-        min-height:
-          256px !important;
-
-        max-width:
-          256px !important;
-
-        max-height:
-          256px !important;
-
-        display:
-          block !important;
-
-        margin:
-          0 !important;
-
-        padding:
-          0 !important;
-
-        border:
-          0 !important;
-
-        box-sizing:
-          border-box !important;
-
-
-        /*
-         * Никакого сглаживания.
-         */
-
-        image-rendering:
-          pixelated !important;
-
-        image-rendering:
-          crisp-edges !important;
-
-        image-rendering:
-          -moz-crisp-edges !important;
-
-
-        /*
-         * Никаких CSS-фильтров.
-         */
-
-        filter:
-          none !important;
-
-
-        /*
-         * Никакого CSS transform.
-         *
-         * Leaflet сам позиционирует tile.
-         */
-
-        transform:
-          none !important;
-
-
-        /*
-         * Никаких transition/animation.
-         */
-
-        transition:
-          none !important;
-
-        animation:
-          none !important;
-      }
-
-
-      /*
-       * Только RainRadar layer.
-       */
-
-      .clorad-rainradar-layer {
-
-        image-rendering:
-          pixelated !important;
-
-        image-rendering:
-          crisp-edges !important;
-      }
-
-
-      /*
-       * Контейнер тайлов.
-       *
-       * НЕ задаём ему transform,
-       * position или размеры.
-       *
-       * Leaflet должен управлять
-       * геометрией самостоятельно.
-       */
-
-      .clorad-rainradar-layer
-      .leaflet-tile-container {
-
-        image-rendering:
-          pixelated !important;
-
-        image-rendering:
-          crisp-edges !important;
-      }
-
-
-      /*
-       * Сам Leaflet tile.
-       */
-
-      .clorad-rainradar-layer
-      .leaflet-tile {
-
-        image-rendering:
-          pixelated !important;
-
-        image-rendering:
-          crisp-edges !important;
-
-        filter:
-          none !important;
-
-        transition:
-          none !important;
-
-        animation:
-          none !important;
-      }
-
-    `;
-
-
-    document.head.appendChild(
-      style
-    );
-  }
-
-
-  /* =========================================================
-     RAINRADAR CANVAS CHECK
-     ========================================================= */
-
-  function isRainRadarCanvas(
-    canvas
+  if (
+    document.getElementById(
+      STYLE_ID
+    )
   ) {
+    return;
+  }
 
-    return (
-      canvas instanceof
-        HTMLCanvasElement &&
-      canvas.classList.contains(
-        "clorad-rainradar-tile"
-      )
+
+  const style =
+    document.createElement(
+      "style"
     );
-  }
 
 
-  /* =========================================================
-     PIXEL SETTINGS
-     ========================================================= */
+  style.id =
+    STYLE_ID;
 
-  function configureCanvas(
-    canvas
-  ) {
 
-    if (
-      !isRainRadarCanvas(
-        canvas
-      )
-    ) {
-      return;
+  style.textContent = `
+
+    /*
+     * RainRadar canvas
+     */
+
+    canvas.clorad-rainradar-tile {
+
+      display:
+        block !important;
+
+      width:
+        256px !important;
+
+      height:
+        256px !important;
+
+      margin:
+        0 !important;
+
+      padding:
+        0 !important;
+
+      border:
+        0 !important;
+
+      box-sizing:
+        border-box !important;
+
+
+      /*
+       * Главное:
+       * браузер не сглаживает
+       * радарные пиксели.
+       */
+
+      image-rendering:
+        pixelated !important;
+
+      image-rendering:
+        crisp-edges !important;
+
+      image-rendering:
+        -moz-crisp-edges !important;
+
+
+      /*
+       * Никаких фильтров.
+       */
+
+      filter:
+        none !important;
+
+
+      /*
+       * Не трогаем transform Leaflet.
+       */
+
+      transition:
+        none !important;
+
+      animation:
+        none !important;
     }
 
 
     /*
-     * ВАЖНО:
-     *
-     * НЕ меняем:
-     * canvas.width
-     * canvas.height
-     *
-     * после того, как rainradar.js
-     * уже нарисовал данные.
-     *
-     * Изменение width/height очистило бы
-     * bitmap и могло бы сломать кадр.
+     * RainRadar layer.
      */
 
+    .clorad-rainradar-layer {
 
-    const ctx =
-      canvas.getContext(
-        "2d"
-      );
+      image-rendering:
+        pixelated !important;
 
-
-    if (!ctx) {
-      return;
+      image-rendering:
+        crisp-edges !important;
     }
 
 
     /*
-     * Жёстко выключаем interpolation.
+     * Контейнер тайлов.
      */
 
-    ctx.imageSmoothingEnabled =
-      false;
+    .clorad-rainradar-layer
+    .leaflet-tile-container {
+
+      image-rendering:
+        pixelated !important;
+
+      image-rendering:
+        crisp-edges !important;
+    }
 
 
     /*
-     * CSS тоже фиксируем.
+     * Сам Leaflet tile.
      */
 
-    canvas.style.width =
-      `${TILE_SIZE}px`;
+    .clorad-rainradar-layer
+    .leaflet-tile {
 
-    canvas.style.height =
-      `${TILE_SIZE}px`;
+      image-rendering:
+        pixelated !important;
 
-    canvas.style.imageRendering =
-      "pixelated";
-  }
+      image-rendering:
+        crisp-edges !important;
+
+      filter:
+        none !important;
+
+      transition:
+        none !important;
+
+      animation:
+        none !important;
+    }
+
+  `;
 
 
-  /* =========================================================
-     PROCESS EXISTING TILES
-     ========================================================= */
+  document.head.appendChild(
+    style
+  );
 
-  function processExistingTiles() {
+
+  /* =======================================================
+     DISABLE CANVAS SMOOTHING
+     ======================================================= */
+
+  function disableSmoothing() {
 
     const canvases =
       document.querySelectorAll(
@@ -327,201 +201,68 @@
       const canvas of canvases
     ) {
 
-      configureCanvas(
-        canvas
-      );
+      const ctx =
+        canvas.getContext(
+          "2d"
+        );
+
+
+      if (!ctx) {
+        continue;
+      }
+
+
+      ctx.imageSmoothingEnabled =
+        false;
     }
   }
 
 
-  /* =========================================================
-     OBSERVER
-     ========================================================= */
+  /* =======================================================
+     INITIAL RUN
+     ======================================================= */
 
-  function installObserver() {
-
-    /*
-     * Никакого observer на document.body.
-     *
-     * Следим только за появлением canvas
-     * внутри Leaflet tile panes.
-     */
-
-    const observer =
-      new MutationObserver(
-        mutations => {
-
-          for (
-            const mutation of mutations
-          ) {
-
-            for (
-              const node of
-                mutation.addedNodes
-            ) {
-
-              if (
-                node.nodeType !== 1
-              ) {
-                continue;
-              }
+  disableSmoothing();
 
 
-              /*
-               * Сам node — RainRadar canvas.
-               */
+  /*
+   * RainRadar создаёт canvas асинхронно.
+   *
+   * Поэтому только периодически проверяем
+   * уже существующие canvas.
+   *
+   * Никакого перерисовывания данных нет.
+   */
 
-              if (
-                node instanceof
-                  HTMLCanvasElement &&
-                isRainRadarCanvas(
-                  node
-                )
-              ) {
-
-                configureCanvas(
-                  node
-                );
-              }
+  let checks =
+    0;
 
 
-              /*
-               * Проверяем canvas внутри
-               * добавленного Leaflet элемента.
-               */
+  const timer =
+    setInterval(
+      () => {
 
-              if (
-                node.querySelectorAll
-              ) {
+        disableSmoothing();
 
-                const canvases =
-                  node.querySelectorAll(
-                    "canvas.clorad-rainradar-tile"
-                  );
+        checks++;
 
 
-                for (
-                  const canvas of canvases
-                ) {
-
-                  configureCanvas(
-                    canvas
-                  );
-                }
-              }
-            }
-          }
-        }
-      );
-
-
-    /*
-     * Только tile panes.
-     */
-
-    function attach() {
-
-      const panes =
-        document.querySelectorAll(
-          ".leaflet-tile-pane"
-        );
-
-
-      for (
-        const pane of panes
-      ) {
+        /*
+         * После нескольких секунд
+         * прекращаем проверку.
+         */
 
         if (
-          pane.dataset
-            .cloradRainRadarSquare ===
-          "1"
+          checks >= 20
         ) {
-          continue;
+
+          clearInterval(
+            timer
+          );
         }
 
-
-        pane.dataset
-          .cloradRainRadarSquare =
-          "1";
-
-
-        observer.observe(
-          pane,
-          {
-            childList:
-              true,
-
-            subtree:
-              true
-          }
-        );
-      }
-    }
-
-
-    attach();
-
-
-    setTimeout(
-      attach,
-      300
+      },
+      250
     );
-
-
-    setTimeout(
-      attach,
-      1000
-    );
-
-
-    setTimeout(
-      attach,
-      2500
-    );
-
-
-    setTimeout(
-      attach,
-      5000
-    );
-  }
-
-
-  /* =========================================================
-     INIT
-     ========================================================= */
-
-  function init() {
-
-    installCSS();
-
-    processExistingTiles();
-
-    installObserver();
-  }
-
-
-  /* =========================================================
-     START
-     ========================================================= */
-
-  if (
-    document.readyState ===
-    "loading"
-  ) {
-
-    document.addEventListener(
-      "DOMContentLoaded",
-      init,
-      {
-        once:
-          true
-      }
-    );
-
-  } else {
-
-    init();
-  }
 
 })();
