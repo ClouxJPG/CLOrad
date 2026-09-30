@@ -24,10 +24,15 @@
    ИСПРАВЛЕНО:
    - не смешиваются старые и текущие Leaflet tiles
    - сохраняется корректная геометрия Leaflet tile
-   - исходные raster-ячейки не сглаживаются
-   - масштабирование canvas выполняется nearest-neighbor
-   - визуальные пиксели остаются квадратными
-   - нет принудительного растягивания через CSS
+   - исходные raster-ячейки не сглаживаются браузером
+   - исходный raster пересчитывается в 256×256
+   - каждый выходной пиксель является отдельным 1×1
+     пикселем итогового canvas
+   - промежуточные значения вычисляются из соседних
+     исходных raster-значений
+   - цвет результата всегда берётся из PALETTE
+   - нет CSS-растягивания raster
+   - нет принудительного растягивания крупными блоками
    - при смене кадра нет промежуточного clearRect()
    - при смене кадра canvas НЕ очищается через width/height
    - bitmap заменяется через globalCompositeOperation="copy"
@@ -432,19 +437,55 @@
     );
   }
 
+  /*
+   * =========================================================
+   * НОВЫЙ RASTERIZER
+   *
+   * Исходный RainRadar PNG может иметь меньше 256×256
+   * физических пикселей.
+   *
+   * Старый вариант просто растягивал каждый исходный
+   * пиксель на несколько пикселей canvas.
+   *
+   * Поэтому появлялись большие квадраты 2×2 / 4×4 / 8×8.
+   *
+   * Здесь вместо этого весь исходный grayscale raster
+   * пересчитывается непосредственно в 256×256.
+   *
+   * Каждый итоговый пиксель canvas получает собственное
+   * значение, вычисленное из ближайших исходных значений.
+   *
+   * Важно:
+   * это НЕ создаёт новую метеорологическую информацию.
+   * Это только более плотное визуальное представление
+   * уже имеющегося raster.
+   * ========================================================= */
+
   function colorize(
     imageData
   ) {
+    const srcW =
+      imageData.width;
+
+    const srcH =
+      imageData.height;
+
+    const outW =
+      TILE_SIZE;
+
+    const outH =
+      TILE_SIZE;
+
     const canvas =
       document.createElement(
         "canvas"
       );
 
     canvas.width =
-      imageData.width;
+      outW;
 
     canvas.height =
-      imageData.height;
+      outH;
 
     canvas.className =
       "clorad-rainradar-tile";
@@ -468,58 +509,431 @@
         "low";
     } catch {}
 
-    const output =
-      new ImageData(
-        imageData.width,
-        imageData.height
-      );
-
     const src =
       imageData.data;
+
+    const output =
+      new ImageData(
+        outW,
+        outH
+      );
 
     const dst =
       output.data;
 
-    for (
-      let i = 0;
-      i < src.length;
-      i += 4
+    /*
+     * Если исходник уже 256×256,
+     * не делаем лишнюю интерполяцию.
+     *
+     * Это самый быстрый путь.
+     */
+    if (
+      srcW === outW &&
+      srcH === outH
     ) {
-      const raw =
-        src[i];
-
-      if (
-        raw <= 0
+      for (
+        let i = 0;
+        i < src.length;
+        i += 4
       ) {
-        dst[i] = 0;
-        dst[i + 1] = 0;
-        dst[i + 2] = 0;
-        dst[i + 3] = 0;
+        const raw =
+          src[i];
 
-        continue;
+        if (
+          raw <= 0
+        ) {
+          dst[i] = 0;
+          dst[i + 1] = 0;
+          dst[i + 2] = 0;
+          dst[i + 3] = 0;
+
+          continue;
+        }
+
+        const index =
+          paletteIndex(
+            boostedValue(
+              raw
+            )
+          );
+
+        const color =
+          RGB[index];
+
+        dst[i] =
+          color.r;
+
+        dst[i + 1] =
+          color.g;
+
+        dst[i + 2] =
+          color.b;
+
+        dst[i + 3] =
+          255;
       }
 
-      const index =
-        paletteIndex(
-          boostedValue(
-            raw
-          )
+      ctx.putImageData(
+        output,
+        0,
+        0
+      );
+
+      return canvas;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Предварительно рассчитываем соответствие:
+     *
+     * output X -> source X0 / X1 + коэффициент
+     * output Y -> source Y0 / Y1 + коэффициент
+     *
+     * Благодаря этому внутри главного цикла нет
+     * повторного вычисления координат.
+     * ---------------------------------------------------------
+     */
+
+    const x0 =
+      new Int32Array(
+        outW
+      );
+
+    const x1 =
+      new Int32Array(
+        outW
+      );
+
+    const wx =
+      new Float32Array(
+        outW
+      );
+
+    for (
+      let ox = 0;
+      ox < outW;
+      ox++
+    ) {
+      const sx =
+        (
+          (ox + 0.5) *
+          srcW /
+          outW
+        ) - 0.5;
+
+      let left =
+        Math.floor(
+          sx
         );
 
-      const color =
-        RGB[index];
+      let right =
+        left + 1;
 
-      dst[i] =
-        color.r;
+      let weight =
+        sx - left;
 
-      dst[i + 1] =
-        color.g;
+      if (
+        left < 0
+      ) {
+        left =
+          0;
 
-      dst[i + 2] =
-        color.b;
+        right =
+          Math.min(
+            1,
+            srcW - 1
+          );
 
-      dst[i + 3] =
-        255;
+        weight =
+          0;
+      }
+
+      if (
+        right >= srcW
+      ) {
+        right =
+          srcW - 1;
+
+        left =
+          Math.max(
+            0,
+            right - 1
+          );
+
+        weight =
+          1;
+      }
+
+      x0[ox] =
+        left;
+
+      x1[ox] =
+        right;
+
+      wx[ox] =
+        weight;
+    }
+
+    const y0 =
+      new Int32Array(
+        outH
+      );
+
+    const y1 =
+      new Int32Array(
+        outH
+      );
+
+    const wy =
+      new Float32Array(
+        outH
+      );
+
+    for (
+      let oy = 0;
+      oy < outH;
+      oy++
+    ) {
+      const sy =
+        (
+          (oy + 0.5) *
+          srcH /
+          outH
+        ) - 0.5;
+
+      let top =
+        Math.floor(
+          sy
+        );
+
+      let bottom =
+        top + 1;
+
+      let weight =
+        sy - top;
+
+      if (
+        top < 0
+      ) {
+        top =
+          0;
+
+        bottom =
+          Math.min(
+            1,
+            srcH - 1
+          );
+
+        weight =
+          0;
+      }
+
+      if (
+        bottom >= srcH
+      ) {
+        bottom =
+          srcH - 1;
+
+        top =
+          Math.max(
+            0,
+            bottom - 1
+          );
+
+        weight =
+          1;
+      }
+
+      y0[oy] =
+        top;
+
+      y1[oy] =
+        bottom;
+
+      wy[oy] =
+        weight;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Основной raster pass.
+     *
+     * Для каждого итогового 1×1 пикселя:
+     *
+     *     v00 ---- v10
+     *      |        |
+     *      |        |
+     *     v01 ---- v11
+     *
+     * вычисляется интерполированное значение.
+     *
+     * После этого значение проходит через boost
+     * и существующую PALETTE.
+     * ---------------------------------------------------------
+     */
+
+    for (
+      let oy = 0;
+      oy < outH;
+      oy++
+    ) {
+      const topRow =
+        y0[oy] *
+        srcW *
+        4;
+
+      const bottomRow =
+        y1[oy] *
+        srcW *
+        4;
+
+      const fy =
+        wy[oy];
+
+      const invFy =
+        1 - fy;
+
+      const outputRow =
+        oy *
+        outW *
+        4;
+
+      for (
+        let ox = 0;
+        ox < outW;
+        ox++
+      ) {
+        const left =
+          x0[ox];
+
+        const right =
+          x1[ox];
+
+        const fx =
+          wx[ox];
+
+        const invFx =
+          1 - fx;
+
+        const p00 =
+          topRow +
+          left * 4;
+
+        const p10 =
+          topRow +
+          right * 4;
+
+        const p01 =
+          bottomRow +
+          left * 4;
+
+        const p11 =
+          bottomRow +
+          right * 4;
+
+        const v00 =
+          src[p00];
+
+        const v10 =
+          src[p10];
+
+        const v01 =
+          src[p01];
+
+        const v11 =
+          src[p11];
+
+        /*
+         * Если все четыре исходные точки пустые,
+         * итоговый пиксель тоже полностью прозрачный.
+         */
+        if (
+          v00 <= 0 &&
+          v10 <= 0 &&
+          v01 <= 0 &&
+          v11 <= 0
+        ) {
+          const d =
+            outputRow +
+            ox * 4;
+
+          dst[d] =
+            0;
+
+          dst[d + 1] =
+            0;
+
+          dst[d + 2] =
+            0;
+
+          dst[d + 3] =
+            0;
+
+          continue;
+        }
+
+        /*
+         * Билинейная интерполяция.
+         */
+        const top =
+          v00 * invFx +
+          v10 * fx;
+
+        const bottom =
+          v01 * invFx +
+          v11 * fx;
+
+        const value =
+          top * invFy +
+          bottom * fy;
+
+        const boosted =
+          boostedValue(
+            value
+          );
+
+        const index =
+          paletteIndex(
+            boosted
+          );
+
+        const d =
+          outputRow +
+          ox * 4;
+
+        if (
+          index < 0
+        ) {
+          dst[d] =
+            0;
+
+          dst[d + 1] =
+            0;
+
+          dst[d + 2] =
+            0;
+
+          dst[d + 3] =
+            0;
+
+          continue;
+        }
+
+        const color =
+          RGB[index];
+
+        dst[d] =
+          color.r;
+
+        dst[d + 1] =
+          color.g;
+
+        dst[d + 2] =
+          color.b;
+
+        dst[d + 3] =
+          255;
+      }
     }
 
     ctx.putImageData(
@@ -621,9 +1035,8 @@
               }
 
               /*
-               * ВАЖНО:
-               * исходный PNG читается
-               * строго без интерполяции.
+               * Исходный PNG читается
+               * без браузерного сглаживания.
                */
               ctx.imageSmoothingEnabled =
                 false;
@@ -1477,17 +1890,6 @@
           .then(
             source => {
 
-              /*
-               * ВАЖНО:
-               *
-               * canvas уже создан Leaflet
-               * размером 256×256.
-               *
-               * Мы НЕ меняем его размер
-               * после создания.
-               *
-               * Источник рисуется nearest-neighbor.
-               */
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -1508,12 +1910,18 @@
               ctx.globalCompositeOperation =
                 "copy";
 
+              /*
+               * source уже является 256×256
+               * итоговым raster.
+               *
+               * Поэтому здесь нет крупного
+               * nearest-neighbor растягивания
+               * исходного PNG.
+               */
               ctx.drawImage(
                 source,
                 0,
-                0,
-                TILE_SIZE,
-                TILE_SIZE
+                0
               );
 
               ctx.globalCompositeOperation =
@@ -1840,18 +2248,15 @@
           );
 
           /*
-           * Подготавливаем кадр
-           * полностью отдельно.
+           * source уже полностью подготовлен
+           * как 256×256 raster.
            *
-           * Старый кадр в это время
-           * вообще не трогается.
+           * Старый кадр вообще не трогаем.
            */
           ctx.drawImage(
             source,
             0,
-            0,
-            TILE_SIZE,
-            TILE_SIZE
+            0
           );
 
           prepared[index] = {
@@ -1983,7 +2388,7 @@
     }
 
     /*
-     * СНАЧАЛА проверяем ВСЕ tiles.
+     * Сначала проверяем ВСЕ tiles.
      *
      * Если Leaflet за это время
      * изменил сетку — ничего
@@ -2007,14 +2412,6 @@
      *
      * Теперь атомарно меняем
      * содержимое существующих canvas.
-     *
-     * Никакого:
-     *
-     * canvas.width = ...
-     * canvas.height = ...
-     * clearRect()
-     *
-     * здесь нет.
      */
     for (
       const item of
@@ -2060,8 +2457,8 @@
        * COPY полностью заменяет
        * предыдущий bitmap.
        *
-       * Прозрачные области нового
-       * кадра также заменяют старые.
+       * Никакого clearRect().
+       * Никакого изменения width/height.
        */
       ctx.globalCompositeOperation =
         "copy";
@@ -2069,9 +2466,7 @@
       ctx.drawImage(
         item.source,
         0,
-        0,
-        TILE_SIZE,
-        TILE_SIZE
+        0
       );
 
       ctx.globalCompositeOperation =
