@@ -195,3 +195,98 @@
   }
 
 })();
+/* =========================================================
+   CLOrad — RainRadar PNG Resolution Diagnostic
+   ВРЕМЕННО
+   Показывает реальный naturalWidth × naturalHeight
+   исходного radar PNG.
+   ========================================================= */
+
+(() => {
+  "use strict";
+
+  const ID = "clorad-rainradar-resolution-test";
+
+  function showResolution() {
+    const canvas = document.querySelector(
+      "canvas.clorad-rainradar-tile"
+    );
+
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) return;
+
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    /*
+     * Сам canvas уже 256×256 после нашего renderer,
+     * поэтому по нему определить исходный PNG нельзя.
+     *
+     * Этот тест специально ищет IMG,
+     * если браузер временно держит исходную картинку.
+     */
+
+    let imgs = document.querySelectorAll("img");
+
+    for (const img of imgs) {
+      if (
+        img.naturalWidth > 0 &&
+        img.naturalHeight > 0 &&
+        img.src.includes("/api/rainradar")
+      ) {
+        let box =
+          document.getElementById(ID);
+
+        if (!box) {
+          box =
+            document.createElement("div");
+
+          box.id = ID;
+
+          box.style.cssText = `
+            position: fixed;
+            left: 10px;
+            bottom: 10px;
+            z-index: 999999;
+
+            padding: 8px 12px;
+
+            background: rgba(0,0,0,.85);
+            color: white;
+
+            font:
+              14px -apple-system,
+              BlinkMacSystemFont,
+              sans-serif;
+
+            border-radius: 8px;
+
+            pointer-events: none;
+          `;
+
+          document.body.appendChild(box);
+        }
+
+        box.textContent =
+          "RainRadar PNG: " +
+          img.naturalWidth +
+          " × " +
+          img.naturalHeight;
+
+        return;
+      }
+    }
+  }
+
+  setTimeout(showResolution, 1000);
+  setTimeout(showResolution, 3000);
+  setTimeout(showResolution, 6000);
+
+})();
