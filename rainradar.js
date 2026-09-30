@@ -361,7 +361,6 @@
       .leaflet-tile-container {
         image-rendering: -moz-crisp-edges !important;
         image-rendering: crisp-edges !important;
-        image-rendering: pixelated !important;
       }
 
       .clorad-rainradar-layer
@@ -621,6 +620,11 @@
                 );
               }
 
+              /*
+               * ВАЖНО:
+               * исходный PNG читается
+               * строго без интерполяции.
+               */
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -632,7 +636,9 @@
               ctx.drawImage(
                 img,
                 0,
-                0
+                0,
+                width,
+                height
               );
 
               const data =
@@ -1471,18 +1477,17 @@
           .then(
             source => {
 
-              tile.width =
-                TILE_SIZE;
-
-              tile.height =
-                TILE_SIZE;
-
-              tile.style.width =
-                TILE_SIZE + "px";
-
-              tile.style.height =
-                TILE_SIZE + "px";
-
+              /*
+               * ВАЖНО:
+               *
+               * canvas уже создан Leaflet
+               * размером 256×256.
+               *
+               * Мы НЕ меняем его размер
+               * после создания.
+               *
+               * Источник рисуется nearest-neighbor.
+               */
               ctx.imageSmoothingEnabled =
                 false;
 
@@ -1500,13 +1505,6 @@
                 0
               );
 
-              /*
-               * Не используем clearRect().
-               *
-               * COPY сразу заменяет
-               * весь bitmap canvas,
-               * включая прозрачные области.
-               */
               ctx.globalCompositeOperation =
                 "copy";
 
@@ -1842,12 +1840,11 @@
           );
 
           /*
-           * Подготавливаем новый кадр
-           * отдельно от отображаемого.
+           * Подготавливаем кадр
+           * полностью отдельно.
            *
-           * Пока этот canvas готовится,
-           * старый кадр остаётся
-           * полностью видимым.
+           * Старый кадр в это время
+           * вообще не трогается.
            */
           ctx.drawImage(
             source,
@@ -1986,12 +1983,11 @@
     }
 
     /*
-     * СНАЧАЛА проверяем всю
-     * текущую Leaflet-сетку.
+     * СНАЧАЛА проверяем ВСЕ tiles.
      *
-     * Если хотя бы один tile
-     * уже был заменён Leaflet,
-     * ничего не меняем.
+     * Если Leaflet за это время
+     * изменил сетку — ничего
+     * не заменяем.
      */
     for (
       const item of
@@ -2007,17 +2003,18 @@
     }
 
     /*
-     * Теперь новый кадр полностью
-     * готов в памяти.
+     * Все tiles совпадают.
      *
-     * Меняем bitmap существующих
-     * canvas БЕЗ удаления слоя.
+     * Теперь атомарно меняем
+     * содержимое существующих canvas.
      *
-     * width / height НЕ трогаем.
-     * Это принципиально важно:
-     * изменение canvas.width или
-     * canvas.height мгновенно
-     * очищает canvas.
+     * Никакого:
+     *
+     * canvas.width = ...
+     * canvas.height = ...
+     * clearRect()
+     *
+     * здесь нет.
      */
     for (
       const item of
@@ -2042,17 +2039,6 @@
         continue;
       }
 
-      /*
-       * Leaflet уже создал этот
-       * canvas правильного размера.
-       *
-       * Никакого:
-       *
-       * canvas.width = ...
-       * canvas.height = ...
-       *
-       * здесь нет.
-       */
       ctx.imageSmoothingEnabled =
         false;
 
@@ -2072,12 +2058,10 @@
 
       /*
        * COPY полностью заменяет
-       * предыдущий bitmap новым.
+       * предыдущий bitmap.
        *
-       * Прозрачные пиксели нового
-       * кадра тоже заменяют старые.
-       *
-       * Никакого clearRect().
+       * Прозрачные области нового
+       * кадра также заменяют старые.
        */
       ctx.globalCompositeOperation =
         "copy";
@@ -2201,10 +2185,6 @@
 
     /*
      * Первый кадр.
-     *
-     * Leaflet создаёт canvas,
-     * загружает его и только после
-     * полной готовности показывает.
      */
     if (
       !displayedTimestamp
@@ -2250,15 +2230,9 @@
     /*
      * Последующие кадры:
      *
-     * 1. загружаем все нужные tiles;
-     * 2. полностью готовим их в памяти;
-     * 3. проверяем, что Leaflet-сетка
-     *    всё ещё та же;
-     * 4. одним проходом заменяем
-     *    bitmap существующих canvas.
-     *
-     * Пока пункты 1–3 выполняются,
-     * старый кадр не трогается.
+     * старый кадр остаётся на карте
+     * до полного окончания загрузки
+     * нового.
      */
     let prepared;
 
