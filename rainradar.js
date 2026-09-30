@@ -348,51 +348,27 @@
         margin: 0 !important;
         border: 0 !important;
 
-        image-rendering:
-          -moz-crisp-edges !important;
-
-        image-rendering:
-          crisp-edges !important;
-
-        image-rendering:
-          pixelated !important;
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
 
         transition: none !important;
         animation: none !important;
         filter: none !important;
-
-        backface-visibility:
-          hidden !important;
       }
 
       .clorad-rainradar-layer
       .leaflet-tile-container {
-        image-rendering:
-          -moz-crisp-edges !important;
-
-        image-rendering:
-          crisp-edges !important;
-
-        image-rendering:
-          pixelated !important;
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
       }
 
       .clorad-rainradar-layer
       .leaflet-tile {
-        image-rendering:
-          -moz-crisp-edges !important;
-
-        image-rendering:
-          crisp-edges !important;
-
-        image-rendering:
-          pixelated !important;
-
-        transition:
-          none !important;
-
-        animation:
-          none !important;
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
       }
     `;
 
@@ -1495,14 +1471,17 @@
           .then(
             source => {
 
-              /*
-               * ВАЖНО:
-               * размер bitmap больше
-               * здесь НЕ меняем.
-               *
-               * Leaflet уже создал
-               * canvas 256×256.
-               */
+              tile.width =
+                TILE_SIZE;
+
+              tile.height =
+                TILE_SIZE;
+
+              tile.style.width =
+                TILE_SIZE + "px";
+
+              tile.style.height =
+                TILE_SIZE + "px";
 
               ctx.imageSmoothingEnabled =
                 false;
@@ -1522,11 +1501,11 @@
               );
 
               /*
-               * COPY заменяет bitmap
-               * целиком, включая
-               * прозрачные области.
+               * Не используем clearRect().
                *
-               * Никакого clearRect().
+               * COPY сразу заменяет
+               * весь bitmap canvas,
+               * включая прозрачные области.
                */
               ctx.globalCompositeOperation =
                 "copy";
@@ -1541,6 +1520,12 @@
 
               ctx.globalCompositeOperation =
                 "source-over";
+
+              tile.style.setProperty(
+                "image-rendering",
+                "pixelated",
+                "important"
+              );
 
               done(
                 null,
@@ -1857,15 +1842,13 @@
           );
 
           /*
-           * Готовим следующий кадр
-           * полностью отдельно.
+           * Подготавливаем новый кадр
+           * отдельно от отображаемого.
            *
-           * Старый кадр в это время
-           * вообще не трогаем.
+           * Пока этот canvas готовится,
+           * старый кадр остаётся
+           * полностью видимым.
            */
-          ctx.globalCompositeOperation =
-            "copy";
-
           ctx.drawImage(
             source,
             0,
@@ -1873,9 +1856,6 @@
             TILE_SIZE,
             TILE_SIZE
           );
-
-          ctx.globalCompositeOperation =
-            "source-over";
 
           prepared[index] = {
             key:
@@ -2006,11 +1986,12 @@
     }
 
     /*
-     * Проверяем ВСЕ tiles
-     * до начала замены.
+     * СНАЧАЛА проверяем всю
+     * текущую Leaflet-сетку.
      *
-     * Если Leaflet успел изменить
-     * сетку — ничего не трогаем.
+     * Если хотя бы один tile
+     * уже был заменён Leaflet,
+     * ничего не меняем.
      */
     for (
       const item of
@@ -2026,8 +2007,17 @@
     }
 
     /*
-     * Только теперь меняем
-     * bitmap существующих canvas.
+     * Теперь новый кадр полностью
+     * готов в памяти.
+     *
+     * Меняем bitmap существующих
+     * canvas БЕЗ удаления слоя.
+     *
+     * width / height НЕ трогаем.
+     * Это принципиально важно:
+     * изменение canvas.width или
+     * canvas.height мгновенно
+     * очищает canvas.
      */
     for (
       const item of
@@ -2052,6 +2042,17 @@
         continue;
       }
 
+      /*
+       * Leaflet уже создал этот
+       * canvas правильного размера.
+       *
+       * Никакого:
+       *
+       * canvas.width = ...
+       * canvas.height = ...
+       *
+       * здесь нет.
+       */
       ctx.imageSmoothingEnabled =
         false;
 
@@ -2070,14 +2071,13 @@
       );
 
       /*
-       * Не:
+       * COPY полностью заменяет
+       * предыдущий bitmap новым.
        *
-       * clearRect()
-       * canvas.width = ...
-       * canvas.height = ...
+       * Прозрачные пиксели нового
+       * кадра тоже заменяют старые.
        *
-       * COPY заменяет весь
-       * предыдущий bitmap.
+       * Никакого clearRect().
        */
       ctx.globalCompositeOperation =
         "copy";
@@ -2199,6 +2199,13 @@
       timestamp
     );
 
+    /*
+     * Первый кадр.
+     *
+     * Leaflet создаёт canvas,
+     * загружает его и только после
+     * полной готовности показывает.
+     */
     if (
       !displayedTimestamp
     ) {
@@ -2240,6 +2247,19 @@
       return true;
     }
 
+    /*
+     * Последующие кадры:
+     *
+     * 1. загружаем все нужные tiles;
+     * 2. полностью готовим их в памяти;
+     * 3. проверяем, что Leaflet-сетка
+     *    всё ещё та же;
+     * 4. одним проходом заменяем
+     *    bitmap существующих canvas.
+     *
+     * Пока пункты 1–3 выполняются,
+     * старый кадр не трогается.
+     */
     let prepared;
 
     try {
