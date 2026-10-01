@@ -7,13 +7,13 @@
    - API НЕ ИЗМЕНЯЕТСЯ
    - источник: rainradar.ru/composite
    - исходные данные: Z=5
-   - отображаемая нативная сетка: Z=5
-   - 1 исходный raster-пиксель = 1 выходной пиксель
-   - НИКАКОГО искусственного 2×2
-   - НИКАКОГО 4×4 / 8×8 увеличения
-   - НИКАКОЙ билинейной интерполяции
-   - НИКАКОГО искусственного размытия
-   - реальная пиксельная сетка RainRadar сохраняется
+   - НИКАКОГО искусственного Z5 -> Z6
+   - НИКАКОГО 2×2 увеличения пикселей
+   - одна исходная raster-ячейка = один output pixel
+   - исходный raster сохраняется 1:1
+   - без билинейной интерполяции
+   - без искусственных градиентов
+   - без 4×4 / 8×8 pixelation
 
    СТАБИЛЬНОСТЬ:
    - RainRadarLayer создаётся ОДИН РАЗ
@@ -28,17 +28,6 @@
    - затем содержимое существующих canvas
      заменяется атомарно
    - старые RainRadar layers не накапливаются
-
-   RASTER:
-   - исходный RainRadar PNG читается 1:1
-   - исходный размер PNG НЕ изменяется
-   - исходное значение НЕ интерполируется
-   - один исходный пиксель получает один цвет
-   - при Z5 исходный пиксель остаётся одним пикселем
-   - при Z4/Z3/Z2 несколько реальных Z5-тайлов
-     правильно собираются в один отображаемый тайл
-   - уменьшение при отдалении карты выполняется
-     без сглаживания
    ========================================================= */
 
 (() => {
@@ -53,25 +42,25 @@
   ];
 
   /*
-   * RainRadar реально отдаёт исходные тайлы Z=5.
+   * Реальный zoom источника RainRadar.
+   *
+   * ВАЖНО:
+   * Не преобразуем Z5 в Z6.
    */
   const RR_SOURCE_ZOOM =
     5;
 
   /*
-   * Нативный отображаемый масштаб
-   * совпадает с масштабом источника.
+   * Нативная сетка RainRadar.
    *
-   * ВАЖНО:
+   * Теперь это именно Z5.
    *
-   * Z5 -> Z5
-   *
-   * Поэтому никакого искусственного
-   * увеличения исходного raster-пикселя
-   * в 2×2 здесь нет.
+   * Leaflet может показывать её на любом
+   * пользовательском zoom, но данные
+   * остаются исходными.
    */
   const RR_NATIVE_ZOOM =
-    RR_SOURCE_ZOOM;
+    5;
 
   const MIN_ZOOM =
     2;
@@ -224,31 +213,10 @@
   let legendSaved =
     false;
 
-  /*
-   * Серый исходный raster.
-   *
-   * Ключ:
-   *
-   * timestamp / sourceZ / x / y
-   */
   const grayCache =
     new Map();
 
-  /*
-   * Раскрашенный НАТИВНЫЙ тайл.
-   *
-   * Ключ:
-   *
-   * timestamp / sourceZ / x / y / boost
-   */
   const colorCache =
-    new Map();
-
-  /*
-   * Уже собранные отображаемые тайлы
-   * для Z2/Z3/Z4.
-   */
-  const displayCache =
     new Map();
 
   const MAX_CACHE =
@@ -415,26 +383,25 @@
         margin: 0 !important;
         border: 0 !important;
 
-        image-rendering: -moz-crisp-edges !important;
-        image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
+        image-rendering: crisp-edges !important;
 
         transition: none !important;
         animation: none !important;
+
         filter: none !important;
       }
 
       .clorad-rainradar-layer
       .leaflet-tile-container {
-        image-rendering: -moz-crisp-edges !important;
+        image-rendering: pixelated !important;
         image-rendering: crisp-edges !important;
       }
 
       .clorad-rainradar-layer
       .leaflet-tile {
-        image-rendering: -moz-crisp-edges !important;
-        image-rendering: crisp-edges !important;
         image-rendering: pixelated !important;
+        image-rendering: crisp-edges !important;
       }
     `;
 
@@ -502,25 +469,23 @@
   /* =========================================================
      RASTER COLORIZATION
 
-     КРИТИЧНО:
+     ВАЖНО:
 
-     Здесь НЕТ:
-     - resize
-     - scale ×2
-     - bilinear
-     - nearest enlargement
-     - interpolation
+     Было:
 
-     Исходный PNG:
+       Z5 pixel -> 2×2 pixels
 
-       W × H
+     Теперь:
 
-     становится:
+       Z5 pixel -> 1×1 pixel
 
-       W × H
+     НИКАКОГО resize.
+     НИКАКОГО drawImage для масштабирования.
+     НИКАКОЙ интерполяции.
 
-     Один source pixel =
-     один output pixel.
+     Один пиксель исходного PNG
+     получает ровно один цвет
+     в таком же положении.
      ========================================================= */
 
   function colorizeSource(
@@ -534,31 +499,6 @@
 
     const src =
       imageData.data;
-
-    const canvas =
-      document.createElement(
-        "canvas"
-      );
-
-    canvas.width =
-      width;
-
-    canvas.height =
-      height;
-
-    canvas.className =
-      "clorad-rainradar-source";
-
-    const ctx =
-      canvas.getContext(
-        "2d"
-      );
-
-    if (!ctx) {
-      throw Error(
-        "Canvas 2D недоступен"
-      );
-    }
 
     const output =
       new ImageData(
@@ -588,11 +528,11 @@
           row +
           x * 4;
 
-        const raw =
-          src[s];
-
         const d =
           s;
+
+        const raw =
+          src[s];
 
         /*
          * Пустая ячейка.
@@ -644,11 +584,7 @@
           RGB[index];
 
         /*
-         * РОВНО ОДНА
-         * исходная ячейка.
-         *
-         * Никакого копирования
-         * в соседние пиксели.
+         * РОВНО ОДИН PIXEL.
          */
         dst[d] =
           color.r;
@@ -664,13 +600,7 @@
       }
     }
 
-    ctx.putImageData(
-      output,
-      0,
-      0
-    );
-
-    return canvas;
+    return output;
   }
 
   function tileURL(
@@ -728,26 +658,13 @@
         img.onload =
           () => {
             try {
-              /*
-               * КРИТИЧНО:
-               *
-               * Берём натуральный размер
-               * PNG и НЕ изменяем его.
-               */
               const width =
-                img.naturalWidth;
+                img.naturalWidth ||
+                TILE_SIZE;
 
               const height =
-                img.naturalHeight;
-
-              if (
-                !width ||
-                !height
-              ) {
-                throw Error(
-                  "RainRadar tile имеет нулевой размер"
-                );
-              }
+                img.naturalHeight ||
+                TILE_SIZE;
 
               const canvas =
                 document.createElement(
@@ -776,18 +693,25 @@
               }
 
               /*
-               * Никакого сглаживания.
+               * НИКАКОГО сглаживания.
                */
               ctx.imageSmoothingEnabled =
                 false;
 
-              try {
-                ctx.imageSmoothingQuality =
-                  "low";
-              } catch {}
-
               /*
-               * РОВНО 1:1.
+               * ВАЖНО:
+               *
+               * Изображение переносится
+               * в исходном размере.
+               *
+               * Никакого:
+               *
+               * drawImage(
+               *   img,
+               *   0,0,width,height
+               * )
+               *
+               * с изменением размеров.
                */
               ctx.drawImage(
                 img,
@@ -843,18 +767,21 @@
   }
 
   /* =========================================================
-     НАТИВНЫЙ Z5 TILE
+     COLORIZED NATIVE TILE
 
-     Здесь:
-       source Z5 -> output Z5
+     ВАЖНО:
 
-     Никакого изменения геометрии.
+     coords.x / coords.y здесь уже являются
+     координатами НАТИВНОГО Z5 тайла.
 
-     Если PNG = 256×256,
-     output = 256×256.
+     Никаких:
 
-     Если PNG имеет другой физический размер,
-     он НЕ растягивается.
+       floor(x / 2)
+       floor(y / 2)
+       quadrantX
+       quadrantY
+
+     больше нет.
      ========================================================= */
 
   async function getColoredTile(
@@ -904,318 +831,6 @@
     );
 
     return colored;
-  }
-
-  /* =========================================================
-     DISPLAY TILE
-
-     Z5:
-       1 display tile = 1 source tile.
-
-     Z4:
-       1 display tile = 2×2 source Z5 tiles.
-
-     Z3:
-       1 display tile = 4×4 source Z5 tiles.
-
-     Z2:
-       1 display tile = 8×8 source Z5 tiles.
-
-     ВАЖНО:
-
-     Это НЕ увеличивает исходные пиксели.
-
-     Наоборот:
-     при отдалении карты реальные Z5 данные
-     собираются в соответствующую область
-     меньшего экранного масштаба.
-
-     Сглаживание выключено.
-     ========================================================= */
-
-  async function getDisplayTile(
-    timestamp,
-    coords
-  ) {
-    const displayZoom =
-      Math.min(
-        RR_SOURCE_ZOOM,
-        Math.max(
-          MIN_ZOOM,
-          coords.z
-        )
-      );
-
-    const cacheKey =
-      `${timestamp}/${displayZoom}/${coords.x}/${coords.y}/${boost}`;
-
-    if (
-      displayCache.has(
-        cacheKey
-      )
-    ) {
-      return displayCache.get(
-        cacheKey
-      );
-    }
-
-    /*
-     * Нативный Z5.
-     */
-    if (
-      displayZoom ===
-      RR_SOURCE_ZOOM
-    ) {
-      const source =
-        await getColoredTile(
-          timestamp,
-          {
-            x:
-              coords.x,
-
-            y:
-              coords.y
-          }
-        );
-
-      /*
-       * Если RainRadar действительно отдаёт
-       * стандартный 256×256 tile,
-       * возвращаем его вообще без копирования.
-       *
-       * Это сохраняет 1:1.
-       */
-      if (
-        source.width ===
-          TILE_SIZE &&
-        source.height ===
-          TILE_SIZE
-      ) {
-        displayCache.set(
-          cacheKey,
-          source
-        );
-
-        trimCache(
-          displayCache
-        );
-
-        return source;
-      }
-
-      /*
-       * Если физический PNG отличается от 256,
-       * НЕ растягиваем его.
-       *
-       * Просто помещаем реальные пиксели
-       * в стандартный Leaflet canvas.
-       */
-      const tile =
-        document.createElement(
-          "canvas"
-        );
-
-      tile.width =
-        TILE_SIZE;
-
-      tile.height =
-        TILE_SIZE;
-
-      const ctx =
-        tile.getContext(
-          "2d"
-        );
-
-      if (!ctx) {
-        throw Error(
-          "Canvas 2D недоступен"
-        );
-      }
-
-      ctx.imageSmoothingEnabled =
-        false;
-
-      ctx.drawImage(
-        source,
-        0,
-        0
-      );
-
-      displayCache.set(
-        cacheKey,
-        tile
-      );
-
-      trimCache(
-        displayCache
-      );
-
-      return tile;
-    }
-
-    /*
-     * Сколько Z5 тайлов содержится
-     * в одном отображаемом тайле.
-     */
-    const factor =
-      1 <<
-      (
-        RR_SOURCE_ZOOM -
-        displayZoom
-      );
-
-    const baseX =
-      coords.x *
-      factor;
-
-    const baseY =
-      coords.y *
-      factor;
-
-    const output =
-      document.createElement(
-        "canvas"
-      );
-
-    output.width =
-      TILE_SIZE;
-
-    output.height =
-      TILE_SIZE;
-
-    const ctx =
-      output.getContext(
-        "2d"
-      );
-
-    if (!ctx) {
-      throw Error(
-        "Canvas 2D недоступен"
-      );
-    }
-
-    /*
-     * Очень важно:
-     *
-     * при уменьшении карты
-     * никаких сглаженных промежуточных
-     * цветов не создаём.
-     */
-    ctx.imageSmoothingEnabled =
-      false;
-
-    try {
-      ctx.imageSmoothingQuality =
-        "low";
-    } catch {}
-
-    const jobs =
-      [];
-
-    for (
-      let j = 0;
-      j < factor;
-      j++
-    ) {
-      for (
-        let i = 0;
-        i < factor;
-        i++
-      ) {
-        const sourceX =
-          baseX + i;
-
-        const sourceY =
-          baseY + j;
-
-        jobs.push(
-          getColoredTile(
-            timestamp,
-            {
-              x:
-                sourceX,
-
-              y:
-                sourceY
-            }
-          ).then(
-            source => ({
-              source,
-              i,
-              j
-            })
-          )
-        );
-      }
-    }
-
-    const tiles =
-      await Promise.all(
-        jobs
-      );
-
-    /*
-     * Каждый Z5 tile занимает
-     *
-     * 256 / factor
-     *
-     * пикселей отображаемого тайла.
-     */
-    const part =
-      TILE_SIZE /
-      factor;
-
-    for (
-      const item of
-      tiles
-    ) {
-      const dx =
-        item.i *
-        part;
-
-      const dy =
-        item.j *
-        part;
-
-      /*
-       * При Z4:
-       *
-       * 256 / 2 = 128
-       *
-       * При Z3:
-       *
-       * 256 / 4 = 64
-       *
-       * При Z2:
-       *
-       * 256 / 8 = 32
-       *
-       * Это уменьшение карты,
-       * а НЕ увеличение исходной клетки.
-       */
-      ctx.drawImage(
-        item.source,
-        0,
-        0,
-        item.source.width,
-        item.source.height,
-        dx,
-        dy,
-        part,
-        part
-      );
-    }
-
-    displayCache.set(
-      cacheKey,
-      output
-    );
-
-    trimCache(
-      displayCache
-    );
-
-    return output;
   }
 
   function findLegend() {
@@ -1768,6 +1383,18 @@
     updatePlayButton();
   }
 
+  /* =========================================================
+     LEAFLET RAINRADAR LAYER
+
+     Нативный tile zoom = Z5.
+
+     Leaflet сам использует Z5 tiles при увеличении
+     и уменьшении карты.
+
+     Это принципиально отличается от старой схемы,
+     где мы пытались вручную строить Z6 из Z5.
+     ========================================================= */
+
   const RainRadarLayer =
     L.GridLayer.extend({
 
@@ -1927,9 +1554,28 @@
         const timestamp =
           this._timestamp;
 
-        getDisplayTile(
+        /*
+         * ВАЖНО:
+         *
+         * coords здесь уже должны быть
+         * Z5 благодаря minNativeZoom/maxNativeZoom.
+         *
+         * Никакого преобразования x/2 и y/2.
+         */
+        const sourceCoords = {
+          z:
+            RR_SOURCE_ZOOM,
+
+          x:
+            coords.x,
+
+          y:
+            coords.y
+        };
+
+        getColoredTile(
           timestamp,
-          coords
+          sourceCoords
         )
           .then(
             source => {
@@ -1942,9 +1588,9 @@
                 currentTimestamp !==
                   timestamp
               ) {
-                return getDisplayTile(
+                return getColoredTile(
                   currentTimestamp,
-                  coords
+                  sourceCoords
                 );
               }
 
@@ -1970,13 +1616,15 @@
                 "copy";
 
               /*
-               * При Z5 source уже 256×256
-               * и здесь он копируется 1:1.
+               * НИКАКОГО resize.
                *
-               * При Z4/Z3/Z2 source —
-               * уже собранный mosaic tile.
+               * Если source 256×256:
+               *
+               * 256×256 -> 256×256
+               *
+               * пиксель остаётся пикселем.
                */
-              ctx.drawImage(
+              ctx.putImageData(
                 source,
                 0,
                 0
@@ -2045,17 +1693,18 @@
           MAX_ZOOM,
 
         /*
-         * Нативный RainRadar:
+         * КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
          *
-         * Z5.
+         * Нативный raster = Z5.
          *
-         * Никакого искусственного Z6.
+         * Leaflet не просит нас вручную
+         * создавать Z6.
          */
         minNativeZoom:
-          RR_NATIVE_ZOOM,
+          RR_SOURCE_ZOOM,
 
         maxNativeZoom:
-          RR_NATIVE_ZOOM,
+          RR_SOURCE_ZOOM,
 
         noWrap:
           true,
@@ -2237,17 +1886,21 @@
           }
 
           /*
-           * КРИТИЧНО:
-           *
-           * Не getColoredTile напрямую.
-           *
-           * Для Z2/Z3/Z4 нам нужен
-           * правильно собранный display tile.
+           * Координаты уже нативные Z5.
            */
           const source =
-            await getDisplayTile(
+            await getColoredTile(
               timestamp,
-              item.coords
+              {
+                z:
+                  RR_SOURCE_ZOOM,
+
+                x:
+                  item.coords.x,
+
+                y:
+                  item.coords.y
+              }
             );
 
           if (
@@ -2257,6 +1910,11 @@
             return;
           }
 
+          /*
+           * Подготовительный canvas.
+           *
+           * Никакого resize.
+           */
           const preparedCanvas =
             document.createElement(
               "canvas"
@@ -2303,7 +1961,7 @@
             0
           );
 
-          ctx.drawImage(
+          ctx.putImageData(
             source,
             0,
             0
@@ -2451,11 +2109,6 @@
       }
     }
 
-    /*
-     * Только после того как ВСЕ тайлы
-     * готовы и проверены, меняем
-     * существующие canvas.
-     */
     for (
       const item of
       prepared
@@ -2494,8 +2147,19 @@
       ctx.globalCompositeOperation =
         "copy";
 
-      ctx.drawImage(
-        item.source,
+      /*
+       * Атомарная замена.
+       * Без resize.
+       */
+      ctx.putImageData(
+        item.source
+          .getContext("2d")
+          .getImageData(
+            0,
+            0,
+            TILE_SIZE,
+            TILE_SIZE
+          ),
         0,
         0
       );
@@ -3321,18 +2985,7 @@
       boost
     );
 
-    /*
-     * Значение цвета изменилось,
-     * поэтому старые раскрашенные
-     * тайлы больше нельзя использовать.
-     */
     colorCache.clear();
-
-    /*
-     * Display tiles тоже зависят
-     * от boost.
-     */
-    displayCache.clear();
 
     if (
       active &&
